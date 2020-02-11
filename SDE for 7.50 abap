@@ -952,7 +952,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
                 on_data_changed_finished
                 on_grid_button_click
                 handle_context_menu_request FOR mo_sel_alv.
-    SET HANDLER on_f4 FOR ALL INSTANCES.
+    SET HANDLER on_f4 FOR mo_sel_alv.
 
     CALL METHOD mo_sel_alv->set_table_for_first_display
       EXPORTING
