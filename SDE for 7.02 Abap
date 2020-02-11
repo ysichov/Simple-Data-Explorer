@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *& version: alpha 0.1.104.84
-*& Written by Yurii Sychov
+*& Written by Yurii Sychov  
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
 *& blog:     https://ysychov.wordpress.com/blog/
@@ -1032,7 +1032,7 @@ CLASS LCL_SEL_OPT IMPLEMENTATION.
                 ON_DATA_CHANGED_FINISHED
                 ON_GRID_BUTTON_CLICK
                 HANDLE_CONTEXT_MENU_REQUEST FOR MO_SEL_ALV.
-    SET HANDLER ON_F4 FOR ALL INSTANCES.
+    SET HANDLER ON_F4 FOR mo_sel_alv.
 
     CALL METHOD MO_SEL_ALV->SET_TABLE_FOR_FIRST_DISPLAY
       EXPORTING
