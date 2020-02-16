@@ -1,7 +1,9 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.1.115.93
+*& version: alpha 0.1.119.96
+*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap
+*&
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -20,7 +22,7 @@ TYPES:
     range       TYPE aqadh_t_ranges,
   END OF t_sel_row.
 
-PARAMETERS: gv_tname TYPE tabname.
+PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
 CLASS lcl_table_viewer DEFINITION DEFERRED.
@@ -265,6 +267,7 @@ CLASS lcl_sel_opt DEFINITION.
       BEGIN OF selection_display_s,
         ind         TYPE i,
         field_label TYPE lvc_fname,
+        int_type(1),
         inherited   TYPE aqadh_type_of_icon,
         emitter     TYPE aqadh_type_of_icon,
         sign        TYPE tvarv_sign,
@@ -540,7 +543,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA(l_lines) = lines( lcl_appl=>mt_obj ) - 1.
 
     l_top  = 20 + 30 * ( l_lines DIV 5 ) +  ( l_lines MOD 5 ) * 50.
-    l_left = 350 + 300 * ( l_lines DIV 5 )  +  ( l_lines MOD 5 ) * 50.
+    l_left = 420 + 300 * ( l_lines DIV 5 )  +  ( l_lines MOD 5 ) * 50.
 
     CREATE OBJECT mo_box
       EXPORTING
@@ -678,7 +681,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
                                            ( butn_type = 3 ) ).
     ENDIF.
 
-    lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'LanguagesА' butn_type = 2 )
+    lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
                                  ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
                                  ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
                                  ( butn_type = 3 ) ).
@@ -799,91 +802,31 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD get_where."dynamic where clause
 
-    DATA: lv_sentence TYPE string,lv_opt TYPE string,
-          lv_not      TYPE string.
+    DATA: lt_where    TYPE rsds_twhere,
+          lt_range    TYPE rsds_trange.
 
     IF  mo_sel IS NOT INITIAL.
+      APPEND INITIAL LINE TO lt_range ASSIGNING FIELD-SYMBOL(<tabl>).
+      <tabl>-tablename = m_tabname.
       LOOP AT mo_sel->mo_sel_tab INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
-        CLEAR lv_opt.
-        LOOP AT ls_tab-range ASSIGNING FIELD-SYMBOL(<range>).
-          IF mo_alv_catalog[ fieldname = ls_tab-field_label ]-datatype = 'DATS' AND ls_tab-sign IS NOT INITIAL.
-            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
-              EXPORTING
-                date_external            = <range>-low
-              IMPORTING
-                date_internal            = <range>-low
-              EXCEPTIONS
-                date_external_is_invalid = 1
-                OTHERS                   = 2.
-
-            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
-              EXPORTING
-                date_external            = <range>-high
-              IMPORTING
-                date_internal            = <range>-high
-              EXCEPTIONS
-                date_external_is_invalid = 1
-                OTHERS                   = 2.
-          ENDIF.
-
-          IF <range>-opti = 'NP'.
-            <range>-opti = 'CP'.
-            IF <range>-sign = 'I'.
-              <range>-sign = 'E'.
-            ELSE.
-              <range>-sign = 'I'.
-            ENDIF.
-          ENDIF.
-
-          IF <range>-sign = 'E'.
-            lv_not = ' NOT'.
-          ELSE.
-            CLEAR lv_not.
-          ENDIF.
-
-          IF <range>-sign = 'E'.
-            CASE <range>-opti.
-              WHEN 'EQ'.
-                <range>-opti = 'NE'.
-              WHEN 'NE'.
-                <range>-opti = 'EQ'.
-              WHEN 'BT'.
-                <range>-opti = 'NB'.
-              WHEN 'NB'.
-                <range>-opti = 'BT'.
-            ENDCASE.
-          ENDIF.
-
-          IF <range>-opti = 'BT' OR <range>-opti = 'NB'.
-            lv_sentence = |{ ls_tab-field_label }{ lv_not } BETWEEN '{ <range>-low }' AND '{ <range>-high }'|.
-          ELSEIF <range>-opti = 'CP' OR <range>-opti = 'NP' .
-            REPLACE ALL OCCURRENCES OF '*' IN <range>-low WITH '%'.
-            REPLACE ALL OCCURRENCES OF '+' IN <range>-low WITH '_'.
-            lv_sentence = |{ ls_tab-field_label }{ lv_not } LIKE '{ <range>-low }'|.
-          ELSE.
-            lv_sentence = |{ ls_tab-field_label } { <range>-opti } '{ <range>-low }'|.
-          ENDIF.
-
-          IF lv_opt IS INITIAL.
-            lv_opt = |{ lv_sentence }|.
-          ELSE.
-           IF ( <range>-opti = 'BT' OR <range>-opti = 'NB' or <range>-opti = 'EQ'  ) AND <range>-sign = 'I'.
-              lv_opt = |{ lv_opt } OR { lv_sentence }|.
-            ELSE.
-              lv_opt = |{ lv_opt } AND { lv_sentence }|.
-            ENDIF.
-           ENDIF.
-
-          AT END OF sign.
-            lv_opt = |( { lv_opt } ) |.
-          ENDAT.
-        ENDLOOP.
-
-        IF c_where IS INITIAL.
-          c_where = lv_opt.
-        ELSE.
-          c_where = |{ c_where } AND { lv_opt }| .
+        APPEND INITIAL LINE TO <tabl>-frange_t ASSIGNING FIELD-SYMBOL(<t_range>).
+        IF sy-subrc = 0.
+          <t_range>-fieldname = ls_tab-field_label.
+          <t_range>-selopt_t  = ls_tab-range.
         ENDIF.
+      ENDLOOP.
+
+      CALL FUNCTION 'FREE_SELECTIONS_RANGE_2_WHERE'
+        EXPORTING
+          field_ranges  = lt_range
+        IMPORTING
+          where_clauses = lt_where.
+
+      LOOP AT lt_where INTO DATA(lt_where_tab) WHERE tablename = m_tabname.
+        LOOP AT lt_where_tab-where_tab INTO DATA(l_where).
+          CONDENSE l_where-line.
+          c_where = |{ c_where } { l_where-line }|.
+        ENDLOOP.
       ENDLOOP.
     ENDIF.
   ENDMETHOD.
@@ -932,9 +875,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     ls_layout-s_dragdrop-col_ddid = handle_alv.
     init_fcat( handle_alv ).
-
     ls_layout-cwidth_opt = 'X'.
-
 
     "fields for F4 event handling
     DATA(gt_f4) = VALUE  lvc_t_f4( register   = 'X' chngeafter = 'X'
@@ -952,7 +893,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
                 on_data_changed_finished
                 on_grid_button_click
                 handle_context_menu_request FOR mo_sel_alv.
-    SET HANDLER on_f4 FOR mo_sel_alv.
+    SET HANDLER on_f4 FOR ALL INSTANCES.
 
     CALL METHOD mo_sel_alv->set_table_for_first_display
       EXPORTING
@@ -1017,6 +958,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       <sel_tab>-ind = lv_ind.
       <sel_tab>-field_label = l_catalog-fieldname.
       <sel_tab>-name = l_catalog-scrtext_l.
+      <sel_tab>-int_type = l_catalog-inttype.
     ENDLOOP.
   ENDMETHOD.
   METHOD handle_sel_toolbar.
@@ -1070,6 +1012,25 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       MOVE-CORRESPONDING c_sel_row TO <range>.
       IF c_sel_row-opti NE 'BT' AND c_sel_row-opti NE 'NB' .
         CLEAR c_sel_row-high.
+      ENDIF.
+      IF c_sel_row-int_type = 'D'.
+                 CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+              EXPORTING
+                date_external            = <range>-low
+              IMPORTING
+                date_internal            = <range>-low
+              EXCEPTIONS
+                date_external_is_invalid = 1
+                OTHERS                   = 2.
+
+            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+              EXPORTING
+                date_external            = <range>-high
+              IMPORTING
+                date_internal            = <range>-high
+              EXCEPTIONS
+                date_external_is_invalid = 1
+                OTHERS                   = 2.
       ENDIF.
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
