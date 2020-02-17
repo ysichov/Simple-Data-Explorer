@@ -488,7 +488,6 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_col.
-
     DATA: lt_sel_row TYPE t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
@@ -524,7 +523,6 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
     lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv ).
     lo_sel_to->raise_selection_done( ).
-
   ENDMETHOD.
 ENDCLASS.
 
@@ -560,7 +558,6 @@ CLASS lcl_box_handler IMPLEMENTATION.
         ENDLOOP.
       ENDIF.
       FREE <obj>-alv_viewer.
-
       DELETE lcl_appl=>mt_obj INDEX lv_tabix.
     ENDIF.
   ENDMETHOD.                    "ON_BOX_CLOSE
@@ -718,7 +715,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lv_header = |{ m_tabname } - { lv_text } ({ m_count })|.
     mo_box->set_caption( lv_header ).
   ENDMETHOD.
-
 
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
@@ -897,7 +893,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
 
     lcl_alv_common=>refresh( mo_alv ).
-
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
@@ -961,22 +956,22 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD init_fcat.
-    mt_fcat = VALUE #( ( fieldname = 'IND'         coltext = '№'  outputlen = 3 )
-                      ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' )
-                      ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X' )
-                      ( fieldname = 'OPTI'        coltext = 'Option' tech = 'X' )
-                      ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
-                      ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 col_opt = 'X'  )
-                      ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4  col_opt = 'X' )
-                      ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = cl_gui_alv_grid=>mc_style_button )
-                      ( fieldname = 'RANGE'   tech = 'X'  )
-                      ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited')
-                      ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter')
-                      ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 )
-                      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
-                      ( fieldname = 'RECEIVER'    tech = 'X'  )
-                      ( fieldname = 'CHANGE'    tech = 'X'  )
-                    ).
+    mt_fcat = VALUE #(
+     ( fieldname = 'IND'         coltext = '№'  outputlen = 3 )
+     ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' )
+     ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X' )
+     ( fieldname = 'OPTI'        coltext = 'Option' tech = 'X' )
+     ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
+     ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 col_opt = 'X'  )
+     ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4  col_opt = 'X' )
+     ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = cl_gui_alv_grid=>mc_style_button )
+     ( fieldname = 'RANGE'   tech = 'X'  )
+     ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited')
+     ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter')
+     ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 )
+     ( fieldname = 'TRANSMITTER'   tech = 'X'  )
+     ( fieldname = 'RECEIVER'    tech = 'X'  )
+     ( fieldname = 'CHANGE'    tech = 'X'  ) ).
   ENDMETHOD.
 
   METHOD raise_selection_done.
@@ -1016,8 +1011,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
   METHOD handle_sel_toolbar.
     e_object->mt_toolbar[] = VALUE #( butn_type = 0 disabled = ''
-                                    ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
-                                    ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
+     ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
+     ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
   ENDMETHOD.
 
   METHOD update_sel_row. "select patterns rules
@@ -1227,7 +1222,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             wrong_format_in_input     = 2
             OTHERS                    = 3.
 
-
         <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
 
       ELSE.
@@ -1353,28 +1347,28 @@ ENDCLASS.
 
 CLASS lcl_appl IMPLEMENTATION.
   METHOD init_icons_table.
-    m_option_icons = VALUE #( ( sign = space option = space  icon_name = icon_led_inactive )
-                              ( sign = 'I'   option = 'EQ'   icon_name = icon_equal_green )
-                              ( sign = 'I'   option = 'NE'   icon_name = icon_not_equal_green )
-                              ( sign = 'I'   option = 'LT'   icon_name = icon_less_green )
-                              ( sign = 'I'   option = 'LE'   icon_name = icon_less_equal_green )
-                              ( sign = 'I'   option = 'GT'   icon_name = icon_greater_green )
-                              ( sign = 'I'   option = 'GE'   icon_name = icon_greater_equal_green )
-                              ( sign = 'I'   option = 'CP'   icon_name = icon_pattern_include_green )
-                              ( sign = 'I'   option = 'NP'   icon_name = icon_pattern_exclude_green )
-                              ( sign = 'I'   option = 'BT'   icon_name = icon_interval_include_green )
-                              ( sign = 'I'   option = 'NB'   icon_name = icon_interval_exclude_green )
-                              ( sign = 'E'   option = 'EQ'   icon_name = icon_equal_red )
-                              ( sign = 'E'   option = 'NE'   icon_name = icon_not_equal_red )
-                              ( sign = 'E'   option = 'LT'   icon_name = icon_less_red )
-                              ( sign = 'E'   option = 'LE'   icon_name = icon_less_equal_red )
-                              ( sign = 'E'   option = 'GT'   icon_name = icon_greater_red )
-                              ( sign = 'E'   option = 'GE'   icon_name = icon_greater_equal_red )
-                              ( sign = 'E'   option = 'CP'   icon_name = icon_pattern_include_red )
-                              ( sign = 'E'   option = 'NP'   icon_name = icon_pattern_exclude_red )
-                              ( sign = 'E'   option = 'BT'   icon_name = icon_interval_include_red )
-                              ( sign = 'E'   option = 'NB'   icon_name = icon_interval_exclude_red )
-                             ).
+    m_option_icons = VALUE #(
+     ( sign = space option = space  icon_name = icon_led_inactive )
+     ( sign = 'I'   option = 'EQ'   icon_name = icon_equal_green )
+     ( sign = 'I'   option = 'NE'   icon_name = icon_not_equal_green )
+     ( sign = 'I'   option = 'LT'   icon_name = icon_less_green )
+     ( sign = 'I'   option = 'LE'   icon_name = icon_less_equal_green )
+     ( sign = 'I'   option = 'GT'   icon_name = icon_greater_green )
+     ( sign = 'I'   option = 'GE'   icon_name = icon_greater_equal_green )
+     ( sign = 'I'   option = 'CP'   icon_name = icon_pattern_include_green )
+     ( sign = 'I'   option = 'NP'   icon_name = icon_pattern_exclude_green )
+     ( sign = 'I'   option = 'BT'   icon_name = icon_interval_include_green )
+     ( sign = 'I'   option = 'NB'   icon_name = icon_interval_exclude_green )
+     ( sign = 'E'   option = 'EQ'   icon_name = icon_equal_red )
+     ( sign = 'E'   option = 'NE'   icon_name = icon_not_equal_red )
+     ( sign = 'E'   option = 'LT'   icon_name = icon_less_red )
+     ( sign = 'E'   option = 'LE'   icon_name = icon_less_equal_red )
+     ( sign = 'E'   option = 'GT'   icon_name = icon_greater_red )
+     ( sign = 'E'   option = 'GE'   icon_name = icon_greater_equal_red )
+     ( sign = 'E'   option = 'CP'   icon_name = icon_pattern_include_red )
+     ( sign = 'E'   option = 'NP'   icon_name = icon_pattern_exclude_red )
+     ( sign = 'E'   option = 'BT'   icon_name = icon_interval_include_red )
+     ( sign = 'E'   option = 'NB'   icon_name = icon_interval_exclude_red ) ).
   ENDMETHOD.
 
   METHOD init_lang.
