@@ -81,7 +81,7 @@ ENDCLASS.
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
-      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout type lvc_s_layo optional,
+      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
       translate_field IMPORTING i_lang LIKE sy-ucomm OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
 ENDCLASS.
 
@@ -92,7 +92,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     l_stable-row = 'X'.
     l_stable-col = 'X'.
 
-    IF i_layout is SUPPLIED.
+    IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
     i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = '' ).
@@ -192,13 +192,13 @@ CLASS lcl_create_data IMPLEMENTATION.
   METHOD create_field_cat.
     DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info type table of DFIES.
+          lt_field_info  TYPE TABLE OF dfies.
 
     lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
     it_tabdescr[] = lr_table_descr->components[].
 
     LOOP AT it_tabdescr INTO DATA(ls).
-      data(l_ind) = sy-tabix.
+      DATA(l_ind) = sy-tabix.
       CALL FUNCTION 'DDIF_FIELDINFO_GET'
         EXPORTING
           tabname        = i_tname
@@ -211,8 +211,8 @@ CLASS lcl_create_data IMPLEMENTATION.
           internal_error = 2
           OTHERS         = 3.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<line>).
-      MOVE-CORRESPONDING lt_field_info[ 1 ] to <line>.
-       <line>-col_pos = l_ind.
+      MOVE-CORRESPONDING lt_field_info[ 1 ] TO <line>.
+      <line>-col_pos = l_ind.
     ENDLOOP.
   ENDMETHOD.
 
@@ -388,7 +388,8 @@ CLASS lcl_table_viewer DEFINITION.
           mo_alv_catalog     TYPE lvc_t_fcat,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
-          m_visible.
+          m_visible,
+          m_std_tbar         TYPE x.
 
     METHODS:
       constructor IMPORTING i_tname TYPE tabname,
@@ -721,16 +722,23 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
-      DATA(lt_toolbar) = VALUE ttb_button( ( function = 'SEL_ON' icon = icon_arrow_left quickinfo = 'Select-Options' butn_type = 0 )
+      DATA(lt_toolbar) = VALUE ttb_button( ( function = 'SEL_ON' icon = icon_arrow_left quickinfo = 'Show Select-Options' butn_type = 0 )
                                            ( butn_type = 3 ) ).
     ENDIF.
 
-    lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
-                                 ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
-                                 ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
-                                 ( butn_type = 3 ) ).
+    lt_toolbar = VALUE ttb_button( BASE lt_toolbar
+     ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
+     ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
+     ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
+     ( function = 'TBAR' icon = COND #( WHEN m_std_tbar IS INITIAL THEN icon_column_right ELSE icon_column_left )
+         quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
+     ( butn_type = 3 ) ).
 
-    e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
+    IF m_std_tbar IS INITIAL.
+      e_object->mt_toolbar =  lt_toolbar.
+    ELSE.
+      e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
+    ENDIF.
   ENDMETHOD.
 
   METHOD handle_menu_button.
@@ -784,49 +792,49 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
       mo_alv->set_toolbar_interactive( ).
       RETURN.
-    ENDIF.
-
-    LOOP AT it_fields ASSIGNING <field>.
-      CASE e_ucomm.
-        WHEN 'HIDE'. "hide select options
-          lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
-          LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
-            EXIT.
-          ENDLOOP.
-
-          IF sy-subrc NE 0.
-            <field>-no_out = 'X'.
-          ENDIF.
-
-        WHEN 'SHOW'.
-          <field>-no_out = ' '.
-        WHEN 'TECH'. "technical field name
-          <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
-        WHEN 'TABLES'.
-          DATA(lt_obj) = VALUE sdg1_obj( (  obj_name = m_tabname type = 'TABL' )  ).
-          CALL FUNCTION 'REPOSITORY_STRUCTURE_GRAPH'
-            EXPORTING
-              type    = 'TABL'
-            TABLES
-              objects = lt_obj.
-          SET TITLEBAR 'SDE'.
-          RETURN.
-        WHEN OTHERS. "header names translation
-          READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
-          IF sy-subrc = 0.
-            lcl_alv_common=>translate_field( EXPORTING i_lang = e_ucomm CHANGING c_fld = <field> ).
-            IF mo_sel IS BOUND.
-              TRY.
-                  mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-scrtext_l.
-                  IF mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name IS INITIAL.
-                    mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-reptext.
-                  ENDIF.
-                CATCH cx_sy_itab_line_not_found.
-              ENDTRY.
+    ELSEIF e_ucomm = 'TBAR'.
+      m_std_tbar = BIT-NOT  m_std_tbar.
+    ELSEIF e_ucomm = 'MTABLE'.
+      DATA(lt_obj) = VALUE sdg1_obj( (  obj_name = m_tabname type = 'TABL' )  ).
+      CALL FUNCTION 'REPOSITORY_STRUCTURE_GRAPH'
+        EXPORTING
+          type    = 'TABL'
+        TABLES
+          objects = lt_obj.
+      SET TITLEBAR 'SDE'.
+      RETURN.
+    ELSE.
+      LOOP AT it_fields ASSIGNING <field>.
+        CASE e_ucomm.
+          WHEN 'HIDE'. "hide select options
+            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
+            LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+              EXIT.
+            ENDLOOP.
+            IF sy-subrc NE 0.
+              <field>-no_out = 'X'.
             ENDIF.
-          ENDIF.
-      ENDCASE.
-    ENDLOOP.
+          WHEN 'SHOW'.
+            <field>-no_out = ' '.
+          WHEN 'TECH'. "technical field name
+            <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
+          WHEN OTHERS. "header names translation
+            READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
+            IF sy-subrc = 0.
+              lcl_alv_common=>translate_field( EXPORTING i_lang = e_ucomm CHANGING c_fld = <field> ).
+              IF mo_sel IS BOUND.
+                TRY.
+                    mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-scrtext_l.
+                    IF mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name IS INITIAL.
+                      mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-reptext.
+                    ENDIF.
+                  CATCH cx_sy_itab_line_not_found.
+                ENDTRY.
+              ENDIF.
+            ENDIF.
+        ENDCASE.
+      ENDLOOP.
+    ENDIF.
 
     READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
     IF sy-subrc = 0.
@@ -1059,21 +1067,21 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         CLEAR c_sel_row-high.
       ENDIF.
       IF c_sel_row-int_type = 'D'.
-        DO 2 times.
-        ASSIGN COMPONENT  COND string( WHEN sy-index = 1 then 'LOW' else 'HIGH'  ) of STRUCTURE <range> to FIELD-SYMBOL(<field>).
-         IF <field> is INITIAL.
-          CONTINUE.
-        ENDIF.
+        DO 2 TIMES.
+          ASSIGN COMPONENT  COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO FIELD-SYMBOL(<field>).
+          IF <field> IS INITIAL.
+            CONTINUE.
+          ENDIF.
 
-        CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
-          EXPORTING
-            date_external            = <FIELD>
-          IMPORTING
-            date_internal            = <FIELD>
-          EXCEPTIONS
-            date_external_is_invalid = 1
-            OTHERS                   = 2.
-       ENDDO.
+          CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+            EXPORTING
+              date_external            = <field>
+            IMPORTING
+              date_internal            = <field>
+            EXCEPTIONS
+              date_external_is_invalid = 1
+              OTHERS                   = 2.
+        ENDDO.
       ENDIF.
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
@@ -1179,53 +1187,53 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed.
-    data: lt_cells type LVC_T_MODI.
+    DATA: lt_cells TYPE lvc_t_modi.
     FIELD-SYMBOLS: <field> TYPE any.
     LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
       READ TABLE mo_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
       ASSIGN COMPONENT <ls_cells>-fieldname OF STRUCTURE <tab> TO <field>.
       IF <tab>-int_type = 'D'.
-          data: lv_date type sy-datum.
-         CALL FUNCTION 'CONVERT_DATE_INPUT'
-           EXPORTING
-             input                           = <ls_cells>-value
-            PLAUSIBILITY_CHECK              = 'X'
-          IMPORTING
-            OUTPUT                          = lv_date
-          EXCEPTIONS
-            PLAUSIBILITY_CHECK_FAILED       = 1
-            WRONG_FORMAT_IN_INPUT           = 2
-            OTHERS                          = 3.
-
-         CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+        DATA: lv_date TYPE sy-datum.
+        CALL FUNCTION 'CONVERT_DATE_INPUT'
           EXPORTING
-            DATE_INTERNAL                  = lv_Date
+            input                     = <ls_cells>-value
+            plausibility_check        = 'X'
           IMPORTING
-            DATE_EXTERNAL                  = <ls_cells>-value
+            output                    = lv_date
           EXCEPTIONS
-            DATE_INTERNAL_IS_INVALID       = 1
-            OTHERS                         = 2.
-          clear lv_date.
+            plausibility_check_failed = 1
+            wrong_format_in_input     = 2
+            OTHERS                    = 3.
+
+        CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+          EXPORTING
+            date_internal            = lv_date
+          IMPORTING
+            date_external            = <ls_cells>-value
+          EXCEPTIONS
+            date_internal_is_invalid = 1
+            OTHERS                   = 2.
+        CLEAR lv_date.
 
       ELSEIF <tab>-int_type = 'T'.
-          data: lv_time type sy-uzeit.
-          CALL FUNCTION 'CONVERT_TIME_INPUT'
+        DATA: lv_time TYPE sy-uzeit.
+        CALL FUNCTION 'CONVERT_TIME_INPUT'
           EXPORTING
-            input                           = <ls_cells>-value
-         IMPORTING
-           OUTPUT                          = lv_time
-         EXCEPTIONS
-           PLAUSIBILITY_CHECK_FAILED       = 1
-           WRONG_FORMAT_IN_INPUT           = 2
-           OTHERS                          = 3.
+            input                     = <ls_cells>-value
+          IMPORTING
+            output                    = lv_time
+          EXCEPTIONS
+            plausibility_check_failed = 1
+            wrong_format_in_input     = 2
+            OTHERS                    = 3.
 
 
-       <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
+        <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
 
       ELSE.
       ENDIF.
-       <field> = <ls_cells>-value.
-       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
+      <field> = <ls_cells>-value.
+      er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
 
     ENDLOOP.
     LOOP AT mo_sel_tab  ASSIGNING <tab>.
