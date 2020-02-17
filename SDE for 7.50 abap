@@ -794,7 +794,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       RETURN.
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
-    ELSEIF e_ucomm = 'MTABLE'.
+    ELSEIF e_ucomm = 'TABLES'.
       DATA(lt_obj) = VALUE sdg1_obj( (  obj_name = m_tabname type = 'TABL' )  ).
       CALL FUNCTION 'REPOSITORY_STRUCTURE_GRAPH'
         EXPORTING
