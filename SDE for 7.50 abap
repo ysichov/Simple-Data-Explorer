@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.1.119.96
+*& version: alpha 0.1.104.84
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap
 *&
 *& Written by Yurii Sychov
@@ -81,7 +81,7 @@ ENDCLASS.
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
-      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid,
+      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout type lvc_s_layo optional,
       translate_field IMPORTING i_lang LIKE sy-ucomm OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
 ENDCLASS.
 
@@ -91,7 +91,11 @@ CLASS lcl_alv_common IMPLEMENTATION.
     DATA l_stable TYPE lvc_s_stbl.
     l_stable-row = 'X'.
     l_stable-col = 'X'.
-    i_obj->refresh_table_display( EXPORTING is_stable = l_stable ).
+
+    IF i_layout is SUPPLIED.
+      i_obj->set_frontend_layout( i_layout ) .
+    ENDIF.
+    i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = '' ).
   ENDMETHOD.
 
   METHOD translate_field.
@@ -126,12 +130,18 @@ CLASS lcl_alv_common IMPLEMENTATION.
     IF sy-subrc = 0.
       READ TABLE lt_field_info INDEX 1 INTO DATA(l_info).
       IF l_info-scrtext_l IS INITIAL AND l_info-scrtext_m IS INITIAL AND l_info-scrtext_s IS INITIAL.
-        MOVE l_info-fieldtext TO: c_fld-reptext, c_fld-scrtext_l, c_fld-scrtext_m, c_fld-scrtext_s .
+        IF l_info-fieldtext IS NOT INITIAL.
+          MOVE l_info-fieldtext TO: c_fld-reptext, c_fld-scrtext_l, c_fld-scrtext_m, c_fld-scrtext_s .
+        ELSE.
+          MOVE l_info-fieldname TO: c_fld-reptext, c_fld-scrtext_l, c_fld-scrtext_m, c_fld-scrtext_s .
+        ENDIF.
       ELSE.
         c_fld-scrtext_l = l_info-scrtext_l.
         c_fld-scrtext_m = l_info-scrtext_m.
         c_fld-scrtext_s = l_info-scrtext_s.
-        c_fld-reptext   = l_info-reptext.
+        IF l_info-reptext IS NOT INITIAL.
+          c_fld-reptext   = l_info-reptext.
+        ENDIF.
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -173,10 +183,39 @@ ENDCLASS.
 CLASS lcl_create_data DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
-      create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data.
+      create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
+      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
 ENDCLASS.
 
 CLASS lcl_create_data IMPLEMENTATION.
+
+  METHOD create_field_cat.
+    DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
+          it_tabdescr    TYPE abap_compdescr_tab,
+          lt_field_info type table of DFIES.
+
+    lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
+    it_tabdescr[] = lr_table_descr->components[].
+
+    LOOP AT it_tabdescr INTO DATA(ls).
+      data(l_ind) = sy-tabix.
+      CALL FUNCTION 'DDIF_FIELDINFO_GET'
+        EXPORTING
+          tabname        = i_tname
+          fieldname      = ls-name
+          langu          = sy-langu
+        TABLES
+          dfies_tab      = lt_field_info
+        EXCEPTIONS
+          not_found      = 1
+          internal_error = 2
+          OTHERS         = 3.
+      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<line>).
+      MOVE-CORRESPONDING lt_field_info[ 1 ] to <line>.
+       <line>-col_pos = l_ind.
+    ENDLOOP.
+  ENDMETHOD.
+
   METHOD create_table.
 
     FIELD-SYMBOLS: <f_tab>   TYPE ANY TABLE.
@@ -286,7 +325,8 @@ CLASS lcl_sel_opt DEFINITION.
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
-          mo_sel_tab TYPE TABLE OF selection_display_s.
+          mo_sel_tab TYPE TABLE OF selection_display_s,
+          ms_layout  TYPE lvc_s_layo.
 
     EVENTS: selection_done.
 
@@ -442,7 +482,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
       <to>-transmitter->emit( EXPORTING e_row = e_row ).
     ENDIF.
 
-    lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv ).
+    lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv  ).
     lo_sel_to->raise_selection_done( ).
   ENDMETHOD.
 
@@ -628,6 +668,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
 
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
+
+    mo_alv_catalog = lcl_create_data=>create_field_cat( m_tabname ).
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
         i_save           = 'X'
@@ -635,6 +677,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         i_structure_name = m_tabname
         is_layout        = ls_layout
       CHANGING
+        it_fieldcatalog  = mo_alv_catalog
         it_outtab        = <f_tab>.
 
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_alv_catalog ).
@@ -674,6 +717,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lv_header = |{ m_tabname } - { lv_text } ({ m_count })|.
     mo_box->set_caption( lv_header ).
   ENDMETHOD.
+
 
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
@@ -802,8 +846,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD get_where."dynamic where clause
 
-    DATA: lt_where    TYPE rsds_twhere,
-          lt_range    TYPE rsds_trange.
+    DATA: lt_where TYPE rsds_twhere,
+          lt_range TYPE rsds_trange.
 
     IF  mo_sel IS NOT INITIAL.
       APPEND INITIAL LINE TO lt_range ASSIGNING FIELD-SYMBOL(<tabl>).
@@ -854,8 +898,7 @@ ENDCLASS.
 
 CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD constructor.
-    DATA: ls_layout  TYPE lvc_s_layo,
-          effect     TYPE i,
+    DATA: effect     TYPE i,
           handle_alv TYPE i.
 
     mo_viewer = io_viewer.
@@ -873,9 +916,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
 
-    ls_layout-s_dragdrop-col_ddid = handle_alv.
+    ms_layout-s_dragdrop-col_ddid = handle_alv.
     init_fcat( handle_alv ).
-    ls_layout-cwidth_opt = 'X'.
+    ms_layout-cwidth_opt = 'X'.
+    ms_layout-col_opt = 'X'.
 
     "fields for F4 event handling
     DATA(gt_f4) = VALUE  lvc_t_f4( register   = 'X' chngeafter = 'X'
@@ -884,6 +928,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     mo_sel_alv->register_f4_for_fields( it_f4 = gt_f4 ).
     mo_sel_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_enter ).
+    mo_sel_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
 
     SET HANDLER handle_user_command
                 handle_sel_toolbar
@@ -899,7 +944,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       EXPORTING
         i_save          = 'X'
         i_default       = 'X'
-        is_layout       = ls_layout
+        is_layout       = ms_layout
       CHANGING
         it_outtab       = mo_sel_tab[]
         it_fieldcatalog = mt_fcat.
@@ -910,11 +955,11 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD init_fcat.
     mt_fcat = VALUE #( ( fieldname = 'IND'         coltext = '№'  outputlen = 3 )
                       ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' )
-                      ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X')
+                      ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X' )
                       ( fieldname = 'OPTI'        coltext = 'Option' tech = 'X' )
                       ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
-                      ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 )
-                      ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 )
+                      ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 col_opt = 'X'  )
+                      ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4  col_opt = 'X' )
                       ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = cl_gui_alv_grid=>mc_style_button )
                       ( fieldname = 'RANGE'   tech = 'X'  )
                       ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited')
@@ -1014,23 +1059,21 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         CLEAR c_sel_row-high.
       ENDIF.
       IF c_sel_row-int_type = 'D'.
-                 CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
-              EXPORTING
-                date_external            = <range>-low
-              IMPORTING
-                date_internal            = <range>-low
-              EXCEPTIONS
-                date_external_is_invalid = 1
-                OTHERS                   = 2.
+        DO 2 times.
+        ASSIGN COMPONENT  COND string( WHEN sy-index = 1 then 'LOW' else 'HIGH'  ) of STRUCTURE <range> to FIELD-SYMBOL(<field>).
+         IF <field> is INITIAL.
+          CONTINUE.
+        ENDIF.
 
-            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
-              EXPORTING
-                date_external            = <range>-high
-              IMPORTING
-                date_internal            = <range>-high
-              EXCEPTIONS
-                date_external_is_invalid = 1
-                OTHERS                   = 2.
+        CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+          EXPORTING
+            date_external            = <FIELD>
+          IMPORTING
+            date_internal            = <FIELD>
+          EXCEPTIONS
+            date_external_is_invalid = 1
+            OTHERS                   = 2.
+       ENDDO.
       ENDIF.
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
@@ -1136,20 +1179,65 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed.
+    data: lt_cells type LVC_T_MODI.
     FIELD-SYMBOLS: <field> TYPE any.
-    LOOP AT er_data_changed->mt_mod_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
+    LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
       READ TABLE mo_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
       ASSIGN COMPONENT <ls_cells>-fieldname OF STRUCTURE <tab> TO <field>.
-      <field> = <ls_cells>-value.
+      IF <tab>-int_type = 'D'.
+          data: lv_date type sy-datum.
+         CALL FUNCTION 'CONVERT_DATE_INPUT'
+           EXPORTING
+             input                           = <ls_cells>-value
+            PLAUSIBILITY_CHECK              = 'X'
+          IMPORTING
+            OUTPUT                          = lv_date
+          EXCEPTIONS
+            PLAUSIBILITY_CHECK_FAILED       = 1
+            WRONG_FORMAT_IN_INPUT           = 2
+            OTHERS                          = 3.
+
+         CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+          EXPORTING
+            DATE_INTERNAL                  = lv_Date
+          IMPORTING
+            DATE_EXTERNAL                  = <ls_cells>-value
+          EXCEPTIONS
+            DATE_INTERNAL_IS_INVALID       = 1
+            OTHERS                         = 2.
+          clear lv_date.
+
+      ELSEIF <tab>-int_type = 'T'.
+          data: lv_time type sy-uzeit.
+          CALL FUNCTION 'CONVERT_TIME_INPUT'
+          EXPORTING
+            input                           = <ls_cells>-value
+         IMPORTING
+           OUTPUT                          = lv_time
+         EXCEPTIONS
+           PLAUSIBILITY_CHECK_FAILED       = 1
+           WRONG_FORMAT_IN_INPUT           = 2
+           OTHERS                          = 3.
+
+
+       <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
+
+      ELSE.
+      ENDIF.
+       <field> = <ls_cells>-value.
+       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
+
     ENDLOOP.
     LOOP AT mo_sel_tab  ASSIGNING <tab>.
       update_sel_row( CHANGING c_sel_row = <tab> ).
     ENDLOOP.
-    lcl_alv_common=>refresh( mo_sel_alv ).
+    lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
   ENDMETHOD.
 
   METHOD on_data_changed_finished.
+
     CHECK e_modified IS NOT INITIAL.
+
     RAISE EVENT selection_done.
   ENDMETHOD.
 
