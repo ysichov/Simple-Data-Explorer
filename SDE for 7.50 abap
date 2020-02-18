@@ -182,6 +182,12 @@ ENDCLASS.
 
 CLASS lcl_create_data DEFINITION.
   PUBLIC SECTION.
+TYPES: BEGIN OF t_tabfields.
+        INCLUDE TYPE   dfies.
+    TYPES: empty(1),
+           END OF t_tabfields.
+
+    CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
     CLASS-METHODS:
       create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
       create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
@@ -199,20 +205,30 @@ CLASS lcl_create_data IMPLEMENTATION.
 
     LOOP AT it_tabdescr INTO DATA(ls).
       DATA(l_ind) = sy-tabix.
-      CALL FUNCTION 'DDIF_FIELDINFO_GET'
-        EXPORTING
-          tabname        = i_tname
-          fieldname      = ls-name
-          langu          = sy-langu
-        TABLES
-          dfies_tab      = lt_field_info
-        EXCEPTIONS
-          not_found      = 1
-          internal_error = 2
-          OTHERS         = 3.
-      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<line>).
-      MOVE-CORRESPONDING lt_field_info[ 1 ] TO <line>.
-      <line>-col_pos = l_ind.
+      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+
+      READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
+      IF sy-subrc NE 0.
+        CALL FUNCTION 'DDIF_FIELDINFO_GET'
+          EXPORTING
+            tabname        = i_tname
+            fieldname      = ls-name
+            langu          = sy-langu
+          TABLES
+            dfies_tab      = lt_field_info
+          EXCEPTIONS
+            not_found      = 1
+            internal_error = 2
+            OTHERS         = 3.
+        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
+        INSERT ls_tf INTO TABLE mt_tabfields.
+      ENDIF.
+
+      MOVE-CORRESPONDING ls_tf TO <catalog>.
+      IF ls_tf-empty IS NOT INITIAL.
+        "<catalog>-no_out = 'X'.
+      ENDIF.
+      <catalog>-col_pos = l_ind.
     ENDLOOP.
   ENDMETHOD.
 
@@ -803,11 +819,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       LOOP AT it_fields ASSIGNING <field>.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
-            LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
-              EXIT.
-            ENDLOOP.
-            IF sy-subrc NE 0.
+            lv_clause = |{ <field>-fieldname } NE ''|.
+             SELECT COUNT( * ) FROM (m_tabname)  WHERE (lv_clause).
+            IF sy-dbcnt = 0.
               <field>-no_out = 'X'.
             ENDIF.
           WHEN 'SHOW'.
