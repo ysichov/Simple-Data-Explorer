@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.1.104.84
+*& version: alpha 0.2.134.110
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap
 *&
 *& Written by Yurii Sychov
@@ -39,10 +39,8 @@ ENDCLASS.
 CLASS lcl_dragdrop DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
-      drag FOR EVENT ondrag OF cl_gui_alv_grid
-        IMPORTING es_row_no e_dragdropobj e_row e_column ,
-      drop FOR EVENT ondrop OF cl_gui_alv_grid
-        IMPORTING es_row_no e_dragdropobj e_row.
+      drag FOR EVENT ondrag OF cl_gui_alv_grid IMPORTING e_dragdropobj e_row e_column ,
+      drop FOR EVENT ondrop OF cl_gui_alv_grid IMPORTING e_dragdropobj e_row.
 ENDCLASS.
 
 CLASS lcl_sql DEFINITION.
@@ -63,9 +61,9 @@ CLASS lcl_sql IMPLEMENTATION.
     IF i_where IS NOT INITIAL.
       TRY.
           SELECT * FROM (i_tabname) INTO TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
-        CATCH cx_sy_dynamic_osql_semantics.
-        CATCH cx_sy_dynamic_osql_syntax.
-        CATCH cx_sy_conversion_no_number.
+        CATCH cx_sy_dynamic_osql_semantics."#EC NO_HANDLER
+        CATCH cx_sy_dynamic_osql_syntax."#EC NO_HANDLER
+        CATCH cx_sy_conversion_no_number."#EC NO_HANDLER
       ENDTRY.
     ELSE.
       IF i_row_count IS NOT SUPPLIED.
@@ -192,6 +190,11 @@ CLASS lcl_create_data DEFINITION.
       create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
       create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data,
       create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
+
+    PRIVATE SECTION.
+    CLASS-METHODS:
+      get_struc_handle IMPORTING i_tname TYPE tabname RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr.
+
 ENDCLASS.
 
 CLASS lcl_create_data IMPLEMENTATION.
@@ -200,7 +203,6 @@ CLASS lcl_create_data IMPLEMENTATION.
     DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
           lt_field_info  TYPE TABLE OF dfies,
-          mask           TYPE xstring,
           style          TYPE xstring,
           style2         TYPE xstring.
 
@@ -243,12 +245,8 @@ CLASS lcl_create_data IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
-  METHOD create_structure.
-    FIELD-SYMBOLS: <f_struc>   TYPE any .
-* Dynamic Table creation
-    DATA: lo_struct   TYPE REF TO cl_abap_structdescr,
-          lo_new_type TYPE REF TO cl_abap_structdescr,
-          lo_new_tab  TYPE REF TO cl_abap_tabledescr,
+METHOD get_struc_handle.
+   DATA: lo_struct   TYPE REF TO cl_abap_structdescr,
           lo_type     TYPE REF TO cl_abap_typedescr,
           lt_comp     TYPE cl_abap_structdescr=>component_table.
 
@@ -271,45 +269,24 @@ CLASS lcl_create_data IMPLEMENTATION.
     lt_comp  = lo_struct->get_components( ).
 
 * 3. Create a New Type
-    lo_new_type = cl_abap_structdescr=>create( lt_comp ).
+    handle = cl_abap_structdescr=>create( lt_comp ).
+
+ENDMETHOD.
+
+  METHOD create_structure.
+    DATA: lo_new_type TYPE REF TO cl_abap_structdescr.
+lo_new_type = get_struc_handle( i_tname ).
 
 * 5. data to handle the new table type
     CREATE DATA c_struc TYPE HANDLE lo_new_type.
-* 6. New internal table in the fieldsymbols
-    ASSIGN c_struc->* TO <f_struc>.
-
   ENDMETHOD.
 
   METHOD create_table.
 
-    FIELD-SYMBOLS: <f_tab>   TYPE ANY TABLE.
-* Dynamic Table creation
-    DATA: lo_struct   TYPE REF TO cl_abap_structdescr,
-          lo_new_type TYPE REF TO cl_abap_structdescr,
-          lo_new_tab  TYPE REF TO cl_abap_tabledescr,
-          lo_type     TYPE REF TO cl_abap_typedescr,
-          lt_comp     TYPE cl_abap_structdescr=>component_table.
+    DATA: lo_new_type TYPE REF TO cl_abap_structdescr,
+          lo_new_tab  TYPE REF TO cl_abap_tabledescr.
 
-*...............Dynamic Internal Table........................*
-* 1. Getting Components from existing type
-    CALL METHOD cl_abap_typedescr=>describe_by_name
-      EXPORTING
-        p_name         = i_tname
-      RECEIVING
-        p_descr_ref    = lo_type
-      EXCEPTIONS
-        type_not_found = 1
-        OTHERS         = 2.
-
-    IF sy-subrc NE 0.
-      MESSAGE 'Table Structure not found'(001) TYPE 'E' DISPLAY LIKE 'I'.
-    ENDIF.
-
-    lo_struct ?= lo_type.
-    lt_comp  = lo_struct->get_components( ).
-
-* 3. Create a New Type
-    lo_new_type = cl_abap_structdescr=>create( lt_comp ).
+ lo_new_type = get_struc_handle( i_tname ).
 * 4. New Table type
     lo_new_tab = cl_abap_tabledescr=>create(
                     p_line_type  = lo_new_type
@@ -318,8 +295,6 @@ CLASS lcl_create_data IMPLEMENTATION.
 
 * 5. data to handle the new table type
     CREATE DATA c_table TYPE HANDLE lo_new_tab.
-* 6. New internal table in the fieldsymbols
-    ASSIGN c_table->* TO <f_tab>.
   ENDMETHOD.
 ENDCLASS.
 
@@ -328,7 +303,7 @@ CLASS lcl_data_transmitter DEFINITION.
     EVENTS: data_changed EXPORTING VALUE(e_row) TYPE t_sel_row,
              col_changed EXPORTING VALUE(e_column) TYPE lvc_fname.
     METHODS: emit IMPORTING e_row TYPE t_sel_row,
-      emit_col IMPORTING e_column TYPE lvc_fname.
+             emit_col IMPORTING e_column TYPE lvc_fname.
 ENDCLASS.
 
 CLASS lcl_data_transmitter IMPLEMENTATION.
@@ -383,7 +358,6 @@ CLASS lcl_sel_opt DEFINITION.
         name        TYPE reptext,
         transmitter TYPE REF TO lcl_data_transmitter,
         receiver    TYPE REF TO lcl_data_receiver,
-        change(1),
       END OF selection_display_s.
 
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
@@ -470,7 +444,6 @@ CLASS lcl_table_viewer DEFINITION.
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
       handle_hotspot      FOR EVENT hotspot_click OF cl_gui_alv_grid IMPORTING e_column_id e_row_id es_row_no.
-    .
 ENDCLASS.
 
 CLASS lcl_data_receiver IMPLEMENTATION.
@@ -745,8 +718,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
     mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mo_alv_catalog ).
 
-
-
     LOOP AT mo_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
       lcl_alv_common=>translate_field(  CHANGING c_fld = <cat> ).
     ENDLOOP.
@@ -777,8 +748,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     SELECT SINGLE ddtext INTO lv_text
       FROM dd02t
-      WHERE tabname = m_tabname
-        AND ddlanguage = m_lang.
+     WHERE tabname = m_tabname
+       AND ddlanguage = m_lang.
 
     lv_header = |{ m_tabname } - { lv_text } ({ m_count })|.
     mo_box->set_caption( lv_header ).
@@ -908,10 +879,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         lv_sel_width = mo_sel_width.
       ENDIF.
 
-      mo_splitter->set_column_width( EXPORTING
-          id    = 1
-          width = lv_sel_width ).
-
+      mo_splitter->set_column_width( EXPORTING id    = 1 width = lv_sel_width ).
       mo_alv->set_toolbar_interactive( ).
       RETURN.
     ELSEIF e_ucomm = 'TBAR'.
@@ -955,7 +923,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
                     IF mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name IS INITIAL.
                       mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-reptext.
                     ENDIF.
-                  CATCH cx_sy_itab_line_not_found.
+                  CATCH cx_sy_itab_line_not_found."#EC NO_HANDLER
                 ENDTRY.
               ENDIF.
             ENDIF.
@@ -1020,7 +988,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
       ENDIF.
-      CLEAR <sel>-change.
     ENDLOOP.
 
     lcl_alv_common=>refresh( mo_alv ).
@@ -1113,7 +1080,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
       ENDIF.
-      CLEAR <sel>-change.
     ENDLOOP.
   ENDMETHOD.
 
@@ -1154,33 +1120,28 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     IF c_sel_row-low IS NOT INITIAL AND c_sel_row-opti IS INITIAL.
       c_sel_row-sign = 'I'.
       c_sel_row-opti = 'EQ'.
-      c_sel_row-change = 'X'.
     ENDIF.
 
     IF c_sel_row-high IS NOT INITIAL AND c_sel_row-opti NE 'NB' .
       c_sel_row-opti = 'BT'.
-      c_sel_row-change = 'X'.
     ENDIF.
 
     IF c_sel_row-sign IS INITIAL AND c_sel_row-opti IS INITIAL.
       CLEAR: c_sel_row-low, c_sel_row-low.
-      c_sel_row-change = 'X'.
     ENDIF.
 
     IF c_sel_row-low CA  '*%+&'.
       c_sel_row-sign = 'I'.
       c_sel_row-opti = 'CP'.
-      c_sel_row-change = 'X'.
     ENDIF.
 
     IF c_sel_row-opti IS NOT INITIAL AND c_sel_row-sign IS INITIAL.
       c_sel_row-sign = 'I'.
-      c_sel_row-change = 'X'.
     ENDIF.
 
     TRY.
         c_sel_row-option_icon = lcl_appl=>m_option_icons[ sign = c_sel_row-sign option = c_sel_row-opti ]-icon_name.
-      CATCH cx_sy_itab_line_not_found.
+      CATCH cx_sy_itab_line_not_found."#EC NO_HANDLER
     ENDTRY.
 
     IF c_sel_row-sign IS NOT INITIAL.
@@ -1275,10 +1236,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         IF sy-subrc = 0.
           <tab>-sign = lv_sign.
           <tab>-opti = lv_option.
-          <tab>-change = 'X'.
         ELSEIF sy-subrc = 1.
           CLEAR: <tab>-low, <tab>-high,<tab>-sign, <tab>-opti, <tab>-range.
-          <tab>-change = 'X'.
         ENDIF.
       WHEN 'MORE_ICON'. "edit ranges
         l_tabfield-tablename = mo_viewer->m_tabname.
@@ -1302,7 +1261,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           MOVE-CORRESPONDING l_range TO <tab>.
           IF <tab>-opti NE 'BT'.
             CLEAR <tab>-high.
-            <tab>-change = 'X'.
           ENDIF.
         ENDIF.
     ENDCASE.
@@ -1313,7 +1271,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed.
-    DATA: lt_cells TYPE lvc_t_modi.
     FIELD-SYMBOLS: <field> TYPE any.
     LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
       READ TABLE mo_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
@@ -1341,7 +1298,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             OTHERS                   = 2.
         CLEAR lv_date.
 
-      ELSEIF <tab>-int_type = 'T'.
+      ELSEIF <tab>-int_type = 'T'."strange dump with time field
         DATA: lv_time TYPE sy-uzeit.
         CALL FUNCTION 'CONVERT_TIME_INPUT'
           EXPORTING
@@ -1354,8 +1311,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             OTHERS                    = 3.
 
         <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
-
-      ELSE.
       ENDIF.
       <field> = <ls_cells>-value.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
@@ -1368,9 +1323,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed_finished.
-
     CHECK e_modified IS NOT INITIAL.
-
     RAISE EVENT selection_done.
   ENDMETHOD.
 
@@ -1581,7 +1534,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       LOOP AT lt_sel_col INTO DATA(l_col).
         TRY.
             lo_from_tab->mo_alv_catalog[ fieldname = l_col-fieldname ]-style = cl_gui_alv_grid=>mc_style_button.
-          CATCH cx_sy_itab_line_not_found.
+          CATCH cx_sy_itab_line_not_found."#EC NO_HANDLER
         ENDTRY.
         READ TABLE lo_from_tab->mo_column_emitters WITH KEY column = l_col ASSIGNING FIELD-SYMBOL(<emitter>).
         IF sy-subrc NE 0.
@@ -1630,7 +1583,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
             ENDIF.
           ENDLOOP.
           lo_to->update_sel_row( CHANGING c_sel_row = <to_tab> ).
-        CATCH cx_sy_itab_line_not_found.
+        CATCH cx_sy_itab_line_not_found. "#EC NO_HANDLER
       ENDTRY.
     ENDIF.
 
@@ -1696,6 +1649,3 @@ AT SELECTION-SCREEN.
   CHECK lcl_appl=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
-
-*AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_tname.
-*  lcl_appl=>f4( ).
