@@ -22,7 +22,7 @@ TYPES:
     range       TYPE aqadh_t_ranges,
   END OF t_sel_row.
 
-PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15.
+PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
 CLASS lcl_table_viewer DEFINITION DEFERRED.
@@ -176,7 +176,7 @@ CLASS lcl_appl DEFINITION.
       init_icons_table,
       init_lang,
       suppress_run_button,
-      f4,
+
       exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
 ENDCLASS.
 
@@ -864,18 +864,20 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
       ENDIF.
 
-      DATA: l_domen TYPE dd03l-domname.
-      SELECT SINGLE domname INTO l_domen
-        FROM dd03l
-       WHERE tabname = m_tabname
-         AND fieldname = e_column_id.
+      DATA: lt_keys TYPE TABLE OF dd05p.
+      CALL FUNCTION 'DD_FORKEY_GET'
+        EXPORTING
+          feldname  = CONV fieldname( e_column_id )
+          tabname   = CONV tabname( m_tabname )
+        TABLES
+          forkeytab = lt_keys
+        EXCEPTIONS
+          not_equal = 1
+          not_found = 2
+          not_valid = 3
+          OTHERS    = 4.
 
-     Select single fieldname into @data(l_checkfield)
-       from dd03l
-      where tabname = @field-checktable
-        and domname = @l_domen.
-
-      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = l_checkfield.
+      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = lt_keys[ fieldname = e_column_id forkey = e_column_id  ]-checkfield.
       IF sy-subrc = 0.
         CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
         <to>-low = <field>.
@@ -1519,27 +1521,10 @@ CLASS lcl_appl IMPLEMENTATION.
         p_exclude = itab.
   ENDMETHOD.
 
-  METHOD f4.
-    DATA(lt_dynpfields) = VALUE dynpread_tabtype( ( fieldname  = 'GV_TNAME' ) ).
-
-    CALL FUNCTION 'DYNP_VALUES_READ'
-      EXPORTING
-        dyname     = sy-cprog
-        dynumb     = sy-dynnr
-      TABLES
-        dynpfields = lt_dynpfields.
-
-    CALL FUNCTION 'F4_DD_TABLES'
-      EXPORTING
-        object = CONV tabname( lt_dynpfields[ 1 ]-fieldvalue )
-      IMPORTING
-        result = gv_tname.
-  ENDMETHOD.
-
   METHOD exist_table.
-    Select count( * ) from dd02l
-     where tabname = gv_tname
-       and tabclass = 'TRANSP'.
+    SELECT COUNT( * ) FROM dd02l
+     WHERE tabname = gv_tname
+       AND tabclass = 'TRANSP'.
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
@@ -1712,5 +1697,5 @@ AT SELECTION-SCREEN.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
 
-AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_tname.
-  lcl_appl=>f4( ).
+*AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_tname.
+*  lcl_appl=>f4( ).
