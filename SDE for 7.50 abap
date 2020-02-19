@@ -182,14 +182,15 @@ ENDCLASS.
 
 CLASS lcl_create_data DEFINITION.
   PUBLIC SECTION.
-TYPES: BEGIN OF t_tabfields.
+    TYPES: BEGIN OF t_tabfields.
         INCLUDE TYPE   dfies.
-    TYPES: empty(1),
+    TYPES: "empty(1),
            END OF t_tabfields.
 
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
     CLASS-METHODS:
       create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
+      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data,
       create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
 ENDCLASS.
 
@@ -198,13 +199,16 @@ CLASS lcl_create_data IMPLEMENTATION.
   METHOD create_field_cat.
     DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info  TYPE TABLE OF dfies.
+          lt_field_info  TYPE TABLE OF dfies,
+          mask           TYPE xstring,
+          style          TYPE xstring,
+          style2         TYPE xstring.
 
     lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
     it_tabdescr[] = lr_table_descr->components[].
 
+    style = '00080000'.
     LOOP AT it_tabdescr INTO DATA(ls).
-      DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
 
       READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
@@ -223,13 +227,57 @@ CLASS lcl_create_data IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
         INSERT ls_tf INTO TABLE mt_tabfields.
       ENDIF.
-
+      <catalog>-style = '00000003'.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
-      IF ls_tf-empty IS NOT INITIAL.
-        "<catalog>-no_out = 'X'.
+      IF ls_tf-fieldname = 'SOBID'.
+        <catalog>-style = '00200009'. "hotspot+ blue font
       ENDIF.
-      <catalog>-col_pos = l_ind.
+      IF ls_tf-keyflag = 'X'.
+        <catalog>-style = '0000000A'.
+        "<catalog>-style = <catalog>-style BIT-OR style.
+      ENDIF.
+      style = '00200000'.
+      IF ls_tf-checktable IS NOT INITIAL.
+        <catalog>-style = <catalog>-style BIT-OR style.
+      ENDIF.
     ENDLOOP.
+  ENDMETHOD.
+
+  METHOD create_structure.
+    FIELD-SYMBOLS: <f_struc>   TYPE any .
+* Dynamic Table creation
+    DATA: lo_struct   TYPE REF TO cl_abap_structdescr,
+          lo_new_type TYPE REF TO cl_abap_structdescr,
+          lo_new_tab  TYPE REF TO cl_abap_tabledescr,
+          lo_type     TYPE REF TO cl_abap_typedescr,
+          lt_comp     TYPE cl_abap_structdescr=>component_table.
+
+*...............Dynamic Internal Table........................*
+* 1. Getting Components from existing type
+    CALL METHOD cl_abap_typedescr=>describe_by_name
+      EXPORTING
+        p_name         = i_tname
+      RECEIVING
+        p_descr_ref    = lo_type
+      EXCEPTIONS
+        type_not_found = 1
+        OTHERS         = 2.
+
+    IF sy-subrc NE 0.
+      MESSAGE 'Table Structure not found'(001) TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+
+    lo_struct ?= lo_type.
+    lt_comp  = lo_struct->get_components( ).
+
+* 3. Create a New Type
+    lo_new_type = cl_abap_structdescr=>create( lt_comp ).
+
+* 5. data to handle the new table type
+    CREATE DATA c_struc TYPE HANDLE lo_new_type.
+* 6. New internal table in the fieldsymbols
+    ASSIGN c_struc->* TO <f_struc>.
+
   ENDMETHOD.
 
   METHOD create_table.
@@ -418,16 +466,11 @@ CLASS lcl_table_viewer DEFINITION.
       create_alv,
       create_sel_alv,
       set_header,
-      handle_tab_toolbar FOR EVENT toolbar OF cl_gui_alv_grid
-        IMPORTING e_object e_interactive,
-
-      handle_menu_button
-                    FOR EVENT menu_button OF cl_gui_alv_grid
-        IMPORTING e_object e_ucomm,
-
-      handle_user_command
-                    FOR EVENT user_command OF cl_gui_alv_grid
-        IMPORTING e_ucomm.
+      handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object e_interactive,
+      handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
+      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
+      handle_hotspot      FOR EVENT hotspot_click OF cl_gui_alv_grid IMPORTING e_column_id e_row_id es_row_no.
+    .
 ENDCLASS.
 
 CLASS lcl_data_receiver IMPLEMENTATION.
@@ -588,6 +631,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     create_popup( ).
     lcl_create_data=>create_table( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table ).
     create_alv( ).
+    create_sel_alv( ).
   ENDMETHOD.
 
   METHOD create_popup.
@@ -667,6 +711,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ls_layout-col_opt = 'X'.
     ls_layout-cwidth_opt = 'X'.
     ls_layout-sel_mode = 'D'.
+    ls_layout-webstyle = 'FFFFFFFF'.
 
     CREATE OBJECT lcl_appl=>c_dragdropalv.
 
@@ -695,15 +740,22 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         it_outtab        = <f_tab>.
 
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_alv_catalog ).
+    LOOP AT mo_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+      CLEAR <catalog>-key.
+    ENDLOOP.
+    mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mo_alv_catalog ).
+
+
 
     LOOP AT mo_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
       lcl_alv_common=>translate_field(  CHANGING c_fld = <cat> ).
     ENDLOOP.
 
     mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mo_alv_catalog ).
-    SET HANDLER me->handle_user_command
-                me->handle_menu_button
-                me->handle_tab_toolbar
+    SET HANDLER handle_user_command
+                handle_menu_button
+                handle_tab_toolbar
+                handle_hotspot
                 lcl_dragdrop=>drag FOR mo_alv.
 
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
@@ -777,6 +829,54 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+  METHOD handle_hotspot.
+    FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
+    ASSIGN mr_table->* TO  <f_tab>.
+
+    READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
+
+    IF e_column_id = 'SOBID'."внутренняя ссылка
+      ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
+      ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
+
+      READ TABLE mo_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = 'OBJID'.
+      CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
+      <to>-low = <sobid>.
+      mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+
+      READ TABLE mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = 'OTYPE'.
+      CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
+      <to>-low = <sclas>.
+      mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+
+      lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
+      mo_sel->raise_selection_done( ).
+
+      lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
+      mo_sel->raise_selection_done( ).
+
+    ELSE."внешняя ссылка
+      ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
+      CHECK <field> IS NOT INITIAL.
+      READ TABLE lcl_create_data=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column_id.
+      IF sy-subrc = 0.
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+      ENDIF.
+
+
+      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = e_column_id.
+      IF sy-subrc = 0.
+        CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
+        <to>-low = <field>.
+        <obj>-alv_viewer->mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+
+        lcl_alv_common=>refresh( <obj>-alv_viewer->mo_sel->mo_sel_alv ).
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
   METHOD handle_user_command.
     DATA:
       it_fields    TYPE lvc_t_fcat,
@@ -784,11 +884,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_sel_width TYPE i.
 
     FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
-                   <f_tab>  TYPE ANY TABLE,
                    <f_line> TYPE any.
 
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = it_fields[] ).
-    ASSIGN mr_table->* TO <f_tab>.
     IF e_ucomm = 'SEL_ON' AND m_visible IS INITIAL.
       create_sel_alv( ).
       m_visible = 'X'.
@@ -816,13 +914,20 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       SET TITLEBAR 'SDE'.
       RETURN.
     ELSE.
-      LOOP AT it_fields ASSIGNING <field>.
+      DATA: r_struc TYPE REF TO data.
+      lcl_create_data=>create_structure( EXPORTING i_tname = m_tabname CHANGING c_struc =   r_struc ).
+      ASSIGN r_struc->* TO <f_line>.
+      LOOP AT it_fields ASSIGNING <field> WHERE fieldname NE 'MANDT'.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
+            IF <field>-inttype ne 'T'.
             lv_clause = |{ <field>-fieldname } NE ''|.
-             SELECT COUNT( * ) FROM (m_tabname)  WHERE (lv_clause).
-            IF sy-dbcnt = 0.
-              <field>-no_out = 'X'.
+
+                SELECT SINGLE * FROM (m_tabname)  WHERE (lv_clause) INTO @<f_line>.
+
+                IF sy-subrc NE 0.
+                  <field>-no_out = 'X'.
+                ENDIF.
             ENDIF.
           WHEN 'SHOW'.
             <field>-no_out = ' '.
@@ -971,18 +1076,18 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
   METHOD init_fcat.
     mt_fcat = VALUE #(
-     ( fieldname = 'IND'         coltext = '№'  outputlen = 3 )
-     ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' )
+     ( fieldname = 'IND'         coltext = '№'  outputlen = 3 style = '00000003' )
+     ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' style = '00000020' )
      ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X' )
      ( fieldname = 'OPTI'        coltext = 'Option' tech = 'X' )
      ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
      ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 col_opt = 'X'  )
      ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4  col_opt = 'X' )
-     ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = cl_gui_alv_grid=>mc_style_button )
+     ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = '20000000'  )
      ( fieldname = 'RANGE'   tech = 'X'  )
-     ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited')
-     ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter')
-     ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 )
+     ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited' style = '00000003')
+     ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter' style = '00000003')
+     ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 style = '00000003')
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
      ( fieldname = 'RECEIVER'    tech = 'X'  )
      ( fieldname = 'CHANGE'    tech = 'X'  ) ).
