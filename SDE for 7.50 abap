@@ -864,8 +864,18 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
       ENDIF.
 
+      DATA: l_domen TYPE dd03l-domname.
+      SELECT SINGLE domname INTO l_domen
+        FROM dd03l
+       WHERE tabname = m_tabname
+         AND fieldname = e_column_id.
 
-      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = e_column_id.
+     Select single fieldname into @data(l_checkfield)
+       from dd03l
+      where tabname = @field-checktable
+        and domname = @l_domen.
+
+      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = l_checkfield.
       IF sy-subrc = 0.
         CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
         <to>-low = <field>.
@@ -917,17 +927,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       DATA: r_struc TYPE REF TO data.
       lcl_create_data=>create_structure( EXPORTING i_tname = m_tabname CHANGING c_struc =   r_struc ).
       ASSIGN r_struc->* TO <f_line>.
-      LOOP AT it_fields ASSIGNING <field> WHERE fieldname NE 'MANDT'.
+      LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-inttype ne 'T'.
-            lv_clause = |{ <field>-fieldname } NE ''|.
+            IF <field>-inttype NE 'T'.
+              lv_clause = |{ <field>-fieldname } NE ''|.
 
-                SELECT SINGLE * FROM (m_tabname)  WHERE (lv_clause) INTO @<f_line>.
+              SELECT SINGLE * FROM (m_tabname)  WHERE (lv_clause) INTO @<f_line>.
 
-                IF sy-subrc NE 0.
-                  <field>-no_out = 'X'.
-                ENDIF.
+              IF sy-subrc NE 0.
+                <field>-no_out = 'X'.
+              ENDIF.
             ENDIF.
           WHEN 'SHOW'.
             <field>-no_out = ' '.
@@ -1527,16 +1537,10 @@ CLASS lcl_appl IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD exist_table.
-    e_subrc = 4.
-    CALL FUNCTION 'DD_EXIST_TABLE'
-      EXPORTING
-        tabname      = gv_tname
-        status       = 'A'
-      IMPORTING
-        subrc        = e_subrc
-      EXCEPTIONS
-        wrong_status = 1
-        OTHERS       = 2.
+    Select count( * ) from dd02l
+     where tabname = gv_tname
+       and tabclass = 'TRANSP'.
+    e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
 
@@ -1704,7 +1708,7 @@ AT SELECTION-SCREEN OUTPUT.
   lcl_appl=>suppress_run_button( ).
 
 AT SELECTION-SCREEN.
-  CHECK lcl_appl=>exist_table( gv_tname ) = 0.
+  CHECK lcl_appl=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
 
