@@ -2,7 +2,8 @@
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
 *& version: alpha 0.2.134.110
-*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap 
+*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
+*&
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -665,6 +666,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lcl_appl=>m_ctrl_box_handler = NEW #( ).
     ENDIF.
     SET HANDLER lcl_appl=>m_ctrl_box_handler->on_box_close FOR mo_box.
+
   ENDMETHOD.
 
   METHOD create_alv.
@@ -731,6 +733,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
     mo_alv->set_toolbar_interactive( ).
+    mo_alv->set_focus( mo_alv ).
   ENDMETHOD.
 
   METHOD create_sel_alv.
