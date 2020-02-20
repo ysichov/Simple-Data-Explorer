@@ -1,9 +1,9 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.2.134.110
+*& version: alpha 0.2.137.111
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
-*&
+*& Multi-window program for viewing tables and links between them
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -96,7 +96,7 @@ CLASS lcl_alv_common DEFINITION.
         INCLUDE TYPE   dfies.
     TYPES: "empty(1),
            END OF t_tabfields.
-     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
+    CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
 
     CLASS-METHODS:
       refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
@@ -117,7 +117,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = '' ).
   ENDMETHOD.
 
-   METHOD create_field_cat.
+  METHOD create_field_cat.
 
     DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
@@ -380,8 +380,7 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
-      set_value IMPORTING io_sel type ref to lcl_sel_opt i_field type
-        fieldname i_low type aqadh_range_value i_high type aqadh_range_value OPTIONAL,
+      set_value IMPORTING  i_field TYPE any i_low TYPE any i_high TYPE any OPTIONAL,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
@@ -489,16 +488,14 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   METHOD on_grid_button_click.
     FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE,
                    <f_field> TYPE any.
-    CHECK m_from_field = es_col_id-fieldname.
 
+    CHECK m_from_field = es_col_id-fieldname.
     ASSIGN lo_tab_from->mr_table->* TO <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     ASSIGN COMPONENT es_col_id-fieldname OF STRUCTURE <tab> TO  <f_field>.
 
     CHECK lo_sel_to IS NOT INITIAL.
-    lo_sel_to->set_value( IO_sel = lo_sel_to i_field = m_to_field i_low = <f_field>  ).
-
-    lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv ).
+    lo_sel_to->set_value( i_field = m_to_field i_low = <f_field>  ).
     lo_sel_to->raise_selection_done( ).
   ENDMETHOD.
 
@@ -506,17 +503,13 @@ CLASS lcl_data_receiver IMPLEMENTATION.
     DATA: l_updated.
 
     READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
-
     IF <to>-range[] = e_row-range[].
       l_updated = 'X'."so as not to have an infinite event loop
     ENDIF.
     MOVE-CORRESPONDING e_row TO <to>.
-
     IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
       <to>-transmitter->emit( EXPORTING e_row = e_row ).
     ENDIF.
-
-    lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv  ).
     lo_sel_to->raise_selection_done( ).
   ENDMETHOD.
 
@@ -554,7 +547,6 @@ CLASS lcl_data_receiver IMPLEMENTATION.
       <to>-transmitter->emit( EXPORTING e_row = lt_sel_row ).
     ENDIF.
 
-    lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv ).
     lo_sel_to->raise_selection_done( ).
   ENDMETHOD.
 ENDCLASS.
@@ -666,7 +658,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lcl_appl=>m_ctrl_box_handler = NEW #( ).
     ENDIF.
     SET HANDLER lcl_appl=>m_ctrl_box_handler->on_box_close FOR mo_box.
-
   ENDMETHOD.
 
   METHOD create_alv.
@@ -805,6 +796,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD handle_hotspot.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
+    check es_row_no-row_id is not initial.
     ASSIGN mr_table->* TO  <f_tab>.
 
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
@@ -813,20 +805,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
       ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
 
-      READ TABLE mo_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = 'OBJID'.
-      CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
-      <to>-low = <sobid>.
-      mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
-
-      READ TABLE mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = 'OTYPE'.
-      CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
-      <to>-low = <sclas>.
-      mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
-
-      lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
-      mo_sel->raise_selection_done( ).
-
-      lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
+      mo_sel->set_value( i_field = 'OBJID' i_low = <sobid>  ).
+      mo_sel->set_value( i_field = 'OTYPE' i_low = <sclas>  ).
       mo_sel->raise_selection_done( ).
 
     ELSE."внешняя ссылка
@@ -851,23 +831,18 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           not_valid = 3
           OTHERS    = 4.
 
-      READ TABLE <obj>-alv_viewer->mo_sel->mo_sel_tab ASSIGNING <to> WITH KEY field_label = lt_keys[ fieldname = e_column_id forkey = e_column_id  ]-checkfield.
-      IF sy-subrc = 0.
-        CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
-        <to>-low = <field>.
-        <obj>-alv_viewer->mo_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column_id forkey = e_column_id  ]-checkfield
+                            i_low = <field>  ).
 
-        lcl_alv_common=>refresh( <obj>-alv_viewer->mo_sel->mo_sel_alv ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-      ENDIF.
+       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ENDIF.
   ENDMETHOD.
 
   METHOD handle_user_command.
     DATA:
-      it_fields    TYPE lvc_t_fcat,
+      it_fields     TYPE lvc_t_fcat,
       lv_clause(45),
-      lv_sel_width TYPE i.
+      lv_sel_width  TYPE i.
 
     FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
                    <f_line> TYPE any.
@@ -1074,6 +1049,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD raise_selection_done.
+    lcl_alv_common=>refresh( mo_sel_alv ).
     RAISE EVENT selection_done.
     DATA: ls_row TYPE t_sel_row.
     LOOP AT mo_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>)." WHERE change IS NOT INITIAL.
@@ -1113,14 +1089,14 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
   ENDMETHOD.
 
-  method set_value.
-    READ TABLE io_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
+  METHOD set_value.
+    READ TABLE mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
     CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
     <to>-low = i_low.
-    IF i_high is SUPPLIED.
-    <to>-high = i_high.
-    endif.
-    io_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+    IF i_high IS SUPPLIED.
+      <to>-high = i_high.
+    ENDIF.
+    update_sel_row( CHANGING c_sel_row = <to> ).
 
     IF <to>-transmitter IS BOUND.
       DATA: ls_row TYPE t_sel_row.
@@ -1284,7 +1260,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDCASE.
 
     update_sel_row( CHANGING c_sel_row = <tab> ).
-    lcl_alv_common=>refresh( mo_sel_alv ).
     RAISE EVENT selection_done.
   ENDMETHOD.
 
@@ -1437,8 +1412,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         ENDIF.
         update_sel_row( CHANGING c_sel_row = <sel> ).
       ENDLOOP.
-
-      lcl_alv_common=>refresh( mo_sel_alv ).
       RAISE EVENT selection_done.
     ENDIF.
 
@@ -1642,7 +1615,6 @@ CLASS lcl_dragdrop IMPLEMENTATION.
     lcl_alv_common=>refresh( lo_alv ).
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
-    lcl_alv_common=>refresh( lo_alv ).
     lo_to->raise_selection_done( ).
   ENDMETHOD.
 ENDCLASS.
