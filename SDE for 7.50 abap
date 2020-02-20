@@ -2,7 +2,7 @@
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
 *& version: alpha 0.2.134.110
-*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap
+*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *&
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
@@ -46,6 +46,7 @@ ENDCLASS.
 CLASS lcl_sql DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
+      exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc,
       read_table IMPORTING i_tabname   TYPE tabname
                            i_where     TYPE string
                            i_row_count TYPE i OPTIONAL
@@ -54,6 +55,14 @@ CLASS lcl_sql DEFINITION.
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
+
+  METHOD exist_table.
+    SELECT COUNT( * ) FROM dd02l
+     WHERE tabname = gv_tname
+       AND tabclass = 'TRANSP'.
+    e_subrc = sy-dbcnt.
+  ENDMETHOD.
+
   METHOD read_table.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
 
@@ -78,9 +87,21 @@ ENDCLASS.
 
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
+    CONSTANTS: c_gray(4)  TYPE x VALUE '00000003', "grey
+               c_hblue(4) TYPE x VALUE '00200009', "hotspot+ blue font
+               c_green(4) TYPE x VALUE '0000000A',
+               c_hspot(4) TYPE x VALUE '00200000'.
+
+    TYPES: BEGIN OF t_tabfields.
+        INCLUDE TYPE   dfies.
+    TYPES: "empty(1),
+           END OF t_tabfields.
+     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
+
     CLASS-METHODS:
       refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
-      translate_field IMPORTING i_lang LIKE sy-ucomm OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
+      translate_field IMPORTING i_lang LIKE sy-ucomm OPTIONAL CHANGING c_fld TYPE lvc_s_fcat,
+      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
@@ -95,6 +116,52 @@ CLASS lcl_alv_common IMPLEMENTATION.
     ENDIF.
     i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = '' ).
   ENDMETHOD.
+
+   METHOD create_field_cat.
+
+    DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
+          it_tabdescr    TYPE abap_compdescr_tab,
+          lt_field_info  TYPE TABLE OF dfies,
+          style          TYPE xstring,
+          style2         TYPE xstring.
+
+    lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
+    it_tabdescr[] = lr_table_descr->components[].
+
+    LOOP AT it_tabdescr INTO DATA(ls).
+      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+
+      READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
+      IF sy-subrc NE 0.
+        CALL FUNCTION 'DDIF_FIELDINFO_GET'
+          EXPORTING
+            tabname        = i_tname
+            fieldname      = ls-name
+            langu          = sy-langu
+          TABLES
+            dfies_tab      = lt_field_info
+          EXCEPTIONS
+            not_found      = 1
+            internal_error = 2
+            OTHERS         = 3.
+        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
+        INSERT ls_tf INTO TABLE mt_tabfields.
+      ENDIF.
+      <catalog>-style = c_gray.
+      MOVE-CORRESPONDING ls_tf TO <catalog>.
+      IF ls_tf-fieldname = 'SOBID'.
+        <catalog>-style = c_hblue.
+      ENDIF.
+      IF ls_tf-keyflag = 'X'.
+        <catalog>-style = c_green.
+      ENDIF.
+      style = c_hspot.
+      IF ls_tf-checktable IS NOT INITIAL.
+        <catalog>-style = <catalog>-style BIT-OR style.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
 
   METHOD translate_field.
     DATA: lv_lang       LIKE sy-langu,
@@ -173,22 +240,15 @@ CLASS lcl_appl DEFINITION.
     CLASS-METHODS:
       init_icons_table,
       init_lang,
-      suppress_run_button,
-      exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
+      suppress_run_button.
 ENDCLASS.
 
 CLASS lcl_create_data DEFINITION.
   PUBLIC SECTION.
-    TYPES: BEGIN OF t_tabfields.
-        INCLUDE TYPE   dfies.
-    TYPES: "empty(1),
-           END OF t_tabfields.
 
-    CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
     CLASS-METHODS:
       create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
-      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data,
-      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
+      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data.
 
   PRIVATE SECTION.
     CLASS-METHODS:
@@ -198,50 +258,6 @@ ENDCLASS.
 
 CLASS lcl_create_data IMPLEMENTATION.
 
-  METHOD create_field_cat.
-    DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
-          it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info  TYPE TABLE OF dfies,
-          style          TYPE xstring,
-          style2         TYPE xstring.
-
-    lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
-    it_tabdescr[] = lr_table_descr->components[].
-
-    style = '00080000'.
-    LOOP AT it_tabdescr INTO DATA(ls).
-      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
-
-      READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
-      IF sy-subrc NE 0.
-        CALL FUNCTION 'DDIF_FIELDINFO_GET'
-          EXPORTING
-            tabname        = i_tname
-            fieldname      = ls-name
-            langu          = sy-langu
-          TABLES
-            dfies_tab      = lt_field_info
-          EXCEPTIONS
-            not_found      = 1
-            internal_error = 2
-            OTHERS         = 3.
-        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
-        INSERT ls_tf INTO TABLE mt_tabfields.
-      ENDIF.
-      <catalog>-style = '00000003'.
-      MOVE-CORRESPONDING ls_tf TO <catalog>.
-      IF ls_tf-fieldname = 'SOBID'.
-        <catalog>-style = '00200009'. "hotspot+ blue font
-      ENDIF.
-      IF ls_tf-keyflag = 'X'.
-        <catalog>-style = '0000000A'.
-      ENDIF.
-      style = '00200000'.
-      IF ls_tf-checktable IS NOT INITIAL.
-        <catalog>-style = <catalog>-style BIT-OR style.
-      ENDIF.
-    ENDLOOP.
-  ENDMETHOD.
 
   METHOD get_struc_handle.
     DATA: lo_struct TYPE REF TO cl_abap_structdescr,
@@ -364,6 +380,8 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
+      set_value IMPORTING io_sel type ref to lcl_sel_opt i_field type
+        fieldname i_low type aqadh_range_value i_high type aqadh_range_value OPTIONAL,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
@@ -478,16 +496,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
     ASSIGN COMPONENT es_col_id-fieldname OF STRUCTURE <tab> TO  <f_field>.
 
     CHECK lo_sel_to IS NOT INITIAL.
-    READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
-    CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
-    <to>-low = <f_field>.
-    lo_sel_to->update_sel_row( CHANGING c_sel_row = <to> ).
-
-    IF <to>-transmitter IS BOUND.
-      DATA: ls_row TYPE t_sel_row.
-      MOVE-CORRESPONDING <to> TO ls_row.
-      <to>-transmitter->emit( EXPORTING e_row = ls_row ).
-    ENDIF.
+    lo_sel_to->set_value( IO_sel = lo_sel_to i_field = m_to_field i_low = <f_field>  ).
 
     lcl_alv_common=>refresh( lo_sel_to->mo_sel_alv ).
     lo_sel_to->raise_selection_done( ).
@@ -693,7 +702,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
 
-    mo_alv_catalog = lcl_create_data=>create_field_cat( m_tabname ).
+    mo_alv_catalog = lcl_alv_common=>create_field_cat( m_tabname ).
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
         i_save           = 'X'
@@ -821,7 +830,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ELSE."внешняя ссылка
       ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
       CHECK <field> IS NOT INITIAL.
-      READ TABLE lcl_create_data=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column_id.
+      READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column_id.
       IF sy-subrc = 0.
         APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
@@ -855,7 +864,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD handle_user_command.
     DATA:
       it_fields    TYPE lvc_t_fcat,
-      lv_clause    TYPE string,
+      lv_clause(45),
       lv_sel_width TYPE i.
 
     FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
@@ -892,11 +901,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-inttype NE 'T'.
+            IF <field>-inttype NE 'T' AND <field>-inttype NE 'X' ."dump for these types
               lv_clause = |{ <field>-fieldname } NE ''|.
-
               SELECT SINGLE * FROM (m_tabname)  WHERE (lv_clause) INTO @<f_line>.
-
               IF sy-subrc NE 0.
                 <field>-no_out = 'X'.
               ENDIF.
@@ -910,13 +917,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             IF sy-subrc = 0.
               lcl_alv_common=>translate_field( EXPORTING i_lang = e_ucomm CHANGING c_fld = <field> ).
               IF mo_sel IS BOUND.
-                TRY.
-                    mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-scrtext_l.
-                    IF mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name IS INITIAL.
-                      mo_sel->mo_sel_tab[ field_label = <field>-fieldname ]-name = <field>-reptext.
-                    ENDIF.
-                  CATCH cx_sy_itab_line_not_found.      "#EC NO_HANDLER
-                ENDTRY.
+                READ TABLE mo_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <field>-fieldname.
+                IF sy-subrc = 0.
+                  <sel>-name = <field>-scrtext_l.
+                  IF <sel>-name IS INITIAL.
+                    <sel>-name = <field>-reptext.
+                  ENDIF.
+                ENDIF.
               ENDIF.
             ENDIF.
         ENDCASE.
@@ -1102,6 +1109,23 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     e_object->mt_toolbar[] = VALUE #( butn_type = 0 disabled = ''
      ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
      ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
+  ENDMETHOD.
+
+  method set_value.
+    READ TABLE io_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
+    CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
+    <to>-low = i_low.
+    IF i_high is SUPPLIED.
+    <to>-high = i_high.
+    endif.
+    io_sel->update_sel_row( CHANGING c_sel_row = <to> ).
+
+    IF <to>-transmitter IS BOUND.
+      DATA: ls_row TYPE t_sel_row.
+      MOVE-CORRESPONDING <to> TO ls_row.
+      <to>-transmitter->emit( EXPORTING e_row = ls_row ).
+    ENDIF.
+
   ENDMETHOD.
 
   METHOD update_sel_row. "select patterns rules
@@ -1466,12 +1490,6 @@ CLASS lcl_appl IMPLEMENTATION.
         p_exclude = itab.
   ENDMETHOD.
 
-  METHOD exist_table.
-    SELECT COUNT( * ) FROM dd02l
-     WHERE tabname = gv_tname
-       AND tabclass = 'TRANSP'.
-    e_subrc = sy-dbcnt.
-  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_dragdrop IMPLEMENTATION.
@@ -1638,6 +1656,6 @@ AT SELECTION-SCREEN OUTPUT.
   lcl_appl=>suppress_run_button( ).
 
 AT SELECTION-SCREEN.
-  CHECK lcl_appl=>exist_table( gv_tname ) = 1.
+  CHECK lcl_sql=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
