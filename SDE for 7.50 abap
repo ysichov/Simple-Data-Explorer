@@ -87,10 +87,10 @@ ENDCLASS.
 
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
-    CONSTANTS: c_gray(4)  TYPE x VALUE '00000003', "grey
-               c_hblue(4) TYPE x VALUE '00200009', "hotspot+ blue font
-               c_green(4) TYPE x VALUE '0000000A',
-               c_hspot(4) TYPE x VALUE '00200000'.
+    CONSTANTS: c_white(4)  TYPE x VALUE '00000001', "white background
+               c_green(4)  type x value '00000016', "green
+               c_blue(4)  TYPE x VALUE '00000009', " blue font
+               c_bold(4)  TYPE x VALUE '00000020'.
 
     TYPES: BEGIN OF t_tabfields.
         INCLUDE TYPE   dfies.
@@ -147,21 +147,20 @@ CLASS lcl_alv_common IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
         INSERT ls_tf INTO TABLE mt_tabfields.
       ENDIF.
-      <catalog>-style = c_gray.
+      <catalog>-style = c_white.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
-      IF ls_tf-fieldname = 'SOBID' or ls_tf-fieldname = 'ADATANR' .
-        <catalog>-style = c_hblue.
-      ENDIF.
-      IF ls_tf-keyflag = 'X'.
+
+      IF ls_tf-fieldname = 'SOBID' OR ls_tf-fieldname = 'ADATANR' OR ls_tf-fieldname = 'QUONR' .
         <catalog>-style = c_green.
       ENDIF.
-      style = c_hspot.
       IF ls_tf-checktable IS NOT INITIAL.
-        <catalog>-style = <catalog>-style BIT-OR style.
+        <catalog>-style = c_blue.
+      ENDIF.
+      IF ls_tf-keyflag = 'X'.
+        <catalog>-style = <catalog>-style bit-or c_bold.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
-
 
   METHOD translate_field.
     DATA: lv_lang       LIKE sy-langu,
@@ -452,7 +451,7 @@ CLASS lcl_table_viewer DEFINITION.
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object e_interactive,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
-      handle_hotspot      FOR EVENT hotspot_click OF cl_gui_alv_grid IMPORTING e_column_id e_row_id es_row_no.
+      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
 ENDCLASS.
 
 CLASS lcl_data_receiver IMPLEMENTATION.
@@ -719,7 +718,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     SET HANDLER handle_user_command
                 handle_menu_button
                 handle_tab_toolbar
-                handle_hotspot
+                "handle_hotspot
+                handle_doubleclick
                 lcl_dragdrop=>drag FOR mo_alv.
 
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
@@ -794,54 +794,65 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
-  METHOD handle_hotspot.
+  METHOD handle_doubleclick.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
-    check es_row_no-row_id is not initial.
+    CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
 
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
+    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column.
 
-    IF e_column_id = 'SOBID'."внутренняя ссылка
-      ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
+
+    IF e_column = 'SOBID'."внутренняя ссылка
+      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
       ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
 
       mo_sel->set_value( i_field = 'OBJID' i_low = <sobid>  ).
       mo_sel->set_value( i_field = 'OTYPE' i_low = <sclas>  ).
       mo_sel->raise_selection_done( ).
 
-    ELSEIF e_column_id = 'ADATANR'.
+    ELSEIF e_column = 'ADATANR'.
       ASSIGN COMPONENT 'ADATANR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<datanr>).
       ASSIGN COMPONENT 'RELAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<relat>).
-      Select single pasub into @DATA(lv_struc)
-        from t77ar
-       where relat = @<relat>.
+      SELECT SINGLE pasub INTO @DATA(lv_struc)
+        FROM t77ar
+       WHERE relat = @<relat>.
 
-      Select single dbtab into @DATA(lv_dbtab)
-        from t77ad
-       where pasub = @lv_struc.
+      SELECT SINGLE dbtab INTO @DATA(lv_dbtab)
+        FROM t77ad
+       WHERE pasub = @lv_struc.
 
       IF sy-subrc = 0.
-      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
 
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
-      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
       ENDIF.
 
+    ELSEIF e_column = 'QUONR'.
+      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<quonr>).
 
-    ELSE."внешняя ссылка
-      ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
-      CHECK <field> IS NOT INITIAL.
-      READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column_id.
       IF sy-subrc = 0.
         APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+        IF m_tabname = 'PA2006'.
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'PTQUODED'.
+        ELSE.
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'PA2006'.
+        ENDIF.
+
+        <obj>-alv_viewer->mo_sel->set_value( i_field = e_column i_low = <quonr>  ).
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
       ENDIF.
 
+    ELSE."внешняя ссылка
+      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
+      CHECK <field> IS NOT INITIAL.
+*
       DATA: lt_keys TYPE TABLE OF dd05p.
       CALL FUNCTION 'DD_FORKEY_GET'
         EXPORTING
-          feldname  = CONV fieldname( e_column_id )
+          feldname  = CONV fieldname( e_column )
           tabname   = CONV tabname( m_tabname )
         TABLES
           forkeytab = lt_keys
@@ -851,12 +862,21 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           not_valid = 3
           OTHERS    = 4.
 
-      <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column_id forkey = e_column_id  ]-checkfield
-                            i_low = <field>  ).
+      IF sy-subrc = 0.
+        IF sy-subrc = 0.
+          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+        ENDIF.
 
-       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column forkey = e_column  ]-checkfield
+                              i_low = <field>  ).
+
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      ENDIF.
     ENDIF.
+
   ENDMETHOD.
+
 
   METHOD handle_user_command.
     DATA:
