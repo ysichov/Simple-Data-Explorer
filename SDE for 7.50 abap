@@ -149,7 +149,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
       ENDIF.
       <catalog>-style = c_gray.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
-      IF ls_tf-fieldname = 'SOBID'.
+      IF ls_tf-fieldname = 'SOBID' or ls_tf-fieldname = 'ADATANR' .
         <catalog>-style = c_hblue.
       ENDIF.
       IF ls_tf-keyflag = 'X'.
@@ -809,12 +809,32 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_sel->set_value( i_field = 'OTYPE' i_low = <sclas>  ).
       mo_sel->raise_selection_done( ).
 
+    ELSEIF e_column_id = 'ADATANR'.
+      ASSIGN COMPONENT 'ADATANR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<datanr>).
+      ASSIGN COMPONENT 'RELAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<relat>).
+      Select single pasub into @DATA(lv_struc)
+        from t77ar
+       where relat = @<relat>.
+
+      Select single dbtab into @DATA(lv_dbtab)
+        from t77ad
+       where pasub = @lv_struc.
+
+      IF sy-subrc = 0.
+      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
+
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      ENDIF.
+
+
     ELSE."внешняя ссылка
       ASSIGN COMPONENT e_column_id OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
       CHECK <field> IS NOT INITIAL.
       READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column_id.
       IF sy-subrc = 0.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
       ENDIF.
 
@@ -924,7 +944,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.                           "handle_user_command
 
   METHOD get_where."dynamic where clause
-
     DATA: lt_where TYPE rsds_twhere,
           lt_range TYPE rsds_trange.
 
@@ -959,13 +978,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
 
-    LOOP AT mo_sel->mo_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>)." WHERE change IS NOT INITIAL.
+    LOOP AT mo_sel->mo_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
       IF <sel>-transmitter IS NOT INITIAL.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
       ENDIF.
     ENDLOOP.
-
+    lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
     lcl_alv_common=>refresh( mo_alv ).
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
