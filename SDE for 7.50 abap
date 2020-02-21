@@ -88,8 +88,8 @@ ENDCLASS.
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
     CONSTANTS: c_white(4)  TYPE x VALUE '00000001', "white background
-               c_green(4)  type x value '00000016', "green
-               c_blue(4)  TYPE x VALUE '00000009', " blue font
+               c_green(4)  type x value '00000216', "green +underline
+               c_blue(4)  TYPE x VALUE '00000209', " blue font +underline
                c_bold(4)  TYPE x VALUE '00000020'.
 
     TYPES: BEGIN OF t_tabfields.
