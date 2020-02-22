@@ -384,6 +384,7 @@ CLASS lcl_sel_opt DEFINITION.
         name        TYPE reptext,
         transmitter TYPE REF TO lcl_data_transmitter,
         receiver    TYPE REF TO lcl_data_receiver,
+        color       TYPE lvc_t_scol,
       END OF selection_display_s.
 
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
@@ -432,9 +433,7 @@ CLASS lcl_sel_opt DEFINITION.
 ENDCLASS.
 
 CLASS lcl_table_viewer DEFINITION.
-
   PUBLIC SECTION.
-
     TYPES: BEGIN OF t_column_emitter,
              column  TYPE lvc_fname,
              emitter TYPE REF TO lcl_data_transmitter,
@@ -937,19 +936,29 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lcl_create_data=>create_structure( EXPORTING i_tname = m_tabname CHANGING c_struc =   r_struc ).
       ASSIGN r_struc->* TO <f_line>.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
+        <field>-col_pos = sy-tabix.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            clear m_show_empty.
+            CLEAR m_show_empty.
             lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
             LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
               EXIT.
             ENDLOOP.
             IF sy-subrc NE 0.
               <field>-no_out = 'X'.
+
             ENDIF.
           WHEN 'SHOW'.
             m_show_empty = 'X'.
             <field>-no_out = ' '.
+          WHEN 'UPDATE'.
+            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
+            LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+              EXIT.
+            ENDLOOP.
+            IF sy-subrc = 0.
+              <field>-no_out = ''.
+            ENDIF.
           WHEN 'TECH'. "technical field name
             <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
           WHEN OTHERS. "header names translation
@@ -979,7 +988,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CALL METHOD mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = it_fields[].
     lcl_alv_common=>refresh( mo_alv ).
     IF mo_sel IS BOUND.
-      IF  e_ucomm = 'HIDE' OR e_ucomm = 'SHOW'.
+      IF  e_ucomm = 'HIDE' OR e_ucomm = 'SHOW' OR e_ucomm = 'UPDATE' .
         mo_sel->update_sel_tab( ).
       ENDIF.
       lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
@@ -1028,9 +1037,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
     lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
-    handle_user_command( EXPORTING e_ucomm = 'SHOW' ).
-    handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
     lcl_alv_common=>refresh( mo_alv ).
+    mo_sel->mo_viewer->handle_user_command( 'UPDATE' ).
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
@@ -1061,6 +1069,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     init_fcat( handle_alv ).
     ms_layout-cwidth_opt = 'X'.
     ms_layout-col_opt = 'X'.
+    ms_layout-ctab_fname = 'COLOR'.
 
     "fields for F4 event handling
     DATA(gt_f4) = VALUE  lvc_t_f4( register   = 'X' chngeafter = 'X'
@@ -1096,7 +1105,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD init_fcat.
     mt_fcat = VALUE #(
      ( fieldname = 'IND'         coltext = '№'  outputlen = 3 style = '00000003' )
-     ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle emphasize = 'X' style = '00000020' )
+     ( fieldname = 'FIELD_LABEL' coltext = 'Label'  outputlen = 30 dragdropid = i_dd_handle )
      ( fieldname = 'SIGN'        coltext = 'SIGN'   tech = 'X' )
      ( fieldname = 'OPTI'        coltext = 'Option' tech = 'X' )
      ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
@@ -1109,6 +1118,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 style = '00000003')
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
      ( fieldname = 'RECEIVER'    tech = 'X'  )
+     ( fieldname = 'COLOR'    tech = 'X'  )
      ( fieldname = 'CHANGE'    tech = 'X'  ) ).
   ENDMETHOD.
 
@@ -1132,8 +1142,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mo_alv_catalog ).
     LOOP AT mo_viewer->mo_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
-      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname empty = '' TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0 or mo_viewer->m_show_empty is not INITIAL.
+      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
+      IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL.
         APPEND INITIAL LINE TO mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
         READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
         IF sy-subrc = 0.
@@ -1146,6 +1156,20 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         <sel_tab>-field_label = l_catalog-fieldname.
         <sel_tab>-name = l_catalog-scrtext_l.
         <sel_tab>-int_type = l_catalog-inttype.
+
+        IF l_tfield-keyflag = 'X'.
+          IF l_tfield-empty = 'X'.
+            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 1 color-inv = 1 ) ).
+          ELSE.
+            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 5 color-int = 1 color-inv = 1 ) ).
+          ENDIF.
+        ELSE.
+          IF l_tfield-empty = 'X'.
+            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 0 color-inv = 1 ) ).
+          ELSE.
+            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 0 color-inv = 0 ) ).
+          ENDIF.
+        ENDIF.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
