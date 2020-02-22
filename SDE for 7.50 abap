@@ -188,9 +188,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
           lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info  TYPE TABLE OF dfies,
-          style          TYPE xstring,
-          style2         TYPE xstring.
+          lt_field_info  TYPE TABLE OF dfies.
 
     FIELD-SYMBOLS: <line> TYPE any.
     lcl_create_data=>create_structure( EXPORTING i_tname = i_tname CHANGING c_struc = lr_struc ).
@@ -382,13 +380,14 @@ CLASS lcl_sel_opt DEFINITION.
         more_icon   TYPE aqadh_type_of_icon,
         range       TYPE aqadh_t_ranges,
         name        TYPE reptext,
-        element     type string,
-        domain      type string,
-        datatype    type string,
-        length      type i,
+        element     TYPE string,
+        domain      TYPE string,
+        datatype    TYPE string,
+        length      TYPE i,
         transmitter TYPE REF TO lcl_data_transmitter,
         receiver    TYPE REF TO lcl_data_receiver,
         color       TYPE lvc_t_scol,
+        style       TYPE lvc_t_styl,
       END OF selection_display_s.
 
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
@@ -1074,6 +1073,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ms_layout-cwidth_opt = 'X'.
     ms_layout-col_opt = 'X'.
     ms_layout-ctab_fname = 'COLOR'.
+    ms_layout-stylefname = 'STYLE'.
 
     "fields for F4 event handling
     DATA(gt_f4) = VALUE  lvc_t_f4( register   = 'X' chngeafter = 'X'
@@ -1169,17 +1169,12 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         <sel_tab>-datatype = l_catalog-datatype.
         <sel_tab>-length = l_catalog-outputlen.
         IF l_tfield-keyflag = 'X'.
-          IF l_tfield-empty = 'X'.
-            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 1 color-inv = 1 ) ).
-          ELSE.
-            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 5 color-int = 1 color-inv = 1 ) ).
-          ENDIF.
+          <sel_tab>-style = VALUE #( ( fieldname = 'FIELD_LABEL' style = '00000020' ) ).
+        ENDIF.
+        IF l_tfield-empty = 'X'.
+          <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 0 color-inv = 1 ) ).
         ELSE.
-          IF l_tfield-empty = 'X'.
-            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 0 color-inv = 1 ) ).
-          ELSE.
-            <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 0 color-inv = 0 ) ).
-          ENDIF.
+          <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 4 color-int = 0 color-inv = 1 ) ).
         ENDIF.
       ENDIF.
     ENDLOOP.
