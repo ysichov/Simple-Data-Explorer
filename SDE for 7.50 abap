@@ -85,6 +85,71 @@ CLASS lcl_sql IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
+
+CLASS lcl_create_data DEFINITION.
+  PUBLIC SECTION.
+
+    CLASS-METHODS:
+      create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
+      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data.
+
+  PRIVATE SECTION.
+    CLASS-METHODS:
+      get_struc_handle IMPORTING i_tname TYPE tabname RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr.
+
+ENDCLASS.
+
+CLASS lcl_create_data IMPLEMENTATION.
+
+
+  METHOD get_struc_handle.
+    DATA: lo_struct TYPE REF TO cl_abap_structdescr,
+          lo_type   TYPE REF TO cl_abap_typedescr,
+          lt_comp   TYPE cl_abap_structdescr=>component_table.
+
+* 1. Getting Components from existing type
+    CALL METHOD cl_abap_typedescr=>describe_by_name
+      EXPORTING
+        p_name         = i_tname
+      RECEIVING
+        p_descr_ref    = lo_type
+      EXCEPTIONS
+        type_not_found = 1
+        OTHERS         = 2.
+
+    IF sy-subrc NE 0.
+      MESSAGE 'Table Structure not found'(001) TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+
+    lo_struct ?= lo_type.
+    lt_comp  = lo_struct->get_components( ).
+
+    handle = cl_abap_structdescr=>create( lt_comp ). "Create a New structure type
+  ENDMETHOD.
+
+  METHOD create_structure.
+    DATA: lo_new_type TYPE REF TO cl_abap_structdescr.
+
+    lo_new_type = get_struc_handle( i_tname ).
+    CREATE DATA c_struc TYPE HANDLE lo_new_type.
+  ENDMETHOD.
+
+  METHOD create_table.
+
+    DATA: lo_new_type TYPE REF TO cl_abap_structdescr,
+          lo_new_tab  TYPE REF TO cl_abap_tabledescr.
+
+    lo_new_type = get_struc_handle( i_tname ).
+    lo_new_tab = cl_abap_tabledescr=>create(
+                    p_line_type  = lo_new_type
+                    p_table_kind = cl_abap_tabledescr=>tablekind_std
+                    p_unique     = abap_false ).
+
+    CREATE DATA c_table TYPE HANDLE lo_new_tab.  "Create a New table type
+  ENDMETHOD.
+ENDCLASS.
+
+
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
     CONSTANTS: c_white(4) TYPE x VALUE '00000001', "white background
@@ -94,7 +159,7 @@ CLASS lcl_alv_common DEFINITION.
 
     TYPES: BEGIN OF t_tabfields.
         INCLUDE TYPE   dfies.
-    TYPES: "empty(1),
+    TYPES: empty TYPE xfeld,
            END OF t_tabfields.
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
 
@@ -119,12 +184,17 @@ CLASS lcl_alv_common IMPLEMENTATION.
 
   METHOD create_field_cat.
 
-    DATA: lr_table_descr TYPE REF TO cl_abap_structdescr,
+    DATA: lv_clause      TYPE string,
+          lr_struc       TYPE REF TO data,
+          lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
           lt_field_info  TYPE TABLE OF dfies,
           style          TYPE xstring,
           style2         TYPE xstring.
 
+    FIELD-SYMBOLS: <line> TYPE any.
+    lcl_create_data=>create_structure( EXPORTING i_tname = i_tname CHANGING c_struc = lr_struc ).
+    ASSIGN lr_struc->* TO <line>.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
     it_tabdescr[] = lr_table_descr->components[].
 
@@ -144,7 +214,19 @@ CLASS lcl_alv_common IMPLEMENTATION.
             not_found      = 1
             internal_error = 2
             OTHERS         = 3.
+        CLEAR ls_tf.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
+        "check empty field
+        IF ls_tf-domname NE 'MANDT' AND ls_tf-inttype NE 'X' AND ls_tf-inttype NE 'T'."SQL dump for X and T
+          lv_clause = |{ ls_tf-fieldname } NE ''|.
+          SELECT SINGLE * INTO @<line>
+            FROM (i_tname)
+           WHERE (lv_clause).
+          IF sy-subrc NE 0.
+            ls_tf-empty = 'X'.
+          ENDIF.
+        ENDIF.
+
         INSERT ls_tf INTO TABLE mt_tabfields.
       ENDIF.
       <catalog>-style = c_white.
@@ -240,69 +322,6 @@ CLASS lcl_appl DEFINITION.
       init_icons_table,
       init_lang,
       suppress_run_button.
-ENDCLASS.
-
-CLASS lcl_create_data DEFINITION.
-  PUBLIC SECTION.
-
-    CLASS-METHODS:
-      create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
-      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data.
-
-  PRIVATE SECTION.
-    CLASS-METHODS:
-      get_struc_handle IMPORTING i_tname TYPE tabname RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr.
-
-ENDCLASS.
-
-CLASS lcl_create_data IMPLEMENTATION.
-
-
-  METHOD get_struc_handle.
-    DATA: lo_struct TYPE REF TO cl_abap_structdescr,
-          lo_type   TYPE REF TO cl_abap_typedescr,
-          lt_comp   TYPE cl_abap_structdescr=>component_table.
-
-* 1. Getting Components from existing type
-    CALL METHOD cl_abap_typedescr=>describe_by_name
-      EXPORTING
-        p_name         = i_tname
-      RECEIVING
-        p_descr_ref    = lo_type
-      EXCEPTIONS
-        type_not_found = 1
-        OTHERS         = 2.
-
-    IF sy-subrc NE 0.
-      MESSAGE 'Table Structure not found'(001) TYPE 'E' DISPLAY LIKE 'I'.
-    ENDIF.
-
-    lo_struct ?= lo_type.
-    lt_comp  = lo_struct->get_components( ).
-
-    handle = cl_abap_structdescr=>create( lt_comp ). "Create a New structure type
-  ENDMETHOD.
-
-  METHOD create_structure.
-    DATA: lo_new_type TYPE REF TO cl_abap_structdescr.
-
-    lo_new_type = get_struc_handle( i_tname ).
-    CREATE DATA c_struc TYPE HANDLE lo_new_type.
-  ENDMETHOD.
-
-  METHOD create_table.
-
-    DATA: lo_new_type TYPE REF TO cl_abap_structdescr,
-          lo_new_tab  TYPE REF TO cl_abap_tabledescr.
-
-    lo_new_type = get_struc_handle( i_tname ).
-    lo_new_tab = cl_abap_tabledescr=>create(
-                    p_line_type  = lo_new_type
-                    p_table_kind = cl_abap_tabledescr=>tablekind_std
-                    p_unique     = abap_false ).
-
-    CREATE DATA c_table TYPE HANDLE lo_new_tab.  "Create a New table type
-  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_data_transmitter DEFINITION.
@@ -435,7 +454,8 @@ CLASS lcl_table_viewer DEFINITION.
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
           m_visible,
-          m_std_tbar         TYPE x.
+          m_std_tbar         TYPE x,
+          m_show_empty.
 
     METHODS:
       constructor IMPORTING i_tname TYPE tabname,
@@ -802,7 +822,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column.
 
-
     IF e_column = 'SOBID'."внутренняя ссылка
       ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
       ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
@@ -920,6 +939,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
+            clear m_show_empty.
             lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
             LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
               EXIT.
@@ -928,6 +948,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
               <field>-no_out = 'X'.
             ENDIF.
           WHEN 'SHOW'.
+            m_show_empty = 'X'.
             <field>-no_out = ' '.
           WHEN 'TECH'. "technical field name
             <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
@@ -1109,21 +1130,23 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
     CLEAR mo_sel_tab[].
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mo_alv_catalog ).
-    LOOP AT mo_viewer->mo_alv_catalog INTO DATA(l_catalog).
+    LOOP AT mo_viewer->mo_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
-      "CHECK  l_catalog-no_out IS INITIAL or l_catalog-key ne 'X' .
-      APPEND INITIAL LINE TO mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
-      READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
-      IF sy-subrc = 0.
-        MOVE-CORRESPONDING ls_copy TO <sel_tab>.
-      ELSE.
-        <sel_tab>-option_icon = icon_led_inactive.
-        <sel_tab>-more_icon = icon_enter_more.
+      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname empty = '' TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0 or mo_viewer->m_show_empty is not INITIAL.
+        APPEND INITIAL LINE TO mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
+        READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
+        IF sy-subrc = 0.
+          MOVE-CORRESPONDING ls_copy TO <sel_tab>.
+        ELSE.
+          <sel_tab>-option_icon = icon_led_inactive.
+          <sel_tab>-more_icon = icon_enter_more.
+        ENDIF.
+        <sel_tab>-ind = lv_ind.
+        <sel_tab>-field_label = l_catalog-fieldname.
+        <sel_tab>-name = l_catalog-scrtext_l.
+        <sel_tab>-int_type = l_catalog-inttype.
       ENDIF.
-      <sel_tab>-ind = lv_ind.
-      <sel_tab>-field_label = l_catalog-fieldname.
-      <sel_tab>-name = l_catalog-scrtext_l.
-      <sel_tab>-int_type = l_catalog-inttype.
     ENDLOOP.
   ENDMETHOD.
   METHOD handle_sel_toolbar.
