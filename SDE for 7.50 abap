@@ -380,7 +380,7 @@ CLASS lcl_sel_opt DEFINITION.
         more_icon   TYPE aqadh_type_of_icon,
         range       TYPE aqadh_t_ranges,
         name        TYPE reptext,
-        element     TYPE string,
+        element     TYPE text60,
         domain      TYPE string,
         datatype    TYPE string,
         length      TYPE i,
@@ -426,13 +426,10 @@ CLASS lcl_sel_opt DEFINITION.
                     sender,
       on_data_changed_finished FOR EVENT data_changed_finished OF cl_gui_alv_grid
         IMPORTING e_modified et_good_cells,
-      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid
-        IMPORTING e_ucomm,
-      handle_context_menu_request FOR EVENT context_menu_request
-            OF cl_gui_alv_grid
-        IMPORTING
-            e_object
-            sender.
+      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
+      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no,
+      handle_context_menu_request FOR EVENT context_menu_request OF cl_gui_alv_grid
+        IMPORTING e_object sender.
 ENDCLASS.
 
 CLASS lcl_table_viewer DEFINITION.
@@ -818,6 +815,15 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD handle_doubleclick.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
+
+*   CALL FUNCTION 'DOCU_CALL'
+*   EXPORTING
+*     id = 'DE'
+*     langu = sy-langu
+*     object = 'PERSNO'
+*     typ = 'E'
+*     displ = 'X'
+*     displ_mode = 2.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
 
@@ -1092,6 +1098,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
                 on_data_changed_finished
                 on_grid_button_click
                 handle_context_menu_request
+                handle_doubleclick
                 on_f4 FOR mo_sel_alv.
 
     CALL METHOD mo_sel_alv->set_table_for_first_display
@@ -1201,6 +1208,27 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
   ENDMETHOD.
+
+  METHOD handle_doubleclick.
+    CHECK es_row_no-row_id IS NOT INITIAL.
+    READ TABLE mo_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
+    IF e_column = 'ELEMENT'.
+      SET PARAMETER ID 'DTYP' FIELD l_sel-element.
+      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+    ELSE.
+    CALL FUNCTION 'DOCU_CALL'
+      EXPORTING
+        id         = 'DE'
+        langu      = sy-langu
+        object     = CONV doku_obj( l_sel-element )
+        typ        = 'E'
+        displ      = 'X'
+        displ_mode = 3
+        USE_SEC_LANGU = 'X'
+        DISPLAY_SHORTTEXT = 'X'.
+    ENDIF.
+  ENDMETHOD.
+
 
   METHOD update_sel_row. "select patterns rules
     IF c_sel_row-high IS INITIAL AND c_sel_row-opti = 'BT'.
