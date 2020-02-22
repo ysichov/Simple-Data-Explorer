@@ -381,7 +381,7 @@ CLASS lcl_sel_opt DEFINITION.
         range       TYPE aqadh_t_ranges,
         name        TYPE reptext,
         element     TYPE text60,
-        domain      TYPE string,
+        domain      TYPE text60,
         datatype    TYPE string,
         length      TYPE i,
         transmitter TYPE REF TO lcl_data_transmitter,
@@ -1127,8 +1127,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited' style = '00000003')
      ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter' style = '00000003')
      ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 style = '00000003')
-     ( fieldname = 'ELEMENT' coltext = 'Data element'  outputlen = 15 style = '00000003')
-     ( fieldname = 'DOMAIN'  coltext = 'Domain'  outputlen = 15 style = '00000003')
+     ( fieldname = 'ELEMENT' coltext = 'Data element'  outputlen = 15 style = '00000209' )
+     ( fieldname = 'DOMAIN'  coltext = 'Domain'  outputlen = 15 style = '00000209' )
      ( fieldname = 'DATATYPE' coltext = 'Type'  outputlen = 5 style = '00000003')
      ( fieldname = 'LENGTH' coltext = 'Length'  outputlen = 5 style = '00000003')
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
@@ -1214,6 +1214,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     READ TABLE mo_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
     IF e_column = 'ELEMENT'.
       SET PARAMETER ID 'DTYP' FIELD l_sel-element.
+      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+    ELSEIF e_column = 'DOMAIN'.
+      SET PARAMETER ID 'DOM' FIELD l_sel-domain.
       CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
     ELSE.
     CALL FUNCTION 'DOCU_CALL'
