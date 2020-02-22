@@ -87,8 +87,8 @@ ENDCLASS.
 
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
-    CONSTANTS: c_white(4)  TYPE x VALUE '00000001', "white background
-               c_green(4)  type x value '00000216', "green +underline
+    CONSTANTS: c_white(4) TYPE x VALUE '00000001', "white background
+               c_green(4) TYPE x VALUE '00000216', "green +underline
                c_blue(4)  TYPE x VALUE '00000209', " blue font +underline
                c_bold(4)  TYPE x VALUE '00000020'.
 
@@ -157,7 +157,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
         <catalog>-style = c_blue.
       ENDIF.
       IF ls_tf-keyflag = 'X'.
-        <catalog>-style = <catalog>-style bit-or c_bold.
+        <catalog>-style = <catalog>-style BIT-OR c_bold.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -885,8 +885,10 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_sel_width  TYPE i.
 
     FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
-                   <f_line> TYPE any.
+                   <f_line> TYPE any,
+                   <f_tab>  TYPE ANY TABLE.
 
+    ASSIGN mr_table->* TO <f_tab>.
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = it_fields[] ).
     IF e_ucomm = 'SEL_ON' AND m_visible IS INITIAL.
       create_sel_alv( ).
@@ -918,12 +920,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-inttype NE 'T' AND <field>-inttype NE 'X' ."dump for these types
-              lv_clause = |{ <field>-fieldname } NE ''|.
-              SELECT SINGLE * FROM (m_tabname)  WHERE (lv_clause) INTO @<f_line>.
-              IF sy-subrc NE 0.
-                <field>-no_out = 'X'.
-              ENDIF.
+            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
+            LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+              EXIT.
+            ENDLOOP.
+            IF sy-subrc NE 0.
+              <field>-no_out = 'X'.
             ENDIF.
           WHEN 'SHOW'.
             <field>-no_out = ' '.
@@ -1005,6 +1007,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
     lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
+    handle_user_command( EXPORTING e_ucomm = 'SHOW' ).
+    handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
     lcl_alv_common=>refresh( mo_alv ).
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
@@ -1053,8 +1057,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
                 on_data_changed
                 on_data_changed_finished
                 on_grid_button_click
-                handle_context_menu_request FOR mo_sel_alv.
-    SET HANDLER on_f4 FOR ALL INSTANCES.
+                handle_context_menu_request
+                on_f4 FOR mo_sel_alv.
 
     CALL METHOD mo_sel_alv->set_table_for_first_display
       EXPORTING
@@ -1107,7 +1111,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mo_alv_catalog ).
     LOOP AT mo_viewer->mo_alv_catalog INTO DATA(l_catalog).
       DATA(lv_ind) = sy-tabix.
-      CHECK l_catalog-no_out IS INITIAL.
+      "CHECK  l_catalog-no_out IS INITIAL or l_catalog-key ne 'X' .
       APPEND INITIAL LINE TO mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
       READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
       IF sy-subrc = 0.
