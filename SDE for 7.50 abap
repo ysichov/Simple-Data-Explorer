@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.2.137.111
+*& version: alpha 0.2.144.120
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *& Multi-window program for viewing tables and links between them
 *& Written by Yurii Sychov
@@ -382,6 +382,10 @@ CLASS lcl_sel_opt DEFINITION.
         more_icon   TYPE aqadh_type_of_icon,
         range       TYPE aqadh_t_ranges,
         name        TYPE reptext,
+        element     type string,
+        domain      type string,
+        datatype    type string,
+        length      type i,
         transmitter TYPE REF TO lcl_data_transmitter,
         receiver    TYPE REF TO lcl_data_receiver,
         color       TYPE lvc_t_scol,
@@ -1116,6 +1120,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited' style = '00000003')
      ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter' style = '00000003')
      ( fieldname = 'NAME' coltext = 'Field name'  outputlen = 60 style = '00000003')
+     ( fieldname = 'ELEMENT' coltext = 'Data element'  outputlen = 15 style = '00000003')
+     ( fieldname = 'DOMAIN'  coltext = 'Domain'  outputlen = 15 style = '00000003')
+     ( fieldname = 'DATATYPE' coltext = 'Type'  outputlen = 5 style = '00000003')
+     ( fieldname = 'LENGTH' coltext = 'Length'  outputlen = 5 style = '00000003')
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
      ( fieldname = 'RECEIVER'    tech = 'X'  )
      ( fieldname = 'COLOR'    tech = 'X'  )
@@ -1156,7 +1164,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         <sel_tab>-field_label = l_catalog-fieldname.
         <sel_tab>-name = l_catalog-scrtext_l.
         <sel_tab>-int_type = l_catalog-inttype.
-
+        <sel_tab>-element = l_catalog-rollname.
+        <sel_tab>-domain =  l_catalog-domname.
+        <sel_tab>-datatype = l_catalog-datatype.
+        <sel_tab>-length = l_catalog-outputlen.
         IF l_tfield-keyflag = 'X'.
           IF l_tfield-empty = 'X'.
             <sel_tab>-color = VALUE #( ( fname = 'FIELD_LABEL' color-col = 2 color-int = 1 color-inv = 1 ) ).
