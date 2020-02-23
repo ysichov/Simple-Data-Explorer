@@ -11,6 +11,35 @@
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
 *&---------------------------------------------------------------------*
 REPORT ys_sde.
+CLASS lcl_data_receiver DEFINITION DEFERRED.
+CLASS lcl_data_transmitter DEFINITION DEFERRED.
+  TYPES:
+      BEGIN OF selection_display_s,
+        ind         TYPE i,
+        field_label TYPE lvc_fname,
+        int_type(1),
+        inherited   TYPE aqadh_type_of_icon,
+        emitter     TYPE aqadh_type_of_icon,
+        sign        TYPE tvarv_sign,
+        opti        TYPE tvarv_opti,
+        option_icon TYPE aqadh_type_of_icon,
+        low         TYPE aqadh_range_value,
+        high        TYPE aqadh_range_value,
+        more_icon   TYPE aqadh_type_of_icon,
+        range       TYPE aqadh_t_ranges,
+        name        TYPE reptext,
+        element     TYPE text60,
+        domain      TYPE text60,
+        datatype    TYPE string,
+        length      TYPE i,
+        transmitter TYPE REF TO lcl_data_transmitter,
+        receiver    TYPE REF TO lcl_data_receiver,
+        color       TYPE lvc_t_scol,
+        style       TYPE lvc_t_styl,
+      END OF selection_display_s.
+
+   DATA: gt_sel type table of selection_display_s.
+
 TYPES:
   BEGIN OF t_sel_row,
     sign        TYPE tvarv_sign,
@@ -27,7 +56,6 @@ PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_f
 "Begin of INCLUDE YS_SDE_CLASSES.
 CLASS lcl_table_viewer DEFINITION DEFERRED.
 CLASS lcl_box_handler  DEFINITION DEFERRED.
-CLASS lcl_data_transmitter DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
 
 CLASS lcl_dd_data DEFINITION."drag&drop data
@@ -365,30 +393,6 @@ ENDCLASS.
 
 CLASS lcl_sel_opt DEFINITION.
   PUBLIC SECTION.
-    TYPES:
-      BEGIN OF selection_display_s,
-        ind         TYPE i,
-        field_label TYPE lvc_fname,
-        int_type(1),
-        inherited   TYPE aqadh_type_of_icon,
-        emitter     TYPE aqadh_type_of_icon,
-        sign        TYPE tvarv_sign,
-        opti        TYPE tvarv_opti,
-        option_icon TYPE aqadh_type_of_icon,
-        low         TYPE aqadh_range_value,
-        high        TYPE aqadh_range_value,
-        more_icon   TYPE aqadh_type_of_icon,
-        range       TYPE aqadh_t_ranges,
-        name        TYPE reptext,
-        element     TYPE text60,
-        domain      TYPE text60,
-        datatype    TYPE string,
-        length      TYPE i,
-        transmitter TYPE REF TO lcl_data_transmitter,
-        receiver    TYPE REF TO lcl_data_receiver,
-        color       TYPE lvc_t_scol,
-        style       TYPE lvc_t_styl,
-      END OF selection_display_s.
 
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
@@ -1307,13 +1311,16 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     DATA(l_fname) = CONV fieldname( mo_sel_tab[ es_row_no-row_id ]-field_label ).
 
+    gt_sel[] = mo_sel_tab[].
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
       EXPORTING
         tabname           = mo_viewer->m_tabname "todo: change PAXXXX for PXXXX
         fieldname         = l_fname
+        callback_program  = sy-repid
+        callback_form = 'CALLBACK_F4'
       TABLES
         return_tab        = return_tab
-        "todo: callback for  f4 dependent fields
+
       EXCEPTIONS
         field_not_found   = 1
         no_help_for_field = 2
@@ -1760,3 +1767,15 @@ AT SELECTION-SCREEN.
   CHECK lcl_sql=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
+
+  FORM callback_F4 TABLES RECORD_TAB STRUCTURE SEAHLPRES
+            CHANGING SHLP TYPE SHLP_DESCR
+                      CALLCONTROL LIKE DDSHF4CTRL.
+
+LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) where f4field ne 'X'.
+  Read table gt_sel with key field_label = <interface>-shlpfield into data(l_sel) TRANSPORTING low.
+  IF sy-subrc = 0.
+    <interface>-value = l_Sel-low.
+  endif.
+ENDLOOP.
+ENDFORM.
