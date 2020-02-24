@@ -437,7 +437,7 @@ CLASS lcl_table_viewer DEFINITION.
           mo_splitter        TYPE REF TO cl_gui_splitter_container,
           mo_sel_parent      TYPE REF TO cl_gui_container,
           mo_alv_parent      TYPE REF TO cl_gui_container,
-          mo_alv_catalog     TYPE lvc_t_fcat,
+          mt_alv_catalog     TYPE lvc_t_fcat,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
           m_visible,
@@ -696,7 +696,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
 
-    mo_alv_catalog = lcl_alv_common=>create_field_cat( m_tabname ).
+    mt_alv_catalog = lcl_alv_common=>create_field_cat( m_tabname ).
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
         i_save           = 'X'
@@ -704,20 +704,20 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         i_structure_name = m_tabname
         is_layout        = ls_layout
       CHANGING
-        it_fieldcatalog  = mo_alv_catalog
+        it_fieldcatalog  = mt_alv_catalog
         it_outtab        = <f_tab>.
 
-    mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_alv_catalog ).
-    LOOP AT mo_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+    mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mt_alv_catalog ).
+    LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       CLEAR <catalog>-key.
     ENDLOOP.
-    mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mo_alv_catalog ).
+    mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mt_alv_catalog ).
 
-    LOOP AT mo_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
+    LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
       lcl_alv_common=>translate_field(  CHANGING c_fld = <cat> ).
     ENDLOOP.
 
-    mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mo_alv_catalog ).
+    mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mt_alv_catalog ).
     SET HANDLER handle_user_command
                 handle_menu_button
                 handle_tab_toolbar
@@ -1116,8 +1116,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       DATA(lt_copy) = mo_sel_tab.
     ENDIF.
     CLEAR mo_sel_tab[].
-    mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mo_alv_catalog ).
-    LOOP AT mo_viewer->mo_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
+    mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mt_alv_catalog ).
+    LOOP AT mo_viewer->mt_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
       READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
       IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL.
@@ -1263,7 +1263,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     DATA: return_tab  TYPE STANDARD TABLE OF ddshretval,
           lv_retfield TYPE dynfnam.
     DATA(l_fname) = CONV fieldname( mo_sel_tab[ es_row_no-row_id ]-field_label ).
-
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
 
     gt_sel[] = mo_sel_tab[].
@@ -1352,12 +1351,21 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed.
+    data: l_start type i.
+
     FIELD-SYMBOLS: <field> TYPE any.
     LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
       READ TABLE mo_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
       ASSIGN COMPONENT <ls_cells>-fieldname OF STRUCTURE <tab> TO <field>.
+      Read table mo_viewer->mt_alv_catalog with key fieldname = <tab>-field_label into data(l_cat).
+      IF l_cat-convexit = 'ALPHA' and NOT  <ls_cells>-value CA '+*'.
+        <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
+        l_start = 128 - l_cat-intlen.
+        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-intlen).
+      ENDIF.
+
       IF <tab>-int_type = 'D'.
-        DATA: lv_date TYPE sy-datum.
+         DATA: lv_date TYPE sy-datum.
         CALL FUNCTION 'CONVERT_DATE_INPUT'
           EXPORTING
             input                     = <ls_cells>-value
@@ -1369,15 +1377,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             wrong_format_in_input     = 2
             OTHERS                    = 3.
 
-        CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
-          EXPORTING
-            date_internal            = lv_date
-          IMPORTING
-            date_external            = <ls_cells>-value
-          EXCEPTIONS
-            date_internal_is_invalid = 1
-            OTHERS                   = 2.
-        CLEAR lv_date.
+        <ls_cells>-value = |{ lv_date DATE = USER }|.
 
       ELSEIF <tab>-int_type = 'T'."strange dump with time field
         DATA: lv_time TYPE sy-uzeit.
@@ -1607,7 +1607,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
       LOOP AT lt_sel_col INTO DATA(l_col).
         TRY.
-            lo_from_tab->mo_alv_catalog[ fieldname = l_col-fieldname ]-style = cl_gui_alv_grid=>mc_style_button.
+            lo_from_tab->mt_alv_catalog[ fieldname = l_col-fieldname ]-style = cl_gui_alv_grid=>mc_style_button.
           CATCH cx_sy_itab_line_not_found.              "#EC NO_HANDLER
         ENDTRY.
         READ TABLE lo_from_tab->mo_column_emitters WITH KEY column = l_col ASSIGNING FIELD-SYMBOL(<emitter>).
@@ -1620,7 +1620,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
       IF sy-subrc = 0.
         lv_set_receiver = abap_true.
-        CALL METHOD lo_from_tab->mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = lo_from_tab->mo_alv_catalog.
+        CALL METHOD lo_from_tab->mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = lo_from_tab->mt_alv_catalog.
       ENDIF.
 
       TRY.
@@ -1725,7 +1725,7 @@ AT SELECTION-SCREEN.
 
 FORM callback_f4 TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
-                    callcontrol LIKE ddshf4ctrl.
+                   callcontrol LIKE ddshf4ctrl.
 
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
     READ TABLE gt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel) TRANSPORTING low.
