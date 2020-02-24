@@ -13,32 +13,32 @@
 REPORT ys_sde.
 CLASS lcl_data_receiver DEFINITION DEFERRED.
 CLASS lcl_data_transmitter DEFINITION DEFERRED.
-  TYPES:
-      BEGIN OF selection_display_s,
-        ind         TYPE i,
-        field_label TYPE lvc_fname,
-        int_type(1),
-        inherited   TYPE aqadh_type_of_icon,
-        emitter     TYPE aqadh_type_of_icon,
-        sign        TYPE tvarv_sign,
-        opti        TYPE tvarv_opti,
-        option_icon TYPE aqadh_type_of_icon,
-        low         TYPE aqadh_range_value,
-        high        TYPE aqadh_range_value,
-        more_icon   TYPE aqadh_type_of_icon,
-        range       TYPE aqadh_t_ranges,
-        name        TYPE reptext,
-        element     TYPE text60,
-        domain      TYPE text60,
-        datatype    TYPE string,
-        length      TYPE i,
-        transmitter TYPE REF TO lcl_data_transmitter,
-        receiver    TYPE REF TO lcl_data_receiver,
-        color       TYPE lvc_t_scol,
-        style       TYPE lvc_t_styl,
-      END OF selection_display_s.
+TYPES:
+  BEGIN OF selection_display_s,
+    ind         TYPE i,
+    field_label TYPE lvc_fname,
+    int_type(1),
+    inherited   TYPE aqadh_type_of_icon,
+    emitter     TYPE aqadh_type_of_icon,
+    sign        TYPE tvarv_sign,
+    opti        TYPE tvarv_opti,
+    option_icon TYPE aqadh_type_of_icon,
+    low         TYPE aqadh_range_value,
+    high        TYPE aqadh_range_value,
+    more_icon   TYPE aqadh_type_of_icon,
+    range       TYPE aqadh_t_ranges,
+    name        TYPE reptext,
+    element     TYPE text60,
+    domain      TYPE text60,
+    datatype    TYPE string,
+    length      TYPE i,
+    transmitter TYPE REF TO lcl_data_transmitter,
+    receiver    TYPE REF TO lcl_data_receiver,
+    color       TYPE lvc_t_scol,
+    style       TYPE lvc_t_styl,
+  END OF selection_display_s.
 
-   DATA: gt_sel type table of selection_display_s.
+DATA: gt_sel TYPE TABLE OF selection_display_s.
 
 TYPES:
   BEGIN OF t_sel_row,
@@ -93,7 +93,6 @@ CLASS lcl_sql IMPLEMENTATION.
 
   METHOD read_table.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
-
     ASSIGN cr_tab->* TO <f_tab>.
     IF i_where IS NOT INITIAL.
       TRY.
@@ -113,7 +112,6 @@ CLASS lcl_sql IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-
 CLASS lcl_create_data DEFINITION.
   PUBLIC SECTION.
 
@@ -124,12 +122,9 @@ CLASS lcl_create_data DEFINITION.
   PRIVATE SECTION.
     CLASS-METHODS:
       get_struc_handle IMPORTING i_tname TYPE tabname RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr.
-
 ENDCLASS.
 
 CLASS lcl_create_data IMPLEMENTATION.
-
-
   METHOD get_struc_handle.
     DATA: lo_struct TYPE REF TO cl_abap_structdescr,
           lo_type   TYPE REF TO cl_abap_typedescr,
@@ -151,19 +146,16 @@ CLASS lcl_create_data IMPLEMENTATION.
 
     lo_struct ?= lo_type.
     lt_comp  = lo_struct->get_components( ).
-
     handle = cl_abap_structdescr=>create( lt_comp ). "Create a New structure type
   ENDMETHOD.
 
   METHOD create_structure.
     DATA: lo_new_type TYPE REF TO cl_abap_structdescr.
-
     lo_new_type = get_struc_handle( i_tname ).
     CREATE DATA c_struc TYPE HANDLE lo_new_type.
   ENDMETHOD.
 
   METHOD create_table.
-
     DATA: lo_new_type TYPE REF TO cl_abap_structdescr,
           lo_new_tab  TYPE REF TO cl_abap_tabledescr.
 
@@ -172,11 +164,9 @@ CLASS lcl_create_data IMPLEMENTATION.
                     p_line_type  = lo_new_type
                     p_table_kind = cl_abap_tabledescr=>tablekind_std
                     p_unique     = abap_false ).
-
     CREATE DATA c_table TYPE HANDLE lo_new_tab.  "Create a New table type
   ENDMETHOD.
 ENDCLASS.
-
 
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
@@ -198,12 +188,10 @@ CLASS lcl_alv_common DEFINITION.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
-
   METHOD refresh.
     DATA l_stable TYPE lvc_s_stbl.
     l_stable-row = 'X'.
     l_stable-col = 'X'.
-
     IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
@@ -211,7 +199,6 @@ CLASS lcl_alv_common IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD create_field_cat.
-
     DATA: lv_clause      TYPE string,
           lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
@@ -393,7 +380,6 @@ ENDCLASS.
 
 CLASS lcl_sel_opt DEFINITION.
   PUBLIC SECTION.
-
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
@@ -401,7 +387,6 @@ CLASS lcl_sel_opt DEFINITION.
           ms_layout  TYPE lvc_s_layo.
 
     EVENTS: selection_done.
-
     METHODS:
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
@@ -410,7 +395,6 @@ CLASS lcl_sel_opt DEFINITION.
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
-
     METHODS:
       init_fcat IMPORTING i_dd_handle TYPE i,
       handle_sel_toolbar FOR EVENT toolbar OF cl_gui_alv_grid IMPORTING e_object e_interactive,
@@ -478,7 +462,6 @@ CLASS lcl_table_viewer DEFINITION.
 ENDCLASS.
 
 CLASS lcl_data_receiver IMPLEMENTATION.
-
   METHOD constructor.
     lo_sel_to = io_sel_to.
     m_from_field =  i_from_field.
@@ -523,7 +506,6 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
   METHOD  update.
     DATA: l_updated.
-
     READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
     IF <to>-range[] = e_row-range[].
       l_updated = 'X'."so as not to have an infinite event loop
@@ -536,12 +518,16 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_col.
+    DATA: l_updated,
+          lt_old_range TYPE aqadh_t_ranges.
+
     DATA: lt_sel_row TYPE t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
 
     CHECK lo_sel_to IS NOT INITIAL.
     READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
+    lt_old_range = <to>-range.
     CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
     ASSIGN lo_tab_from->mr_table->* TO <tab>.
 
@@ -564,12 +550,13 @@ CLASS lcl_data_receiver IMPLEMENTATION.
     ENDLOOP.
 
     MOVE-CORRESPONDING <to> TO lt_sel_row.
-
-    IF <to>-transmitter IS BOUND. " AND l_updated IS INITIAL.
-      <to>-transmitter->emit( EXPORTING e_row = lt_sel_row ).
+    IF <to>-range = lt_old_range.
+      l_updated = 'X'."so as not to have an infinite event loop
     ENDIF.
-
-    lo_sel_to->raise_selection_done( ).
+    IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
+      <to>-transmitter->emit( EXPORTING e_row = lt_sel_row ).
+      lo_sel_to->raise_selection_done( ).
+    ENDIF.
   ENDMETHOD.
 ENDCLASS.
 
@@ -579,9 +566,7 @@ CLASS lcl_box_handler DEFINITION."for memory clearing
 ENDCLASS.
 
 CLASS lcl_box_handler IMPLEMENTATION.
-
   METHOD on_box_close.
-
     DATA: lv_tabix LIKE sy-tabix.
     sender->free( ).
 
@@ -611,7 +596,6 @@ CLASS lcl_box_handler IMPLEMENTATION.
 ENDCLASS.               "lcl_box_handler
 
 CLASS lcl_table_viewer IMPLEMENTATION.
-
   METHOD constructor.
     m_lang = sy-langu.
     mo_sel_width = 0.
@@ -683,7 +667,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD create_alv.
-
     DATA: ls_layout  TYPE lvc_s_layo,
           effect     TYPE i,
           handle_alv TYPE i.
@@ -693,7 +676,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ASSIGN mr_table->* TO <f_tab>.
     lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
                          CHANGING cr_tab =  mr_table c_count = m_count ).
-
     set_header( ).
     ls_layout-zebra = 'X'.
     ls_layout-col_opt = 'X'.
@@ -702,7 +684,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ls_layout-webstyle = 'FFFFFFFF'.
 
     CREATE OBJECT lcl_appl=>c_dragdropalv.
-
     effect = cl_dragdrop=>move + cl_dragdrop=>copy.
 
     CALL METHOD lcl_appl=>c_dragdropalv->add
@@ -713,7 +694,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         effect     = effect.
 
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
-
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
 
     mo_alv_catalog = lcl_alv_common=>create_field_cat( m_tabname ).
@@ -818,16 +798,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
+    DATA: lt_keys TYPE TABLE OF dd05p.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
-
-*   CALL FUNCTION 'DOCU_CALL'
-*   EXPORTING
-*     id = 'DE'
-*     langu = sy-langu
-*     object = 'PERSNO'
-*     typ = 'E'
-*     displ = 'X'
-*     displ_mode = 2.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
 
@@ -837,11 +809,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     IF e_column = 'SOBID'."внутренняя ссылка
       ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
       ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
-
       mo_sel->set_value( i_field = 'OBJID' i_low = <sobid>  ).
       mo_sel->set_value( i_field = 'OTYPE' i_low = <sclas>  ).
       mo_sel->raise_selection_done( ).
-
     ELSEIF e_column = 'ADATANR'.
       ASSIGN COMPONENT 'ADATANR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<datanr>).
       ASSIGN COMPONENT 'RELAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<relat>).
@@ -860,7 +830,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
       ENDIF.
-
     ELSEIF e_column = 'QUONR'.
       ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<quonr>).
 
@@ -871,16 +840,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         ELSE.
           CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'PA2006'.
         ENDIF.
-
         <obj>-alv_viewer->mo_sel->set_value( i_field = e_column i_low = <quonr>  ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
       ENDIF.
-
     ELSE."внешняя ссылка
       ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
       CHECK <field> IS NOT INITIAL.
-*
-      DATA: lt_keys TYPE TABLE OF dd05p.
       CALL FUNCTION 'DD_FORKEY_GET'
         EXPORTING
           feldname  = CONV fieldname( e_column )
@@ -898,16 +863,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
           CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
         ENDIF.
-
-        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column forkey = e_column  ]-checkfield
-                              i_low = <field>  ).
-
+        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column forkey = e_column  ]-checkfield i_low = <field>  ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
       ENDIF.
     ENDIF.
-
   ENDMETHOD.
-
 
   METHOD handle_user_command.
     DATA:
@@ -959,7 +919,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             ENDLOOP.
             IF sy-subrc NE 0.
               <field>-no_out = 'X'.
-
             ENDIF.
           WHEN 'SHOW'.
             m_show_empty = 'X'.
@@ -1077,7 +1036,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         effect     = effect.
 
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
-
     ms_layout-s_dragdrop-col_ddid = handle_alv.
     init_fcat( handle_alv ).
     ms_layout-cwidth_opt = 'X'.
@@ -1210,7 +1168,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       MOVE-CORRESPONDING <to> TO ls_row.
       <to>-transmitter->emit( EXPORTING e_row = ls_row ).
     ENDIF.
-
   ENDMETHOD.
 
   METHOD handle_doubleclick.
@@ -1223,19 +1180,18 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       SET PARAMETER ID 'DOM' FIELD l_sel-domain.
       CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
     ELSE.
-    CALL FUNCTION 'DOCU_CALL'
-      EXPORTING
-        id         = 'DE'
-        langu      = sy-langu
-        object     = CONV doku_obj( l_sel-element )
-        typ        = 'E'
-        displ      = 'X'
-        displ_mode = 3
-        USE_SEC_LANGU = 'X'
-        DISPLAY_SHORTTEXT = 'X'.
+      CALL FUNCTION 'DOCU_CALL'
+        EXPORTING
+          id                = 'DE'
+          langu             = sy-langu
+          object            = CONV doku_obj( l_sel-element )
+          typ               = 'E'
+          displ             = 'X'
+          displ_mode        = 3
+          use_sec_langu     = 'X'
+          display_shorttext = 'X'.
     ENDIF.
   ENDMETHOD.
-
 
   METHOD update_sel_row. "select patterns rules
     IF c_sel_row-high IS INITIAL AND c_sel_row-opti = 'BT'.
@@ -1306,10 +1262,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD on_f4.
     DATA: return_tab  TYPE STANDARD TABLE OF ddshretval,
           lv_retfield TYPE dynfnam.
+    DATA(l_fname) = CONV fieldname( mo_sel_tab[ es_row_no-row_id ]-field_label ).
 
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
-
-    DATA(l_fname) = CONV fieldname( mo_sel_tab[ es_row_no-row_id ]-field_label ).
 
     gt_sel[] = mo_sel_tab[].
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
@@ -1317,10 +1272,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         tabname           = mo_viewer->m_tabname "todo: change PAXXXX for PXXXX
         fieldname         = l_fname
         callback_program  = sy-repid
-        callback_form = 'CALLBACK_F4'
+        callback_form     = 'CALLBACK_F4'
+        "callback_method - doesn't work for local class
       TABLES
         return_tab        = return_tab
-
       EXCEPTIONS
         field_not_found   = 1
         no_help_for_field = 2
@@ -1392,7 +1347,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           ENDIF.
         ENDIF.
     ENDCASE.
-
     update_sel_row( CHANGING c_sel_row = <tab> ).
     RAISE EVENT selection_done.
   ENDMETHOD.
@@ -1447,6 +1401,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       update_sel_row( CHANGING c_sel_row = <tab> ).
     ENDLOOP.
     lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
+    raise_selection_done( ).
   ENDMETHOD.
 
   METHOD on_data_changed_finished.
@@ -1768,14 +1723,14 @@ AT SELECTION-SCREEN.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
 
-  FORM callback_F4 TABLES RECORD_TAB STRUCTURE SEAHLPRES
-            CHANGING SHLP TYPE SHLP_DESCR
-                      CALLCONTROL LIKE DDSHF4CTRL.
+FORM callback_f4 TABLES record_tab STRUCTURE seahlpres
+          CHANGING shlp TYPE shlp_descr
+                    callcontrol LIKE ddshf4ctrl.
 
-LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) where f4field ne 'X'.
-  Read table gt_sel with key field_label = <interface>-shlpfield into data(l_sel) TRANSPORTING low.
-  IF sy-subrc = 0.
-    <interface>-value = l_Sel-low.
-  endif.
-ENDLOOP.
+  LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
+    READ TABLE gt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel) TRANSPORTING low.
+    IF sy-subrc = 0.
+      <interface>-value = l_sel-low.
+    ENDIF.
+  ENDLOOP.
 ENDFORM.
