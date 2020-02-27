@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.2.144.120
+*& version: alpha 0.2.151.124
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *& Multi-window program for viewing tables and links between them
 *& Written by Yurii Sychov
@@ -13,6 +13,7 @@
 REPORT ys_sde.
 CLASS lcl_data_receiver DEFINITION DEFERRED.
 CLASS lcl_data_transmitter DEFINITION DEFERRED.
+
 TYPES:
   BEGIN OF selection_display_s,
     ind         TYPE i,
@@ -54,6 +55,37 @@ TYPES:
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
+
+CLASS lcl_plugins DEFINITION.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF t_links,
+             tab    TYPE tablename,
+             field  TYPE fieldname,
+             seqnr  TYPE seqnr,
+             rtab   TYPE tablename,
+             rfield TYPE fieldname,
+           END OF t_links.
+
+    CLASS-DATA: mt_links TYPE HASHED TABLE OF t_links WITH UNIQUE KEY tab field seqnr.
+
+    CLASS-METHODS: init.
+ENDCLASS.
+
+CLASS lcl_plugins IMPLEMENTATION.
+  METHOD init.
+    mt_links = VALUE #(
+      ( tab = 'HRP1001'   field = 'SCLAS' rfield = 'OTYPE' )
+      ( tab = 'HRP1001'   field = 'SOBID' rfield = 'OBJID' )
+      ( tab = 'HRP1002'   field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'PA2006'    field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
+      ( tab = 'PTQUODED'  field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
+      ).
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+
 CLASS lcl_table_viewer DEFINITION DEFERRED.
 CLASS lcl_box_handler  DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
@@ -244,13 +276,17 @@ CLASS lcl_alv_common IMPLEMENTATION.
       ENDIF.
       <catalog>-style = c_white.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
+      <catalog>-no_zero = 'X'.
 
-      IF ls_tf-fieldname = 'SOBID' OR ls_tf-fieldname = 'ADATANR' OR ls_tf-fieldname = 'QUONR' .
-        <catalog>-style = c_green.
-      ENDIF.
       IF ls_tf-checktable IS NOT INITIAL.
         <catalog>-style = c_blue.
       ENDIF.
+
+      read table lcl_plugins=>mt_links with key tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        <catalog>-style = c_green.
+      ENDIF.
+
       IF ls_tf-keyflag = 'X'.
         <catalog>-style = <catalog>-style BIT-OR c_bold.
       ENDIF.
@@ -383,8 +419,11 @@ CLASS lcl_sel_opt DEFINITION.
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
-          mo_sel_tab TYPE TABLE OF selection_display_s,
-          ms_layout  TYPE lvc_s_layo.
+          mt_sel_tab TYPE TABLE OF selection_display_s,
+          mt_undo    TYPE TABLE OF selection_display_s,
+          ms_layout  TYPE lvc_s_layo,
+          m_is_sql   TYPE xfeld,
+          m_is_int   TYPE xfeld.
 
     EVENTS: selection_done.
     METHODS:
@@ -392,6 +431,7 @@ CLASS lcl_sel_opt DEFINITION.
       raise_selection_done,
       update_sel_tab,
       set_value IMPORTING  i_field TYPE any i_low TYPE any i_high TYPE any OPTIONAL,
+      save4undo,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
@@ -445,7 +485,7 @@ CLASS lcl_table_viewer DEFINITION.
           m_show_empty.
 
     METHODS:
-      constructor IMPORTING i_tname TYPE tabname,
+      constructor IMPORTING i_tname TYPE any,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -455,6 +495,8 @@ CLASS lcl_table_viewer DEFINITION.
       create_alv,
       create_sel_alv,
       set_header,
+      link IMPORTING  i_str TYPE any
+                      i_column TYPE any RETURNING VALUE(r_done) TYPE xfeld,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object e_interactive,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
@@ -506,7 +548,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
   METHOD  update.
     DATA: l_updated.
-    READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
+    READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
     IF <to>-range[] = e_row-range[].
       l_updated = 'X'."so as not to have an infinite event loop
     ENDIF.
@@ -526,7 +568,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
                    <field> TYPE any.
 
     CHECK lo_sel_to IS NOT INITIAL.
-    READ TABLE lo_sel_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
+    READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
     lt_old_range = <to>-range.
     CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
     ASSIGN lo_tab_from->mr_table->* TO <tab>.
@@ -583,7 +625,7 @@ CLASS lcl_box_handler IMPLEMENTATION.
 
       "shutdown receivers.
       IF <obj>-alv_viewer->mo_sel IS NOT INITIAL.
-        LOOP AT <obj>-alv_viewer->mo_sel->mo_sel_tab INTO DATA(l_sel).
+        LOOP AT <obj>-alv_viewer->mo_sel->mt_sel_tab INTO DATA(l_sel).
           IF l_sel-receiver IS BOUND.
             l_sel-receiver->shut_down( ).
           ENDIF.
@@ -682,7 +724,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ls_layout-cwidth_opt = 'X'.
     ls_layout-sel_mode = 'D'.
     ls_layout-webstyle = 'FFFFFFFF'.
-
+    "ls_layout-detailinit = 'X'.
     CREATE OBJECT lcl_appl=>c_dragdropalv.
     effect = cl_dragdrop=>move + cl_dragdrop=>copy.
 
@@ -759,11 +801,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
 
     lt_toolbar = VALUE ttb_button( BASE lt_toolbar
+     ( function = 'REFRESH'  icon = icon_refresh quickinfo = 'Refresh' butn_type = 0 )
      ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
      ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
      ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
+     "( function = 'CONV'     icon = icon_convert_all   quickinfo = 'Data conversion'   butn_type = 0 )
      ( function = 'TBAR' icon = COND #( WHEN m_std_tbar IS INITIAL THEN icon_column_right ELSE icon_column_left )
-         quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
+        quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
      ( butn_type = 3 ) ).
 
     IF m_std_tbar IS INITIAL.
@@ -802,71 +846,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
-
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
-    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = e_column.
-
-    IF e_column = 'SOBID'."внутренняя ссылка
-      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<sobid>).
-      ASSIGN COMPONENT 'SCLAS' OF STRUCTURE <tab> TO FIELD-SYMBOL(<sclas>).
-      mo_sel->set_value( i_field = 'OBJID' i_low = <sobid>  ).
-      mo_sel->set_value( i_field = 'OTYPE' i_low = <sclas>  ).
-      mo_sel->raise_selection_done( ).
-    ELSEIF e_column = 'ADATANR'.
-      ASSIGN COMPONENT 'ADATANR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<datanr>).
-      ASSIGN COMPONENT 'RELAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<relat>).
-      SELECT SINGLE pasub INTO @DATA(lv_struc)
-        FROM t77ar
-       WHERE relat = @<relat>.
-
-      SELECT SINGLE dbtab INTO @DATA(lv_dbtab)
-        FROM t77ad
-       WHERE pasub = @lv_struc.
-
-      IF sy-subrc = 0.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
-
-        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-      ENDIF.
-    ELSEIF e_column = 'QUONR'.
-      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<quonr>).
-
-      IF sy-subrc = 0.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-        IF m_tabname = 'PA2006'.
-          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'PTQUODED'.
-        ELSE.
-          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'PA2006'.
-        ENDIF.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = e_column i_low = <quonr>  ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-      ENDIF.
-    ELSE."внешняя ссылка
-      ASSIGN COMPONENT e_column OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
-      CHECK <field> IS NOT INITIAL.
-      CALL FUNCTION 'DD_FORKEY_GET'
-        EXPORTING
-          feldname  = CONV fieldname( e_column )
-          tabname   = CONV tabname( m_tabname )
-        TABLES
-          forkeytab = lt_keys
-        EXCEPTIONS
-          not_equal = 1
-          not_found = 2
-          not_valid = 3
-          OTHERS    = 4.
-
-      IF sy-subrc = 0.
-        IF sy-subrc = 0.
-          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
-        ENDIF.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = e_column forkey = e_column  ]-checkfield i_low = <field>  ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-      ENDIF.
-    ENDIF.
+    link( EXPORTING i_str = <tab> i_column = e_column ).
   ENDMETHOD.
 
   METHOD handle_user_command.
@@ -893,6 +874,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_splitter->set_column_width( EXPORTING id    = 1 width = lv_sel_width ).
       mo_alv->set_toolbar_interactive( ).
       RETURN.
+    ELSEIF e_ucomm = 'REFRESH'.
+      mo_sel->raise_selection_done( ).
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
     ELSEIF e_ucomm = 'TABLES'.
@@ -938,7 +921,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             IF sy-subrc = 0.
               lcl_alv_common=>translate_field( EXPORTING i_lang = e_ucomm CHANGING c_fld = <field> ).
               IF mo_sel IS BOUND.
-                READ TABLE mo_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <field>-fieldname.
+                READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <field>-fieldname.
                 IF sy-subrc = 0.
                   <sel>-name = <field>-scrtext_l.
                   IF <sel>-name IS INITIAL.
@@ -974,7 +957,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     IF  mo_sel IS NOT INITIAL.
       APPEND INITIAL LINE TO lt_range ASSIGNING FIELD-SYMBOL(<tabl>).
       <tabl>-tablename = m_tabname.
-      LOOP AT mo_sel->mo_sel_tab INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
+      LOOP AT mo_sel->mt_sel_tab INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
         APPEND INITIAL LINE TO <tabl>-frange_t ASSIGNING FIELD-SYMBOL(<t_range>).
         IF sy-subrc = 0.
           <t_range>-fieldname = ls_tab-field_label.
@@ -1002,7 +985,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
 
-    LOOP AT mo_sel->mo_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
+    LOOP AT mo_sel->mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
       IF <sel>-transmitter IS NOT INITIAL.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
@@ -1015,6 +998,53 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
   ENDMETHOD.
+
+  METHOD link.
+    DATA: i_viewer TYPE REF TO lcl_table_viewer.
+    CLEAR r_done.
+
+    LOOP AT lcl_plugins=>mt_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
+        ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+          IF i_viewer is initial.
+        IF ls_link-rtab IS INITIAL.
+          i_viewer = me.
+        ELSE.
+          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = ls_link-rtab.
+          i_viewer = <obj>-alv_viewer.
+        ENDIF.
+      ENDIF.
+      i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = <field>  ).
+    ENDLOOP.
+    IF sy-subrc = 0.
+      i_viewer->mo_sel->raise_selection_done( ).
+      r_done = 'X'.
+    ELSE."внешний ключ
+
+         DATA: lt_keys TYPE TABLE OF dd05p.
+    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = i_column .
+       ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
+      CHECK <field> IS NOT INITIAL.
+      CALL FUNCTION 'DD_FORKEY_GET'
+        EXPORTING
+          feldname  = CONV fieldname( i_column )
+          tabname   = CONV tabname( m_tabname )
+        TABLES
+          forkeytab = lt_keys
+        EXCEPTIONS
+          not_equal = 1
+          not_found = 2
+          not_valid = 3
+          OTHERS    = 4.
+
+        IF sy-subrc = 0.
+          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+        ENDIF.
+        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = i_column forkey = i_column  ]-checkfield i_low = <field>  ).
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      ENDIF.
+  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_sel_opt IMPLEMENTATION.
@@ -1024,6 +1054,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     mo_viewer = io_viewer.
     mo_sel_alv = NEW #( i_parent = io_container ).
+    m_is_sql = abap_true.
     update_sel_tab( ).
     CREATE OBJECT lcl_appl=>c_dragdropalv.
     effect =  cl_dragdrop=>copy. " + cl_dragdrop=>move.
@@ -1069,7 +1100,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         i_default       = 'X'
         is_layout       = ms_layout
       CHANGING
-        it_outtab       = mo_sel_tab[]
+        it_outtab       = mt_sel_tab[]
         it_fieldcatalog = mt_fcat.
 
     mo_sel_alv->set_toolbar_interactive( ).
@@ -1103,25 +1134,26 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     lcl_alv_common=>refresh( mo_sel_alv ).
     RAISE EVENT selection_done.
     DATA: ls_row TYPE t_sel_row.
-    LOOP AT mo_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>)." WHERE change IS NOT INITIAL.
+    LOOP AT mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
       IF <sel>-transmitter IS NOT INITIAL.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
       ENDIF.
     ENDLOOP.
+
   ENDMETHOD.
 
   METHOD update_sel_tab.
-    IF mo_sel_tab[] IS NOT INITIAL.
-      DATA(lt_copy) = mo_sel_tab.
+    IF mt_sel_tab[] IS NOT INITIAL.
+      DATA(lt_copy) = mt_sel_tab.
     ENDIF.
-    CLEAR mo_sel_tab[].
+    CLEAR mt_sel_tab[].
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mt_alv_catalog ).
     LOOP AT mo_viewer->mt_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
       READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
       IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL.
-        APPEND INITIAL LINE TO mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
+        APPEND INITIAL LINE TO mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
         READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
         IF sy-subrc = 0.
           MOVE-CORRESPONDING ls_copy TO <sel_tab>.
@@ -1151,11 +1183,25 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD handle_sel_toolbar.
     e_object->mt_toolbar[] = VALUE #( butn_type = 0 disabled = ''
      ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
-     ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
+     ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' )
+*     ( function = 'SQL' icon = icon_sap   quickinfo = 'SQL' checked = m_is_sql )
+*     ( function = 'INT' icon = icon_sap_gui_session   quickinfo = 'Internal table' checked =  m_is_int   )
+      ).
+
+
+    IF mt_undo IS NOT INITIAL AND mt_undo NE mt_sel_tab.
+      e_object->mt_toolbar[] = VALUE #( BASE e_object->mt_toolbar[] butn_type = 0 disabled = ''
+       ( function = 'UNDO' icon = icon_system_undo    quickinfo = 'Undo' ) ).
+
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD save4undo.
+    "mt_undo = mt_sel_tab.
   ENDMETHOD.
 
   METHOD set_value.
-    READ TABLE mo_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
+    READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
     CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
     <to>-low = i_low.
     IF i_high IS SUPPLIED.
@@ -1172,7 +1218,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
   METHOD handle_doubleclick.
     CHECK es_row_no-row_id IS NOT INITIAL.
-    READ TABLE mo_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
+    READ TABLE mt_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
     IF e_column = 'ELEMENT'.
       SET PARAMETER ID 'DTYP' FIELD l_sel-element.
       CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
@@ -1262,10 +1308,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD on_f4.
     DATA: return_tab  TYPE STANDARD TABLE OF ddshretval,
           lv_retfield TYPE dynfnam.
-    DATA(l_fname) = CONV fieldname( mo_sel_tab[ es_row_no-row_id ]-field_label ).
+    DATA(l_fname) = CONV fieldname( mt_sel_tab[ es_row_no-row_id ]-field_label ).
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
 
-    gt_sel[] = mo_sel_tab[].
+    gt_sel[] = mt_sel_tab[].
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
       EXPORTING
         tabname           = mo_viewer->m_tabname "todo: change PAXXXX for PXXXX
@@ -1300,7 +1346,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       lv_sign    TYPE raldb_sign,
       lv_option  TYPE raldb_opti.
 
-    READ TABLE mo_sel_tab INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
+    READ TABLE mt_sel_tab INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     CASE es_col_id.
       WHEN 'OPTION_ICON'. "edit select logical expression type
         CALL FUNCTION 'SELECT_OPTION_OPTIONS'
@@ -1351,21 +1397,22 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_data_changed.
-    data: l_start type i.
+    DATA: l_start TYPE i.
 
     FIELD-SYMBOLS: <field> TYPE any.
+    save4undo( ).
     LOOP AT er_data_changed->mt_good_cells ASSIGNING FIELD-SYMBOL(<ls_cells>).
-      READ TABLE mo_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
+      READ TABLE mt_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
       ASSIGN COMPONENT <ls_cells>-fieldname OF STRUCTURE <tab> TO <field>.
-      Read table mo_viewer->mt_alv_catalog with key fieldname = <tab>-field_label into data(l_cat).
-      IF l_cat-convexit = 'ALPHA' and NOT  <ls_cells>-value CA '+*'.
+      READ TABLE mo_viewer->mt_alv_catalog WITH KEY fieldname = <tab>-field_label INTO DATA(l_cat).
+      IF l_cat-convexit = 'ALPHA' AND NOT  <ls_cells>-value CA '+*'.
         <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
         l_start = 128 - l_cat-intlen.
         <ls_cells>-value = <ls_cells>-value+l_start(l_cat-intlen).
       ENDIF.
 
       IF <tab>-int_type = 'D'.
-         DATA: lv_date TYPE sy-datum.
+        DATA: lv_date TYPE sy-datum.
         CALL FUNCTION 'CONVERT_DATE_INPUT'
           EXPORTING
             input                     = <ls_cells>-value
@@ -1397,10 +1444,11 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
 
     ENDLOOP.
-    LOOP AT mo_sel_tab  ASSIGNING <tab>.
+    LOOP AT mt_sel_tab  ASSIGNING <tab>.
       update_sel_row( CHANGING c_sel_row = <tab> ).
     ENDLOOP.
     lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
+
     raise_selection_done( ).
   ENDMETHOD.
 
@@ -1431,7 +1479,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
     IF l_index IS NOT INITIAL.
-      READ TABLE mo_sel_tab INTO DATA(l_sel) INDEX l_index.
+      READ TABLE mt_sel_tab INTO DATA(l_sel) INDEX l_index.
     ENDIF.
 
     CALL METHOD e_object->get_functions IMPORTING fcodes = lt_fcodes. "Inactivate all standard functions
@@ -1462,6 +1510,16 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     DATA: lv_sel_width TYPE i,
           lt_sel_rows  TYPE lvc_t_row.
 
+*    IF e_ucomm = 'SQL'.
+*      clear m_is_int.
+*      m_is_sql = 'X'.
+*    ENDIF.
+*
+*    IF e_ucomm = 'INT'.
+*       m_is_int = 'X'.
+*      clear m_is_sql .
+*    ENDIF.
+
     IF e_ucomm = 'SEL_OFF'. "Hide select-options alv
       mo_viewer->m_visible = ''.
 
@@ -1488,7 +1546,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = lt_sel_rows ).
 
       LOOP AT lt_sel_rows INTO DATA(l_row).
-        READ TABLE mo_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX l_row-index.
+        READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX l_row-index.
         IF e_ucomm = 'SEL_CLEAR'.
           CLEAR : <sel>-low, <sel>-high, <sel>-sign, <sel>-opti, <sel>-range.
         ELSEIF e_ucomm = 'DELR'.
@@ -1502,6 +1560,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         update_sel_row( CHANGING c_sel_row = <sel> ).
       ENDLOOP.
       RAISE EVENT selection_done.
+    ENDIF.
+
+    IF e_ucomm = 'UNDO'.
+      mt_sel_tab = mt_undo.
     ENDIF.
 
     lcl_alv_common=>refresh( mo_viewer->mo_alv ).
@@ -1625,7 +1687,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
       TRY.
           ASSIGN lo_from_tab->mr_table->* TO <f_tab>.
-          READ TABLE lo_to->mo_sel_tab ASSIGNING FIELD-SYMBOL(<to_tab>) INDEX e_row.
+          READ TABLE lo_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to_tab>) INDEX e_row.
           LOOP AT lt_sel_cells INTO DATA(l_cell).
             IF sy-tabix = 1.
               DATA(l_colname) = l_cell-col_id-fieldname.
@@ -1672,11 +1734,11 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       ENDIF.
 
       LOOP AT lt_sel_rows ASSIGNING <row>.
-        READ TABLE lo_from_sel->mo_sel_tab ASSIGNING FIELD-SYMBOL(<from_tab>) INDEX <row>-index.
+        READ TABLE lo_from_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<from_tab>) INDEX <row>-index.
         IF lines( lt_sel_rows ) = 1.
-          READ TABLE lo_to->mo_sel_tab ASSIGNING <to_tab> INDEX e_row.
+          READ TABLE lo_to->mt_sel_tab ASSIGNING <to_tab> INDEX e_row.
         ELSE.
-          READ TABLE lo_to->mo_sel_tab ASSIGNING <to_tab> WITH KEY field_label = <from_tab>-field_label.
+          READ TABLE lo_to->mt_sel_tab ASSIGNING <to_tab> WITH KEY field_label = <from_tab>-field_label.
           IF sy-subrc NE 0.
             CONTINUE.
           ENDIF.
@@ -1707,6 +1769,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
     lo_to->raise_selection_done( ).
   ENDMETHOD.
 ENDCLASS.
+
 "END OF INCLUDE YS_SDE_CLASSES.
 
 *------------REPORT EVENTS--------------------
@@ -1714,6 +1777,7 @@ INITIALIZATION.
   %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
+  lcl_plugins=>init( ).
 
 AT SELECTION-SCREEN OUTPUT.
   lcl_appl=>suppress_run_button( ).
