@@ -69,6 +69,7 @@ CLASS lcl_plugins DEFINITION.
              element TYPE tablename,
              rtab    TYPE tablename,
              rfield  TYPE fieldname,
+             sf      type string,
            END OF t_el_links.
 
     CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
@@ -81,7 +82,7 @@ ENDCLASS.
 CLASS lcl_plugins IMPLEMENTATION.
   METHOD init.
     mt_el_links = VALUE #(
-      ( element = 'PERSNO'   rtab = 'PA0002' rfield = 'PERNR' )
+      ( element = 'PERSNO'   rtab = 'PA0002' rfield = 'PERNR' sf = 'PREM' )
       ).
 
     mt_field_links = VALUE #(
@@ -103,9 +104,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'PA2006'    field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'  field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
       ).
-
   ENDMETHOD.
-
 ENDCLASS.
 
 
@@ -1254,7 +1253,6 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       <to>-high = i_high.
     ENDIF.
     update_sel_row( CHANGING c_sel_row = <to> ).
-
     IF <to>-transmitter IS BOUND.
       DATA: ls_row TYPE t_sel_row.
       MOVE-CORRESPONDING <to> TO ls_row.
@@ -1353,18 +1351,25 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
   METHOD on_f4.
     DATA: return_tab  TYPE STANDARD TABLE OF ddshretval,
-          lv_retfield TYPE dynfnam.
+          lv_retfield TYPE dynfnam,
+          l_tabname type FIELDNAME.
     DATA(l_fname) = CONV fieldname( mt_sel_tab[ es_row_no-row_id ]-field_label ).
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
 
     gt_sel[] = mt_sel_tab[].
+
+    IF mo_viewer->m_tabname = 'PA0000'.
+      l_tabname = 'P0000'.
+    ELSE.
+      l_tabname = mo_viewer->m_tabname.
+    ENDIF.
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
       EXPORTING
-        tabname           = mo_viewer->m_tabname "todo: change PAXXXX for PXXXX
+        tabname           = l_tabname "todo: change PAXXXX for PXXXX
         fieldname         = l_fname
         callback_program  = sy-repid
-        callback_form     = 'CALLBACK_F4'
-        "callback_method - doesn't work for local class
+        callback_form     = 'CALLBACK_F4' "callback_method - doesn't work for local class
+        multiple_choice   = 'X'
       TABLES
         return_tab        = return_tab
       EXCEPTIONS
@@ -1374,14 +1379,19 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         no_values_found   = 4
         OTHERS            = 5.
 
-    lv_retfield = |{ mo_viewer->m_tabname }-{ l_fname }| .
-    IF sy-subrc = 0.
-      READ TABLE return_tab ASSIGNING FIELD-SYMBOL(<ret>) WITH KEY retfield = lv_retfield.
-      IF sy-subrc = 0.
-        ASSIGN er_event_data->m_data->* TO <itab>.
-        APPEND VALUE #( row_id = es_row_no-row_id  fieldname = e_fieldname  value = <ret>-fieldval ) TO <itab>.
+    lv_retfield = |{ l_tabname }-{ l_fname }| .
+    IF sy-subrc = 0 and lines( return_tab ) > 0.
+      ASSIGN er_event_data->m_data->* TO <itab>.
+      read table mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) with key field_label = l_fname.
+      clear <sel>-range.
+      LOOP AT return_tab ASSIGNING FIELD-SYMBOL(<ret>).
+        IF sy-tabix = 1.
+          <sel>-low = <ret>-fieldval.
+        ENDIF.
+        "APPEND VALUE #( row_id = es_row_no-row_id  fieldname = e_fieldname  value = <ret>-fieldval ) TO <itab>.
+        APPEND VALUE #( sign = 'I' opti = 'EQ' low = <ret>-fieldval  ) TO <sel>-range.
+      ENDLOOP.
         er_event_data->m_event_handled = 'X'.
-      ENDIF.
     ENDIF.
   ENDMETHOD.
 
@@ -1838,9 +1848,15 @@ FORM callback_f4 TABLES record_tab STRUCTURE seahlpres
                    callcontrol LIKE ddshf4ctrl.
 
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
-    READ TABLE gt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel) TRANSPORTING low.
+    READ TABLE gt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel).
     IF sy-subrc = 0.
-      <interface>-value = l_sel-low.
+      LOOP AT l_sel-range into data(l_range).
+      APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
+      MOVE-CORRESPONDING l_range to <searchsel>.
+      <searchsel>-shlpfield = <interface>-SHLPFIELD.
+      <searchsel>-option = 'EQ'.
+      ENDLOOP.
+      "<interface>-value = l_sel-low.
     ENDIF.
   ENDLOOP.
 ENDFORM.
