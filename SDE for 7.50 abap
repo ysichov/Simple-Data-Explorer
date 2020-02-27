@@ -58,22 +58,45 @@ PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_f
 
 CLASS lcl_plugins DEFINITION.
   PUBLIC SECTION.
-    TYPES: BEGIN OF t_links,
+    TYPES: BEGIN OF t_field_links,
              tab    TYPE tablename,
              field  TYPE fieldname,
-             seqnr  TYPE seqnr,
              rtab   TYPE tablename,
              rfield TYPE fieldname,
-           END OF t_links.
+             const   type aqadh_range_value,
+           END OF t_field_links,
+           BEGIN OF t_el_links,
+             element TYPE tablename,
+             rtab    TYPE tablename,
+             rfield  TYPE fieldname,
+           END OF t_el_links.
 
-    CLASS-DATA: mt_links TYPE HASHED TABLE OF t_links WITH UNIQUE KEY tab field seqnr.
+    CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
+                mt_el_links    TYPE  TABLE OF t_el_links
+                .
 
     CLASS-METHODS: init.
 ENDCLASS.
 
 CLASS lcl_plugins IMPLEMENTATION.
   METHOD init.
-    mt_links = VALUE #(
+    mt_el_links = VALUE #(
+      ( element = 'PERSNO'   rtab = 'PA0002' rfield = 'PERNR' )
+      ).
+
+    mt_field_links = VALUE #(
+      ( tab = 'PA0000'    field = 'MASSG' rtab = 'T530   ' rfield = 'MASSG' )
+      ( tab = 'PA0000'    field = 'MASSG' rtab = 'T530   ' rfield = 'MASSN' )
+      ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
+      ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'    field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
+      ( tab = 'PA0001'    field = 'ORGEH' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'    field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' const = 'C' )
+      ( tab = 'PA0001'    field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'HRP1000'   field = 'OTYPE' rtab = 'HRP1001' rfield = 'OTYPE' )
+      ( tab = 'HRP1000'   field = 'OBJID' rtab = 'HRP1001' rfield = 'OBJID' )
+      ( tab = 'HRP1001'   field = 'OTYPE' rtab = 'HRP1000' rfield = 'OTYPE' )
+      ( tab = 'HRP1001'   field = 'OBJID' rtab = 'HRP1000' rfield = 'OBJID' )
       ( tab = 'HRP1001'   field = 'SCLAS' rfield = 'OTYPE' )
       ( tab = 'HRP1001'   field = 'SOBID' rfield = 'OBJID' )
       ( tab = 'HRP1002'   field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
@@ -282,7 +305,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
         <catalog>-style = c_blue.
       ENDIF.
 
-      read table lcl_plugins=>mt_links with key tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
+      READ TABLE lcl_plugins=>mt_field_links WITH KEY tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
       IF sy-subrc = 0.
         <catalog>-style = c_green.
       ENDIF.
@@ -1003,9 +1026,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: i_viewer TYPE REF TO lcl_table_viewer.
     CLEAR r_done.
 
-    LOOP AT lcl_plugins=>mt_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
-        ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
-          IF i_viewer is initial.
+    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
+      ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+      IF i_viewer IS INITIAL.
         IF ls_link-rtab IS INITIAL.
           i_viewer = me.
         ELSE.
@@ -1014,36 +1037,58 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           i_viewer = <obj>-alv_viewer.
         ENDIF.
       ENDIF.
-      i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = <field>  ).
+      i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = cond aqadh_type_of_icon( WHEN ls_link-const is initial then <field> else ls_link-const ) ).
     ENDLOOP.
     IF sy-subrc = 0.
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
-    ELSE."внешний ключ
+    ENDIF.
 
-         DATA: lt_keys TYPE TABLE OF dd05p.
-    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = i_column .
-       ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
-      CHECK <field> IS NOT INITIAL.
-      CALL FUNCTION 'DD_FORKEY_GET'
-        EXPORTING
-          feldname  = CONV fieldname( i_column )
-          tabname   = CONV tabname( m_tabname )
-        TABLES
-          forkeytab = lt_keys
-        EXCEPTIONS
-          not_equal = 1
-          not_found = 2
-          not_valid = 3
-          OTHERS    = 4.
+    CHECK r_done IS INITIAL.
 
-        IF sy-subrc = 0.
-          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
-        ENDIF.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = lt_keys[ fieldname = i_column forkey = i_column  ]-checkfield i_low = <field>  ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_tabname fieldname = i_column INTO DATA(l_field) TRANSPORTING rollname.
+    READ TABLE lcl_plugins=>mt_el_links WITH KEY element = l_field-rollname INTO DATA(l_el_link).
+    IF sy-subrc = 0.
+      IF l_el_link-rtab NE m_tabname.
+        ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_el_link-rtab.
+        i_viewer = <obj>-alv_viewer.
+        i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
+         i_viewer->mo_sel->raise_selection_done( ).
+        r_done = 'X'.
       ENDIF.
+    ENDIF.
+
+    CHECK r_done IS INITIAL.
+
+    DATA: lt_keys TYPE TABLE OF dd05p.
+    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = i_column .
+    ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
+    CHECK <field> IS NOT INITIAL.
+    CALL FUNCTION 'DD_FORKEY_GET'
+      EXPORTING
+        feldname  = CONV fieldname( i_column )
+        tabname   = CONV tabname( m_tabname )
+      TABLES
+        forkeytab = lt_keys
+      EXCEPTIONS
+        not_equal = 1
+        not_found = 2
+        not_valid = 3
+        OTHERS    = 4.
+
+    IF sy-subrc < 2.
+      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+      LOOP AT lt_keys into data(l_keys).
+      ASSIGN COMPONENT l_keys-forkey OF STRUCTURE i_str TO <field>.
+      check sy-subrc = 0.
+      <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
+      ENDLOOP.
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+    ENDIF.
+
   ENDMETHOD.
 ENDCLASS.
 
@@ -1202,6 +1247,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
   METHOD set_value.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
+    check sy-subrc = 0.
     CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
     <to>-low = i_low.
     IF i_high IS SUPPLIED.
