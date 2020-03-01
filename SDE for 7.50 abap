@@ -265,7 +265,9 @@ CLASS lcl_alv_common IMPLEMENTATION.
     it_tabdescr[] = lr_table_descr->components[].
 
     LOOP AT it_tabdescr INTO DATA(ls).
+      data(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+      <catalog>-col_pos = l_ind.
       READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
       IF sy-subrc NE 0.
         CALL FUNCTION 'DDIF_FIELDINFO_GET'
@@ -282,14 +284,31 @@ CLASS lcl_alv_common IMPLEMENTATION.
         CLEAR ls_tf.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
         "check empty field
-        IF ls_tf-domname NE 'MANDT' AND ls_tf-inttype NE 'X' AND ls_tf-inttype NE 'T'."SQL dump for X and T
+
+        IF ls_tf-domname NE 'MANDT'." AND ls_tf-inttype NE 'X' AND ls_tf-inttype NE 'T'."SQL dump for X and T
+        data: dref type ref to data,
+              l_x type XSTRING.
+        FIELD-SYMBOLS <field> type any.
+
+        IF ls_tf-rollname is not INITIAL.
+        CREATE DATA dref TYPE (ls_tf-rollname).
+        ASSIGN dref->* TO <field>.
           lv_clause = |{ ls_tf-fieldname } NE ''|.
-          SELECT SINGLE * INTO @<line>
+          SELECT SINGLE (ls_tf-fieldname) INTO @<field>
             FROM (i_tname)
            WHERE (lv_clause).
           IF sy-subrc NE 0.
             ls_tf-empty = 'X'.
           ENDIF.
+         ELSEIF ls_tf-datatype = 'RAWSTRING'.
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+          SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+            FROM (i_tname)
+           WHERE (lv_clause).
+          IF sy-subrc NE 0.
+            ls_tf-empty = 'X'.
+          ENDIF.
+         endif.
         ENDIF.
         INSERT ls_tf INTO TABLE mt_tabfields.
       ENDIF.
@@ -1515,7 +1534,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
         <ls_cells>-value = |{ lv_date DATE = USER }|.
 
-      ELSEIF <tab>-int_type = 'T'."strange dump with time field
+      ELSEIF <tab>-int_type = 'T'.
         DATA: lv_time TYPE sy-uzeit.
         CALL FUNCTION 'CONVERT_TIME_INPUT'
           EXPORTING
