@@ -1,9 +1,9 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.3.157.128
+*& version: alpha 0.3.160.129
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
-*& Multi-window program for viewing tables and links between them
+*& Multi-windows program for viewing tables and links between them
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -52,7 +52,9 @@ TYPES:
     range       TYPE aqadh_t_ranges,
   END OF t_sel_row.
 
+SELECTION-SCREEN BEGIN OF SCREEN 101.
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
+SELECTION-SCREEN END OF SCREEN 0101.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
 CLASS lcl_plugins DEFINITION.
@@ -82,6 +84,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( element = 'PERSNO'   rtab = 'PA0002'  rfield = 'PERNR' )
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OBJID' )
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OTYPE' )
+      ( element = 'INFOTYP'  rtab = 'T777D'   rfield = 'INFTY' )
       ).
 
     "field to field links
@@ -265,7 +268,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     it_tabdescr[] = lr_table_descr->components[].
 
     LOOP AT it_tabdescr INTO DATA(ls).
-      data(l_ind) = sy-tabix.
+      DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       <catalog>-col_pos = l_ind.
       READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
@@ -286,29 +289,29 @@ CLASS lcl_alv_common IMPLEMENTATION.
         "check empty field
 
         IF ls_tf-domname NE 'MANDT'." AND ls_tf-inttype NE 'X' AND ls_tf-inttype NE 'T'."SQL dump for X and T
-        data: dref type ref to data,
-              l_x type XSTRING.
-        FIELD-SYMBOLS <field> type any.
+          DATA: dref TYPE REF TO data,
+                l_x  TYPE xstring.
+          FIELD-SYMBOLS <field> TYPE any.
 
-        IF ls_tf-rollname is not INITIAL.
-        CREATE DATA dref TYPE (ls_tf-rollname).
-        ASSIGN dref->* TO <field>.
-          lv_clause = |{ ls_tf-fieldname } NE ''|.
-          SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-            FROM (i_tname)
-           WHERE (lv_clause).
-          IF sy-subrc NE 0.
-            ls_tf-empty = 'X'.
-          ENDIF.
-         ELSEIF ls_tf-datatype = 'RAWSTRING'.
+          IF ls_tf-rollname IS NOT INITIAL.
+            CREATE DATA dref TYPE (ls_tf-rollname).
+            ASSIGN dref->* TO <field>.
             lv_clause = |{ ls_tf-fieldname } NE ''|.
-          SELECT SINGLE (ls_tf-fieldname) INTO @l_x
-            FROM (i_tname)
-           WHERE (lv_clause).
-          IF sy-subrc NE 0.
-            ls_tf-empty = 'X'.
+            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
+              FROM (i_tname)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = 'X'.
+            ENDIF.
+          ELSEIF ls_tf-datatype = 'RAWSTRING'.
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+              FROM (i_tname)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = 'X'.
+            ENDIF.
           ENDIF.
-         endif.
         ENDIF.
         INSERT ls_tf INTO TABLE mt_tabfields.
       ENDIF.
@@ -413,7 +416,8 @@ CLASS lcl_appl DEFINITION.
     CLASS-METHODS:
       init_icons_table,
       init_lang,
-      suppress_run_button.
+      suppress_run_button,
+      exit.
 ENDCLASS.
 
 CLASS lcl_data_transmitter DEFINITION.
@@ -1364,11 +1368,11 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_f4.
-    DATA: return_tab  TYPE STANDARD TABLE OF ddshretval,
-          lt_objec TYPE TABLE OF objec,
-          ls_objec TYPE objec,
-          l_otype  TYPE otype,
-          l_plvar  TYPE plvar.
+    DATA: return_tab TYPE STANDARD TABLE OF ddshretval,
+          lt_objec   TYPE TABLE OF objec,
+          ls_objec   TYPE objec,
+          l_otype    TYPE otype,
+          l_plvar    TYPE plvar.
 
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
 
@@ -1437,7 +1441,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       IF sy-subrc = 0 AND lines( return_tab ) > 0.
         ASSIGN er_event_data->m_data->* TO <itab>.
         CLEAR <sel>-range.
-        LOOP AT return_tab ASSIGNING FIELD-SYMBOL(<ret>) where fieldname = l_fname.
+        LOOP AT return_tab ASSIGNING FIELD-SYMBOL(<ret>) WHERE fieldname = l_fname.
           IF sy-tabix = 1.
             <sel>-low = <ret>-fieldval.
           ENDIF.
@@ -1702,6 +1706,8 @@ CLASS lcl_appl IMPLEMENTATION.
   METHOD suppress_run_button.
     DATA itab TYPE TABLE OF sy-ucomm.
     APPEND: 'ONLI' TO itab.
+    APPEND: 'WB_EXEC' TO itab.
+
     CALL FUNCTION 'RS_SET_SELSCREEN_STATUS'
       EXPORTING
         p_status  = sy-pfkey
@@ -1709,6 +1715,26 @@ CLASS lcl_appl IMPLEMENTATION.
         p_exclude = itab.
   ENDMETHOD.
 
+  METHOD exit.
+    DATA: l_answer.
+    DESCRIBE TABLE lcl_appl=>mt_obj.
+    IF sy-tfill NE 0.
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar       = 'Exit'
+          text_question  = 'Do you want to exit?'
+        IMPORTING
+          answer         = l_answer
+        EXCEPTIONS
+          text_not_found = 1
+          OTHERS         = 2.
+      IF l_answer = '1'.
+        LEAVE PROGRAM.
+      ELSE.
+        CALL SCREEN 101.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_dragdrop IMPLEMENTATION.
@@ -1866,15 +1892,20 @@ ENDCLASS.
 
 *------------REPORT EVENTS--------------------
 INITIALIZATION.
-  %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
 
+  CALL SELECTION-SCREEN 101.
+
 AT SELECTION-SCREEN OUTPUT.
+  %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
   lcl_appl=>suppress_run_button( ).
 
-AT SELECTION-SCREEN.
+AT SELECTION-SCREEN ON EXIT-COMMAND.
+  lcl_appl=>exit( ).
+
+AT SELECTION-SCREEN .
   CHECK lcl_sql=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
