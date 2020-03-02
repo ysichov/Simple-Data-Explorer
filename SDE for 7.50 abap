@@ -106,6 +106,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'HRP1002'   field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
       ( tab = 'PA2006'    field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'  field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
+      ( tab = 'PTQUODED'  field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
       ).
   ENDMETHOD.
 ENDCLASS.
