@@ -287,9 +287,9 @@ CLASS lcl_alv_common IMPLEMENTATION.
             OTHERS         = 3.
         CLEAR ls_tf.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
-        "check empty field
 
-        IF ls_tf-domname NE 'MANDT'." AND ls_tf-inttype NE 'X' AND ls_tf-inttype NE 'T'."SQL dump for X and T
+        "check empty field
+        IF ls_tf-domname NE 'MANDT'.
           DATA: dref TYPE REF TO data,
                 l_x  TYPE xstring.
           FIELD-SYMBOLS <field> TYPE any.
@@ -753,7 +753,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
                          CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
-    "ls_layout-zebra = 'X'.
     ls_layout-col_opt = 'X'.
     ls_layout-cwidth_opt = 'X'.
     ls_layout-sel_mode = 'D'.
@@ -796,7 +795,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     SET HANDLER handle_user_command
                 handle_menu_button
                 handle_tab_toolbar
-                "handle_hotspot
                 handle_doubleclick
                 lcl_dragdrop=>drag FOR mo_alv.
 
@@ -829,8 +827,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
-      DATA(lt_toolbar) = VALUE ttb_button( ( function = 'SEL_ON' icon = icon_arrow_left quickinfo = 'Show Select-Options' butn_type = 0 )
-                                           ( butn_type = 3 ) ).
+      DATA(lt_toolbar) = VALUE ttb_button(
+       ( function = 'SEL_ON' icon = icon_arrow_left quickinfo = 'Show Select-Options' butn_type = 0 )
+       ( butn_type = 3 ) ).
     ENDIF.
 
     lt_toolbar = VALUE ttb_button( BASE lt_toolbar
@@ -838,7 +837,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
      ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
      ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
      ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
-     "( function = 'CONV'     icon = icon_convert_all   quickinfo = 'Data conversion'   butn_type = 0 )
      ( function = 'TBAR' icon = COND #( WHEN m_std_tbar IS INITIAL THEN icon_column_right ELSE icon_column_left )
         quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
      ( butn_type = 3 ) ).
@@ -1584,9 +1582,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'SIGN' i_value = l_second-sign ).
     ENDIF.
 
-    "LOOP AT mt_sel_tab  ASSIGNING <tab>.
     update_sel_row( CHANGING c_sel_row = <tab> ).
-    "ENDLOOP.
     lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
     raise_selection_done( ).
   ENDMETHOD.
