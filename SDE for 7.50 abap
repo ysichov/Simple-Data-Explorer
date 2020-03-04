@@ -753,7 +753,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
                          CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
-    ls_layout-zebra = 'X'.
+    "ls_layout-zebra = 'X'.
     ls_layout-col_opt = 'X'.
     ls_layout-cwidth_opt = 'X'.
     ls_layout-sel_mode = 'D'.
@@ -1518,45 +1518,67 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       READ TABLE mt_sel_tab INDEX <ls_cells>-row_id ASSIGNING FIELD-SYMBOL(<tab>).
       ASSIGN COMPONENT <ls_cells>-fieldname OF STRUCTURE <tab> TO <field>.
       READ TABLE mo_viewer->mt_alv_catalog WITH KEY fieldname = <tab>-field_label INTO DATA(l_cat).
+
+      IF <field> IS NOT INITIAL AND <ls_cells>-value IS INITIAL.
+        READ TABLE <tab>-range INTO DATA(l_second) INDEX 2.
+        IF sy-subrc = 0.
+          DELETE <tab>-range INDEX 1.
+        ENDIF.
+      ENDIF.
+
       IF l_cat-convexit = 'ALPHA' AND NOT  <ls_cells>-value CA '+*'.
         <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
         l_start = 128 - l_cat-intlen.
         <ls_cells>-value = <ls_cells>-value+l_start(l_cat-intlen).
       ENDIF.
 
-      IF <tab>-int_type = 'D'.
-        DATA: lv_date TYPE sy-datum.
-        CALL FUNCTION 'CONVERT_DATE_INPUT'
-          EXPORTING
-            input                     = <ls_cells>-value
-            plausibility_check        = 'X'
-          IMPORTING
-            output                    = lv_date
-          EXCEPTIONS
-            plausibility_check_failed = 1
-            wrong_format_in_input     = 2
-            OTHERS                    = 3.
-
-        <ls_cells>-value = |{ lv_date DATE = USER }|.
-
-      ELSEIF <tab>-int_type = 'T'.
-        DATA: lv_time TYPE sy-uzeit.
-        CALL FUNCTION 'CONVERT_TIME_INPUT'
-          EXPORTING
-            input                     = <ls_cells>-value
-          IMPORTING
-            output                    = lv_time
-          EXCEPTIONS
-            plausibility_check_failed = 1
-            wrong_format_in_input     = 2
-            OTHERS                    = 3.
-
-        <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
+      IF <ls_cells>-value IS NOT INITIAL.
+        IF <tab>-int_type = 'D'.
+          DATA: lv_date TYPE sy-datum.
+          CALL FUNCTION 'CONVERT_DATE_INPUT'
+            EXPORTING
+              input                     = <ls_cells>-value
+              plausibility_check        = 'X'
+            IMPORTING
+              output                    = lv_date
+            EXCEPTIONS
+              plausibility_check_failed = 1
+              wrong_format_in_input     = 2
+              OTHERS                    = 3.
+          <ls_cells>-value = |{ lv_date DATE = USER }|.
+        ELSEIF <tab>-int_type = 'T'.
+          DATA: lv_time TYPE sy-uzeit.
+          CALL FUNCTION 'CONVERT_TIME_INPUT'
+            EXPORTING
+              input                     = <ls_cells>-value
+            IMPORTING
+              output                    = lv_time
+            EXCEPTIONS
+              plausibility_check_failed = 1
+              wrong_format_in_input     = 2
+              OTHERS                    = 3.
+          <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
+        ENDIF.
       ENDIF.
+    ENDLOOP.
+    IF l_second IS INITIAL.
       <field> = <ls_cells>-value.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
+    ELSE.
+      <tab>-low = l_second-low.
+      er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'LOW' i_value = l_second-low ).
+      IF l_second-high CO '0 '.
+        clear l_second-high.
+      ENDIF.
+        <tab>-high = l_second-high.
+        er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'HIGH' i_value = l_second-high ).
 
-    ENDLOOP.
+      <tab>-opti = l_second-opti.
+      er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'OPTI' i_value = l_second-opti ).
+      <tab>-sign = l_second-sign.
+      er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'SIGN' i_value = l_second-sign ).
+    ENDIF.
+
     LOOP AT mt_sel_tab  ASSIGNING <tab>.
       update_sel_row( CHANGING c_sel_row = <tab> ).
     ENDLOOP.
