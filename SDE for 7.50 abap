@@ -1520,9 +1520,14 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       READ TABLE mo_viewer->mt_alv_catalog WITH KEY fieldname = <tab>-field_label INTO DATA(l_cat).
 
       IF <field> IS NOT INITIAL AND <ls_cells>-value IS INITIAL.
+
         READ TABLE <tab>-range INTO DATA(l_second) INDEX 2.
         IF sy-subrc = 0.
-          DELETE <tab>-range INDEX 1.
+          IF ( <ls_cells>-fieldname = 'LOW' AND <tab>-high IS INITIAL ) OR  ( <ls_cells>-fieldname = 'HIGH' AND <tab>-low IS INITIAL  ).
+            DELETE <tab>-range INDEX 1.
+          ELSE.
+            clear l_second.
+          ENDIF.
         ENDIF.
       ENDIF.
 
@@ -1568,10 +1573,10 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       <tab>-low = l_second-low.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'LOW' i_value = l_second-low ).
       IF l_second-high CO '0 '.
-        clear l_second-high.
+        CLEAR l_second-high.
       ENDIF.
-        <tab>-high = l_second-high.
-        er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'HIGH' i_value = l_second-high ).
+      <tab>-high = l_second-high.
+      er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'HIGH' i_value = l_second-high ).
 
       <tab>-opti = l_second-opti.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'OPTI' i_value = l_second-opti ).
@@ -1579,9 +1584,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = 'SIGN' i_value = l_second-sign ).
     ENDIF.
 
-    LOOP AT mt_sel_tab  ASSIGNING <tab>.
-      update_sel_row( CHANGING c_sel_row = <tab> ).
-    ENDLOOP.
+    "LOOP AT mt_sel_tab  ASSIGNING <tab>.
+    update_sel_row( CHANGING c_sel_row = <tab> ).
+    "ENDLOOP.
     lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
     raise_selection_done( ).
   ENDMETHOD.
