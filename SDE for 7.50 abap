@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.3.160.129
+*& version: alpha 0.4.167.137
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *& Multi-windows program for viewing tables and links between them
 *& Written by Yurii Sychov
@@ -111,6 +111,25 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
+CLASS lcl_ddic DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS: get_text_table IMPORTING i_tname      TYPE tabname
+                                  EXPORTING e_checkfield TYPE fieldname
+                                  RETURNING VALUE(e_tab) TYPE tabname.
+ENDCLASS.
+
+CLASS lcl_ddic IMPLEMENTATION.
+  METHOD get_text_table.
+    CALL FUNCTION 'DDUT_TEXTTABLE_GET'
+      EXPORTING
+        tabname    = i_tname
+      IMPORTING
+        texttable  = e_tab
+        checkfield = e_checkfield.
+  ENDMETHOD.
+
+ENDCLASS.
+
 CLASS lcl_table_viewer DEFINITION DEFERRED.
 CLASS lcl_box_handler  DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
@@ -131,12 +150,8 @@ ENDCLASS.
 CLASS lcl_sql DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
-      exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc,
-      read_table IMPORTING i_tabname   TYPE tabname
-                           i_where     TYPE string
-                           i_row_count TYPE i OPTIONAL
-                 CHANGING  cr_tab      TYPE REF TO data
-                           c_count     TYPE i.
+      exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
+
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
@@ -148,75 +163,64 @@ CLASS lcl_sql IMPLEMENTATION.
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 
-  METHOD read_table.
-    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
-    ASSIGN cr_tab->* TO <f_tab>.
-    IF i_where IS NOT INITIAL.
-      TRY.
-          SELECT * FROM (i_tabname) INTO TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
-        CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
-        CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
-        CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
-      ENDTRY.
-    ELSE.
-      IF i_row_count IS NOT SUPPLIED.
-        SELECT * FROM (i_tabname) INTO TABLE <f_tab>.
-      ELSE.
-        SELECT * FROM (i_tabname) INTO TABLE <f_tab> UP TO i_row_count ROWS.
-      ENDIF.
-    ENDIF.
-    c_count = sy-dbcnt.
-  ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_create_data DEFINITION.
+CLASS lcl_rtti DEFINITION.
   PUBLIC SECTION.
 
     CLASS-METHODS:
-      create_table IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
-      create_structure IMPORTING i_tname TYPE tabname CHANGING c_struc TYPE REF TO data.
-
-  PRIVATE SECTION.
-    CLASS-METHODS:
-      get_struc_handle IMPORTING i_tname TYPE tabname RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr.
+      create_table_by_name IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
+      create_struc_handle IMPORTING i_tname TYPE tabname EXPORTING e_t_comp TYPE abap_component_tab RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr      .
 ENDCLASS.
 
-CLASS lcl_create_data IMPLEMENTATION.
-  METHOD get_struc_handle.
-    DATA: lo_struct TYPE REF TO cl_abap_structdescr,
-          lo_type   TYPE REF TO cl_abap_typedescr,
-          lt_comp   TYPE cl_abap_structdescr=>component_table.
+CLASS lcl_rtti IMPLEMENTATION.
+  METHOD create_struc_handle.
+    DATA: l_texttab     TYPE tabname,
+          lo_texttab    TYPE REF TO cl_abap_structdescr,
+          ls_comp       TYPE abap_componentdescr,
+          lt_components TYPE abap_component_tab,
+          lt_field_info TYPE TABLE OF dfies.
 
-* 1. Getting Components from existing type
-    CALL METHOD cl_abap_typedescr=>describe_by_name
-      EXPORTING
-        p_name         = i_tname
-      RECEIVING
-        p_descr_ref    = lo_type
-      EXCEPTIONS
-        type_not_found = 1
-        OTHERS         = 2.
+    l_texttab = lcl_ddic=>get_text_table( i_tname ).
+    handle ?= cl_abap_typedescr=>describe_by_name( i_tname ).
 
-    IF sy-subrc NE 0.
-      MESSAGE 'Table Structure not found'(001) TYPE 'E' DISPLAY LIKE 'I'.
+    IF l_texttab IS NOT INITIAL.
+      lo_texttab  ?= cl_abap_typedescr=>describe_by_name( l_texttab ).
+      LOOP AT handle->components INTO DATA(l_descr).
+        ls_comp-name = l_descr-name.
+        ls_comp-type ?= handle->get_component_type( ls_comp-name ).
+        APPEND ls_comp TO lt_components.
+      ENDLOOP.
+
+      LOOP AT lo_texttab->components INTO l_descr.
+
+        CALL FUNCTION 'DDIF_FIELDINFO_GET'
+          EXPORTING
+            tabname        = l_texttab
+            fieldname      = l_descr-name
+            langu          = sy-langu
+          TABLES
+            dfies_tab      = lt_field_info
+          EXCEPTIONS
+            not_found      = 1
+            internal_error = 2
+            OTHERS         = 3.
+
+        IF lt_field_info[ 1 ]-keyflag = abap_false.
+          ls_comp-name =  l_texttab && '_' && l_descr-name.
+          ls_comp-type ?= lo_texttab->get_component_type( l_descr-name ).
+          APPEND ls_comp TO lt_components.
+          APPEND ls_comp TO e_t_comp.
+        ENDIF.
+      ENDLOOP.
+      handle  = cl_abap_structdescr=>create( lt_components ).
     ENDIF.
-
-    lo_struct ?= lo_type.
-    lt_comp  = lo_struct->get_components( ).
-    handle = cl_abap_structdescr=>create( lt_comp ). "Create a New structure type
   ENDMETHOD.
 
-  METHOD create_structure.
-    DATA: lo_new_type TYPE REF TO cl_abap_structdescr.
-    lo_new_type = get_struc_handle( i_tname ).
-    CREATE DATA c_struc TYPE HANDLE lo_new_type.
-  ENDMETHOD.
+  METHOD create_table_by_name.
+    DATA: lo_new_tab  TYPE REF TO cl_abap_tabledescr.
 
-  METHOD create_table.
-    DATA: lo_new_type TYPE REF TO cl_abap_structdescr,
-          lo_new_tab  TYPE REF TO cl_abap_tabledescr.
-
-    lo_new_type = get_struc_handle( i_tname ).
+    DATA(lo_new_type)  = create_struc_handle( i_tname ).
     lo_new_tab = cl_abap_tabledescr=>create(
                     p_line_type  = lo_new_type
                     p_table_kind = cl_abap_tabledescr=>tablekind_std
@@ -228,6 +232,7 @@ ENDCLASS.
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
     CONSTANTS: c_white(4) TYPE x VALUE '00000001', "white background
+               c_grey(4)  TYPE x VALUE '00000003', "white background
                c_green(4) TYPE x VALUE '00000216', "green +underline
                c_blue(4)  TYPE x VALUE '00000209', " blue font +underline
                c_bold(4)  TYPE x VALUE '00000020'.
@@ -240,8 +245,7 @@ CLASS lcl_alv_common DEFINITION.
 
     CLASS-METHODS:
       refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
-      translate_field IMPORTING i_lang LIKE sy-ucomm OPTIONAL CHANGING c_fld TYPE lvc_s_fcat,
-      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat.
+      translate_field IMPORTING i_lang LIKE sy-langu OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
@@ -252,116 +256,18 @@ CLASS lcl_alv_common IMPLEMENTATION.
     IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
-    i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = '' ).
-  ENDMETHOD.
-
-  METHOD create_field_cat.
-    DATA: lv_clause      TYPE string,
-          lr_struc       TYPE REF TO data,
-          lr_table_descr TYPE REF TO cl_abap_structdescr,
-          it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info  TYPE TABLE OF dfies.
-
-    FIELD-SYMBOLS: <line> TYPE any.
-    lcl_create_data=>create_structure( EXPORTING i_tname = i_tname CHANGING c_struc = lr_struc ).
-    ASSIGN lr_struc->* TO <line>.
-    lr_table_descr ?= cl_abap_typedescr=>describe_by_name( i_tname ).
-    it_tabdescr[] = lr_table_descr->components[].
-
-    LOOP AT it_tabdescr INTO DATA(ls).
-      DATA(l_ind) = sy-tabix.
-      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
-      <catalog>-col_pos = l_ind.
-      READ TABLE mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
-      IF sy-subrc NE 0.
-        CALL FUNCTION 'DDIF_FIELDINFO_GET'
-          EXPORTING
-            tabname        = i_tname
-            fieldname      = ls-name
-            langu          = sy-langu
-          TABLES
-            dfies_tab      = lt_field_info
-          EXCEPTIONS
-            not_found      = 1
-            internal_error = 2
-            OTHERS         = 3.
-        CLEAR ls_tf.
-        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
-
-        "check empty field
-        IF ls_tf-domname NE 'MANDT'.
-          DATA: dref TYPE REF TO data,
-                l_x  TYPE xstring.
-          FIELD-SYMBOLS <field> TYPE any.
-
-          IF ls_tf-rollname IS NOT INITIAL.
-            CREATE DATA dref TYPE (ls_tf-rollname).
-            ASSIGN dref->* TO <field>.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-              FROM (i_tname)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = 'X'.
-            ENDIF.
-          ELSEIF ls_tf-datatype = 'RAWSTRING'.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
-              FROM (i_tname)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = 'X'.
-            ENDIF.
-          ENDIF.
-        ENDIF.
-        INSERT ls_tf INTO TABLE mt_tabfields.
-      ENDIF.
-      <catalog>-style = c_white.
-      MOVE-CORRESPONDING ls_tf TO <catalog>.
-      <catalog>-no_zero = 'X'.
-
-      IF ls_tf-checktable IS NOT INITIAL.
-        <catalog>-style = c_blue.
-      ENDIF.
-
-      READ TABLE lcl_plugins=>mt_field_links WITH KEY tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
-        <catalog>-style = c_green.
-      ENDIF.
-
-      READ TABLE lcl_plugins=>mt_el_links WITH KEY element = ls_tf-rollname TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
-        <catalog>-style = c_green.
-      ENDIF.
-
-      IF ls_tf-keyflag = 'X'.
-        <catalog>-style = <catalog>-style BIT-OR c_bold.
-      ENDIF.
-    ENDLOOP.
+    i_obj->refresh_table_display( EXPORTING is_stable = l_stable  ).
   ENDMETHOD.
 
   METHOD translate_field.
     DATA: lv_lang       LIKE sy-langu,
           lt_field_info TYPE TABLE OF dfies.
 
-    IF i_lang IS NOT SUPPLIED.
-      lv_lang = sy-langu.
-    ELSE.
-      CALL FUNCTION 'CONVERSION_EXIT_ISOLA_INPUT'
-        EXPORTING
-          input            = i_lang
-        IMPORTING
-          output           = lv_lang
-        EXCEPTIONS
-          unknown_language = 1
-          OTHERS           = 2.
-    ENDIF.
-
     CALL FUNCTION 'DDIF_FIELDINFO_GET'
       EXPORTING
-        tabname        = c_fld-ref_table
+        tabname        = c_fld-tabname "c_fld-ref_table
         fieldname      = c_fld-fieldname
-        langu          = lv_lang
+        langu          = i_lang
       TABLES
         dfies_tab      = lt_field_info
       EXCEPTIONS
@@ -508,10 +414,13 @@ CLASS lcl_table_viewer DEFINITION.
           mo_sel             TYPE REF TO lcl_sel_opt,
           mo_box             TYPE REF TO cl_gui_dialogbox_container,
           mr_table           TYPE REF TO data,
+          mr_text_table      TYPE REF TO data,
           mo_splitter        TYPE REF TO cl_gui_splitter_container,
           mo_sel_parent      TYPE REF TO cl_gui_container,
           mo_alv_parent      TYPE REF TO cl_gui_container,
           mt_alv_catalog     TYPE lvc_t_fcat,
+          mt_text_components TYPE abap_component_tab,
+          m_checkfield       TYPE fieldname,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
           m_visible,
@@ -529,8 +438,16 @@ CLASS lcl_table_viewer DEFINITION.
       create_alv,
       create_sel_alv,
       set_header,
+      read_text_table,
+      update_texts,
+      read_table IMPORTING i_tabname   TYPE tabname
+                           i_where     TYPE string
+                           i_row_count TYPE i OPTIONAL
+                 CHANGING  cr_tab      TYPE REF TO data
+                           c_count     TYPE i,
       link IMPORTING  i_str TYPE any
                       i_column TYPE any RETURNING VALUE(r_done) TYPE xfeld,
+      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
@@ -677,7 +594,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_sel_width = 0.
     m_tabname = i_tname.
     create_popup( ).
-    lcl_create_data=>create_table( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table ).
+    lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table ).
     create_alv( ).
     create_sel_alv( ).
   ENDMETHOD.
@@ -749,8 +666,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     FIELD-SYMBOLS: <f_tab>   TYPE ANY TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
+    mt_alv_catalog = create_field_cat( m_tabname ).
     ASSIGN mr_table->* TO <f_tab>.
-    lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+    read_text_table( ).
+
+    read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
                          CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
     ls_layout-col_opt = 'X'.
@@ -770,16 +690,16 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
 
-    mt_alv_catalog = lcl_alv_common=>create_field_cat( m_tabname ).
+
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
-        i_save           = 'X'
-        i_default        = 'X'
-        i_structure_name = m_tabname
-        is_layout        = ls_layout
+        i_save          = 'X'
+        i_default       = 'X'
+        "i_structure_name = m_tabname
+        is_layout       = ls_layout
       CHANGING
-        it_fieldcatalog  = mt_alv_catalog
-        it_outtab        = <f_tab>.
+        it_fieldcatalog = mt_alv_catalog
+        it_outtab       = <f_tab>.
 
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mt_alv_catalog ).
     LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
@@ -811,6 +731,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_sel->update_sel_tab( ).
     ENDIF.
   ENDMETHOD.
+
+  METHOD read_text_table.
+    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
+
+    DATA(l_tab) = lcl_ddic=>get_text_table( m_tabname ).
+    CHECK l_tab IS NOT INITIAL.
+    lcl_rtti=>create_table_by_name( EXPORTING i_tname = l_tab CHANGING c_table = mr_text_table ).
+    ASSIGN mr_text_table->* TO <f_tab>.
+    SELECT * FROM (l_tab) INTO TABLE <f_tab> ORDER BY PRIMARY KEY.
+  ENDMETHOD.
+
 
   METHOD set_header.
     DATA: lv_text       TYPE as4text,
@@ -846,6 +777,117 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ELSE.
       e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD create_field_cat.
+    DATA: lv_clause      TYPE string,
+          lr_struc       TYPE REF TO data,
+          lr_table_descr TYPE REF TO cl_abap_structdescr,
+          it_tabdescr    TYPE abap_compdescr_tab,
+          lt_field_info  TYPE TABLE OF dfies,
+          l_fname        TYPE fieldname,
+          l_tname        TYPE tabname,
+          l_replace      TYPE string.
+
+    DATA(lo_str) = lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components ).
+    CREATE DATA lr_struc TYPE HANDLE lo_str.
+    lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
+    it_tabdescr[] = lr_table_descr->components[].
+
+    DATA(l_texttab) = lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_checkfield = m_checkfield ).
+
+    l_replace = l_texttab && '_'.
+
+    LOOP AT it_tabdescr INTO DATA(ls).
+      DATA(l_ind) = sy-tabix.
+      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+      <catalog>-col_pos = l_ind.
+      READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
+      IF sy-subrc NE 0.
+        l_tname = i_tname.
+        l_fname = ls-name.
+
+        IF l_texttab IS NOT INITIAL.
+
+          l_fname = ls-name.
+          REPLACE l_replace IN l_fname WITH ''.
+          IF sy-subrc = 0.
+            l_tname = l_texttab.
+          ENDIF.
+        ENDIF.
+        CALL FUNCTION 'DDIF_FIELDINFO_GET'
+          EXPORTING
+            tabname        = l_tname
+            fieldname      = l_fname
+            langu          = sy-langu
+          TABLES
+            dfies_tab      = lt_field_info
+          EXCEPTIONS
+            not_found      = 1
+            internal_error = 2
+            OTHERS         = 3.
+        IF sy-subrc NE 0.
+          CONTINUE.
+        ENDIF.
+        CLEAR ls_tf.
+        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
+        ls_tf-fieldname = ls-name.
+
+        "check empty field
+        IF ls_tf-domname NE 'MANDT'.
+          DATA: dref TYPE REF TO data,
+                l_x  TYPE xstring.
+          FIELD-SYMBOLS <field> TYPE any.
+
+          IF ls_tf-rollname IS NOT INITIAL.
+            CREATE DATA dref TYPE (ls_tf-rollname).
+            ASSIGN dref->* TO <field>.
+            lv_clause = |{ l_fname } NE ''|.
+            SELECT SINGLE (l_fname) INTO @<field>
+              FROM (l_tname)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = 'X'.
+            ENDIF.
+          ELSEIF ls_tf-datatype = 'RAWSTRING'.
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+              FROM (l_tname)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = 'X'.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+        INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
+      ENDIF.
+      <catalog>-style = lcl_alv_common=>c_white.
+      MOVE-CORRESPONDING ls_tf TO <catalog>.
+      <catalog>-no_zero = 'X'.
+
+      IF ls_tf-tabname ne m_tabname.
+        <catalog>-style = lcl_alv_common=>c_grey.
+      ENDIF.
+
+      IF ls_tf-checktable IS NOT INITIAL.
+        <catalog>-style = lcl_alv_common=>c_blue.
+      ENDIF.
+
+      READ TABLE lcl_plugins=>mt_field_links WITH KEY tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        <catalog>-style = lcl_alv_common=>c_green.
+      ENDIF.
+
+      READ TABLE lcl_plugins=>mt_el_links WITH KEY element = ls_tf-rollname TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        <catalog>-style = lcl_alv_common=>c_green.
+      ENDIF.
+
+      IF ls_tf-keyflag = 'X'.
+        <catalog>-style = <catalog>-style BIT-OR lcl_alv_common=>c_bold.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD handle_menu_button.
@@ -920,19 +962,22 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       RETURN.
     ELSE.
       DATA: r_struc TYPE REF TO data.
-      lcl_create_data=>create_structure( EXPORTING i_tname = m_tabname CHANGING c_struc =   r_struc ).
+      DATA(lo_str) = lcl_rtti=>create_struc_handle( EXPORTING i_tname = m_tabname ).
+      CREATE DATA r_struc TYPE HANDLE lo_str.
       ASSIGN r_struc->* TO <f_line>.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         <field>-col_pos = sy-tabix.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            CLEAR m_show_empty.
-            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
-            LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
-              EXIT.
-            ENDLOOP.
-            IF sy-subrc NE 0.
-              <field>-no_out = 'X'.
+            IF <field>-tabname = m_tabname.
+              CLEAR m_show_empty.
+              lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
+              LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+                EXIT.
+              ENDLOOP.
+              IF sy-subrc NE 0.
+                <field>-no_out = 'X'.
+              ENDIF.
             ENDIF.
           WHEN 'SHOW'.
             m_show_empty = 'X'.
@@ -950,7 +995,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           WHEN OTHERS. "header names translation
             READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
             IF sy-subrc = 0.
-              lcl_alv_common=>translate_field( EXPORTING i_lang = e_ucomm CHANGING c_fld = <field> ).
+              lcl_alv_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <field> ).
               IF mo_sel IS BOUND.
                 READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <field>-fieldname.
                 IF sy-subrc = 0.
@@ -969,6 +1014,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     IF sy-subrc = 0.
       m_lang = e_ucomm.
       set_header( ).
+      update_texts( ).
+      mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
     ENDIF.
 
     CALL METHOD mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = it_fields[].
@@ -1013,7 +1060,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD refresh_table.
     DATA: ls_row TYPE t_sel_row.
-    lcl_sql=>read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
+    read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
     set_header( ).
 
     LOOP AT mo_sel->mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
@@ -1028,6 +1075,77 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
+  ENDMETHOD.
+
+  METHOD read_table.
+    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
+
+    ASSIGN cr_tab->* TO <f_tab>.
+    IF i_where IS NOT INITIAL.
+      TRY.
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
+        CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
+        CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
+        CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
+      ENDTRY.
+    ELSE.
+      IF i_row_count IS NOT SUPPLIED.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> ORDER BY PRIMARY KEY.
+      ELSE.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO i_row_count ROWS ORDER BY PRIMARY KEY..
+      ENDIF.
+    ENDIF.
+    c_count = sy-dbcnt.
+    update_texts( ).
+  ENDMETHOD.
+
+  METHOD update_texts.
+    DATA: l_text_field TYPE fieldname,
+          l_replace    TYPE string,
+          lv_clause    TYPE string.
+    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
+    FIELD-SYMBOLS: <text_tab> TYPE ANY TABLE.
+
+    "text fields
+    DATA(l_tab) = lcl_ddic=>get_text_table( m_tabname ).
+    CHECK l_tab IS NOT INITIAL.
+
+    ASSIGN mr_table->* TO <f_tab>.
+    ASSIGN mr_text_table->* TO <text_tab>.
+
+    l_replace = l_tab && '_'.
+    LOOP AT <f_tab> ASSIGNING FIELD-SYMBOL(<str>).
+      LOOP AT mt_text_components INTO DATA(ls_comp).
+        l_text_field = ls_comp-name.
+        REPLACE l_replace IN l_text_field WITH ''.
+        ASSIGN COMPONENT ls_comp-name OF STRUCTURE <str> TO FIELD-SYMBOL(<to>).
+        ASSIGN COMPONENT m_checkfield OF STRUCTURE <str> TO FIELD-SYMBOL(<check>).
+        lv_clause = |{ m_checkfield } = '{ <check> }'|." AND SPRSL = '{ m_lang }'|.
+        LOOP AT <text_tab> ASSIGNING FIELD-SYMBOL(<text_str>)  WHERE (lv_clause).
+          EXIT.
+        ENDLOOP.
+        IF sy-subrc = 0.
+          ASSIGN COMPONENT 'SPRSL' OF STRUCTURE <text_str> TO FIELD-SYMBOL(<dummy>).
+          IF sy-subrc = 0.
+            lv_clause = |{ lv_clause } AND SPRSL = '{ m_lang }'|.
+          ENDIF.
+            ASSIGN COMPONENT 'SPRAS' OF STRUCTURE <text_str> TO <dummy>.
+          IF sy-subrc = 0.
+            lv_clause = |{ lv_clause } AND SPRAS = '{ m_lang }'|.
+          ENDIF.
+        ELSE.
+          CONTINUE.
+        ENDIF.
+
+        LOOP AT <text_tab> ASSIGNING <text_str>  WHERE (lv_clause).
+          EXIT.
+        ENDLOOP.
+        CHECK sy-subrc = 0.
+        ASSIGN COMPONENT l_text_field OF STRUCTURE <text_str> TO FIELD-SYMBOL(<from>).
+        <to> = <from>.
+      ENDLOOP.
+    ENDLOOP.
+
   ENDMETHOD.
 
   METHOD link.
@@ -1049,6 +1167,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = COND aqadh_type_of_icon( WHEN ls_link-const IS INITIAL THEN <field> ELSE ls_link-const ) ).
     ENDLOOP.
     IF sy-subrc = 0.
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1066,6 +1185,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
     ENDLOOP.
     IF sy-subrc = 0.
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1118,6 +1238,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CHECK sy-subrc = 0.
         <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
       ENDLOOP.
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ENDIF.
   ENDMETHOD.
@@ -1225,7 +1346,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mt_alv_catalog ).
     LOOP AT mo_viewer->mt_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
-      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = mo_viewer->m_tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
+      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = l_catalog-tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
       IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL.
         APPEND INITIAL LINE TO mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
         READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
@@ -1236,13 +1357,19 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           <sel_tab>-more_icon = icon_enter_more.
         ENDIF.
         <sel_tab>-ind = lv_ind.
+
         <sel_tab>-field_label = l_catalog-fieldname.
-        <sel_tab>-name = l_catalog-scrtext_l.
         <sel_tab>-int_type = l_catalog-inttype.
         <sel_tab>-element = l_catalog-rollname.
         <sel_tab>-domain =  l_catalog-domname.
         <sel_tab>-datatype = l_catalog-datatype.
         <sel_tab>-length = l_catalog-outputlen.
+
+
+        lcl_alv_common=>translate_field( EXPORTING i_lang = mo_viewer->m_lang CHANGING c_fld = l_catalog ).
+        <sel_tab>-name = l_catalog-scrtext_l.
+
+
         IF l_tfield-keyflag = 'X'.
           <sel_tab>-style = VALUE #( ( fieldname = 'FIELD_LABEL' style = '00000020' ) ).
         ENDIF.
@@ -1524,7 +1651,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           IF ( <ls_cells>-fieldname = 'LOW' AND <tab>-high IS INITIAL ) OR  ( <ls_cells>-fieldname = 'HIGH' AND <tab>-low IS INITIAL  ).
             DELETE <tab>-range INDEX 1.
           ELSE.
-            clear l_second.
+            CLEAR l_second.
           ENDIF.
         ENDIF.
       ENDIF.
