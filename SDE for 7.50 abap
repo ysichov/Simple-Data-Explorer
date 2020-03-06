@@ -85,6 +85,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OBJID' )
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OTYPE' )
       ( element = 'INFOTYP'  rtab = 'T777D'   rfield = 'INFTY' )
+      ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' )
       ).
 
     "field to field links
@@ -381,14 +382,14 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
-      set_value IMPORTING  i_field TYPE any i_low TYPE any i_high TYPE any OPTIONAL,
+      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
     METHODS:
       init_fcat IMPORTING i_dd_handle TYPE i,
       handle_sel_toolbar FOR EVENT toolbar OF cl_gui_alv_grid IMPORTING e_object,
-      on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING es_row_no er_event_data,
+      on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING e_fieldname es_row_no er_event_data,
       on_grid_button_click FOR EVENT button_click OF cl_gui_alv_grid
         IMPORTING
             es_col_id
@@ -1181,7 +1182,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_el_link-rtab.
         i_viewer = <obj>-alv_viewer.
       ENDIF.
-      ASSIGN COMPONENT l_el_link-rfield OF STRUCTURE i_str TO <field>.
+      ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
       i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
     ENDLOOP.
     IF sy-subrc = 0.
@@ -1392,7 +1393,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
     CHECK sy-subrc = 0.
     CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
+    IF i_low is SUPPLIED.
     <to>-low = i_low.
+    ENDIF.
     IF i_high IS SUPPLIED.
       <to>-high = i_high.
     ENDIF.
@@ -1568,14 +1571,17 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         ASSIGN er_event_data->m_data->* TO <itab>.
         CLEAR <sel>-range.
         LOOP AT return_tab ASSIGNING FIELD-SYMBOL(<ret>) WHERE fieldname = l_fname.
-          IF sy-tabix = 1.
-            <sel>-low = <ret>-fieldval.
-          ENDIF.
-          APPEND VALUE #( sign = 'I' opti = 'EQ' low = <ret>-fieldval  ) TO <sel>-range.
+
+           IF e_fieldname = 'LOW'.
+           SET_value( EXPORTING i_field = <sel>-field_label i_low = <ret>-fieldval ).
+           ELSE.
+           SET_value( EXPORTING i_field = <sel>-field_label i_high = <ret>-fieldval ).
+           ENDIF.
         ENDLOOP.
       ENDIF.
     ENDIF.
     er_event_data->m_event_handled = 'X'.
+    raise_selection_done( ).
   ENDMETHOD.
 
   METHOD on_grid_button_click.
@@ -1691,6 +1697,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDLOOP.
+    check sy-subrc = 0.
+
     IF l_second IS INITIAL.
       <field> = <ls_cells>-value.
       er_data_changed->modify_cell( EXPORTING i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
