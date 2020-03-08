@@ -444,6 +444,7 @@ CLASS lcl_table_viewer DEFINITION.
       on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING e_fieldname es_row_no er_event_data,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
+      before_user_command FOR EVENT before_user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
       handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
 ENDCLASS.
@@ -684,12 +685,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
-    SET HANDLER handle_user_command
-                    handle_menu_button
-                    handle_tab_toolbar
-                    handle_doubleclick
-                    lcl_dragdrop=>drag
-                    on_f4 FOR mo_alv.
+    SET HANDLER   before_user_command
+                  handle_user_command
+                  handle_menu_button
+                  handle_tab_toolbar
+                  handle_doubleclick
+                  lcl_dragdrop=>drag
+                  on_f4 FOR mo_alv.
 
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
@@ -938,6 +940,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     link( EXPORTING i_str = <tab> i_column = e_column ).
   ENDMETHOD.
 
+  METHOD before_user_command.
+    CASE e_ucomm.
+      WHEN '&INFO'.
+        DATA(l_url) = 'https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/'.
+
+        CALL FUNCTION 'CALL_BROWSER'
+          EXPORTING
+            url = l_url.
+    ENDCASE.
+  ENDMETHOD.
+
   METHOD handle_user_command.
     DATA:
       it_fields     TYPE lvc_t_fcat,
@@ -984,7 +997,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <field>-col_pos = sy-tabix.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-tabname = m_tabname and lines( <f_tab> ) > 0.
+            IF <field>-tabname = m_tabname AND lines( <f_tab> ) > 0.
               CLEAR m_show_empty.
               lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
               LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
@@ -1166,7 +1179,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD link.
     DATA: i_viewer TYPE REF TO lcl_table_viewer.
     CLEAR r_done.
-    GET PARAMETER ID 'MOL' FIELD data(l_mol).
+    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
     "field to field links
     LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
       ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
