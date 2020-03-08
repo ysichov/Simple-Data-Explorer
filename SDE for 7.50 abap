@@ -37,11 +37,7 @@ TYPES:
     receiver    TYPE REF TO lcl_data_receiver,
     color       TYPE lvc_t_scol,
     style       TYPE lvc_t_styl,
-  END OF selection_display_s.
-
-DATA: gt_sel TYPE TABLE OF selection_display_s.
-
-TYPES:
+  END OF selection_display_s,
   BEGIN OF t_sel_row,
     sign        TYPE tvarv_sign,
     opti        TYPE tvarv_opti,
@@ -51,6 +47,9 @@ TYPES:
     more_icon   TYPE aqadh_type_of_icon,
     range       TYPE aqadh_t_ranges,
   END OF t_sel_row.
+
+DATA: gt_sel TYPE TABLE OF selection_display_s.
+FIELD-SYMBOLS: <G_STR> type any.
 
 SELECTION-SCREEN BEGIN OF SCREEN 101.
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
@@ -90,8 +89,6 @@ CLASS lcl_plugins IMPLEMENTATION.
 
     "field to field links
     mt_field_links = VALUE #(
-      ( tab = 'PA0000'    field = 'MASSG' rtab = 'T530   ' rfield = 'MASSG' )
-      ( tab = 'PA0000'    field = 'MASSG' rtab = 'T530   ' rfield = 'MASSN' )
       ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
       ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
       ( tab = 'PA0001'    field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
@@ -152,23 +149,19 @@ CLASS lcl_sql DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
       exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
-
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
-
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
        AND tabclass = 'TRANSP'.
     e_subrc = sy-dbcnt.
   ENDMETHOD.
-
 ENDCLASS.
 
 CLASS lcl_rtti DEFINITION.
   PUBLIC SECTION.
-
     CLASS-METHODS:
       create_table_by_name IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
       create_struc_handle IMPORTING i_tname TYPE tabname EXPORTING e_t_comp TYPE abap_component_tab RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr      .
@@ -382,7 +375,7 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
-      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL,
+      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE xfeld OPTIONAL,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
@@ -449,6 +442,7 @@ CLASS lcl_table_viewer DEFINITION.
       link IMPORTING  i_str TYPE any
                       i_column TYPE any RETURNING VALUE(r_done) TYPE xfeld,
       create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
+      on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING e_fieldname es_row_no er_event_data,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
@@ -663,7 +657,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD create_alv.
     DATA: ls_layout  TYPE lvc_s_layo,
           effect     TYPE i,
-          handle_alv TYPE i.
+          handle_alv TYPE i,
+          lt_f4      TYPE lvc_t_f4.
     FIELD-SYMBOLS: <f_tab>   TYPE ANY TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
@@ -677,7 +672,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ls_layout-col_opt = 'X'.
     ls_layout-cwidth_opt = 'X'.
     ls_layout-sel_mode = 'D'.
-    ls_layout-webstyle = 'FFFFFFFF'.
     CREATE OBJECT lcl_appl=>c_dragdropalv.
     effect = cl_dragdrop=>move + cl_dragdrop=>copy.
 
@@ -690,13 +684,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
-
+    SET HANDLER handle_user_command
+                    handle_menu_button
+                    handle_tab_toolbar
+                    handle_doubleclick
+                    lcl_dragdrop=>drag
+                    on_f4 FOR mo_alv.
 
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
         i_save          = 'X'
         i_default       = 'X'
-        "i_structure_name = m_tabname
         is_layout       = ls_layout
       CHANGING
         it_fieldcatalog = mt_alv_catalog
@@ -705,7 +703,10 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mt_alv_catalog ).
     LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       CLEAR <catalog>-key.
+      data(ls_f4) = value  lvc_s_f4( register   = 'X' chngeafter = 'X' fieldname  = <catalog>-fieldname ).
+      INSERT ls_f4 into table lt_f4.
     ENDLOOP.
+    mo_alv->register_f4_for_fields( it_f4 = lt_f4 ).
     mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mt_alv_catalog ).
 
     LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
@@ -713,11 +714,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
 
     mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mt_alv_catalog ).
-    SET HANDLER handle_user_command
-                handle_menu_button
-                handle_tab_toolbar
-                handle_doubleclick
-                lcl_dragdrop=>drag FOR mo_alv.
 
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
     mo_alv->set_toolbar_interactive( ).
@@ -755,6 +751,25 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     lv_header = |{ m_tabname } - { lv_text } ({ m_count })|.
     mo_box->set_caption( lv_header ).
+  ENDMETHOD.
+
+  METHOD on_f4.
+
+    FIELD-SYMBOLS: <tab> type STANDARD TABLE.
+    ASSIGN mr_table->* TO <tab>.
+    READ TABLE <tab> index es_row_no-row_id ASSIGNING <g_str>.
+    CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
+      EXPORTING
+        tabname           = m_tabname
+        fieldname         = e_fieldname
+        callback_program  = sy-repid
+        callback_form     = 'CALLBACK_F4_TAB' "callback_method - doesn't work for local class
+      EXCEPTIONS
+        field_not_found   = 1
+        no_help_for_field = 2
+        inconsistent_help = 3
+        no_values_found   = 4
+        OTHERS            = 5.
   ENDMETHOD.
 
   METHOD handle_tab_toolbar.
@@ -866,8 +881,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       <catalog>-style = lcl_alv_common=>c_white.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
       <catalog>-no_zero = 'X'.
-
-      IF ls_tf-tabname ne m_tabname.
+      <catalog>-f4availabl = 'X'.
+      IF ls_tf-tabname NE m_tabname.
         <catalog>-style = lcl_alv_common=>c_grey.
       ENDIF.
 
@@ -1130,7 +1145,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           IF sy-subrc = 0.
             lv_clause = |{ lv_clause } AND SPRSL = '{ m_lang }'|.
           ENDIF.
-            ASSIGN COMPONENT 'SPRAS' OF STRUCTURE <text_str> TO <dummy>.
+          ASSIGN COMPONENT 'SPRAS' OF STRUCTURE <text_str> TO <dummy>.
           IF sy-subrc = 0.
             lv_clause = |{ lv_clause } AND SPRAS = '{ m_lang }'|.
           ENDIF.
@@ -1392,14 +1407,21 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD set_value.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
     CHECK sy-subrc = 0.
-    CLEAR: <to>-high, <to>-opti, <to>-sign, <to>-range.
-    IF i_low is SUPPLIED.
-    <to>-low = i_low.
+    IF i_clear = abap_true.
+      CLEAR <to>-range.
     ENDIF.
-    IF i_high IS SUPPLIED.
-      <to>-high = i_high.
+    IF i_clear IS INITIAL.
+      APPEND VALUE #( sign = 'I' opti = 'EQ' low = i_low ) TO <to>-range.
+    ELSE.
+      CLEAR:  <to>-opti, <to>-sign.
+      IF i_low IS SUPPLIED.
+        <to>-low = i_low.
+      ENDIF.
+      IF i_high IS SUPPLIED.
+        <to>-high = i_high.
+      ENDIF.
+      update_sel_row( CHANGING c_sel_row = <to> ).
     ENDIF.
-    update_sel_row( CHANGING c_sel_row = <to> ).
     IF <to>-transmitter IS BOUND.
       DATA: ls_row TYPE t_sel_row.
       MOVE-CORRESPONDING <to> TO ls_row.
@@ -1420,7 +1442,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       CALL FUNCTION 'DOCU_CALL'
         EXPORTING
           id                = 'DE'
-          langu             = sy-langu
+          langu             = mo_viewer->m_lang
           object            = l_sel-element
           typ               = 'E'
           displ             = 'X'
@@ -1501,9 +1523,15 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           lt_objec   TYPE TABLE OF objec,
           ls_objec   TYPE objec,
           l_otype    TYPE otype,
-          l_plvar    TYPE plvar.
+          l_plvar    TYPE plvar,
+          l_multiple TYPE xfeld,
+          l_clear    TYPE xfeld.
 
     FIELD-SYMBOLS: <itab> TYPE lvc_t_modi.
+
+    IF e_fieldname = 'LOW'.
+      l_multiple = 'X'.
+    ENDIF.
 
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX es_row_no-row_id.
     DATA(l_fname) =  <sel>-field_label.
@@ -1536,7 +1564,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           seark_endda      = sy-datum
           dynpro_repid     = sy-repid
           dynpro_dynnr     = sy-dynnr
-          set_mode         = 'X'
+          set_mode         = l_multiple
         IMPORTING
           sel_object       = ls_objec
         TABLES
@@ -1544,20 +1572,25 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         EXCEPTIONS
           OTHERS           = 6.
       IF sy-subrc = 0.
-        CLEAR <sel>-range.
-        <sel>-low = ls_objec-objid.
+        l_clear = abap_true.
         LOOP AT lt_objec INTO ls_objec.
-          APPEND VALUE #( sign = 'I' opti = 'EQ' low = ls_objec-objid  ) TO <sel>-range.
+          IF e_fieldname = 'LOW'.
+            set_value( EXPORTING i_field = <sel>-field_label i_low = ls_objec-objid i_clear = l_clear ).
+            CLEAR l_clear.
+          ELSE.
+            set_value( EXPORTING i_field = <sel>-field_label i_high = ls_objec-objid i_clear = l_clear ).
+          ENDIF.
         ENDLOOP.
       ENDIF.
     ELSE.
+
       CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
         EXPORTING
           tabname           = mo_viewer->m_tabname
           fieldname         = l_fname
           callback_program  = sy-repid
-          callback_form     = 'CALLBACK_F4' "callback_method - doesn't work for local class
-          multiple_choice   = 'X'
+          callback_form     = 'CALLBACK_F4_SEL' "callback_method - doesn't work for local class
+          multiple_choice   = l_multiple
         TABLES
           return_tab        = return_tab
         EXCEPTIONS
@@ -1570,13 +1603,14 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       IF sy-subrc = 0 AND lines( return_tab ) > 0.
         ASSIGN er_event_data->m_data->* TO <itab>.
         CLEAR <sel>-range.
+        l_clear = abap_true.
         LOOP AT return_tab ASSIGNING FIELD-SYMBOL(<ret>) WHERE fieldname = l_fname.
-
-           IF e_fieldname = 'LOW'.
-           SET_value( EXPORTING i_field = <sel>-field_label i_low = <ret>-fieldval ).
-           ELSE.
-           SET_value( EXPORTING i_field = <sel>-field_label i_high = <ret>-fieldval ).
-           ENDIF.
+          IF e_fieldname = 'LOW'.
+            set_value( EXPORTING i_field = <sel>-field_label i_low = <ret>-fieldval i_clear = l_clear ).
+            CLEAR l_clear.
+          ELSE.
+            set_value( EXPORTING i_field = <sel>-field_label i_high = <ret>-fieldval ).
+          ENDIF.
         ENDLOOP.
       ENDIF.
     ENDIF.
@@ -1697,7 +1731,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDLOOP.
-    check sy-subrc = 0.
+    CHECK sy-subrc = 0.
 
     IF l_second IS INITIAL.
       <field> = <ls_cells>-value.
@@ -2069,7 +2103,7 @@ AT SELECTION-SCREEN .
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
 
-FORM callback_f4 TABLES record_tab STRUCTURE seahlpres
+FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
                    callcontrol LIKE ddshf4ctrl.
 
@@ -2082,6 +2116,23 @@ FORM callback_f4 TABLES record_tab STRUCTURE seahlpres
         <searchsel>-shlpfield = <interface>-shlpfield.
         <searchsel>-option = 'EQ'.
       ENDLOOP.
+    ENDIF.
+  ENDLOOP.
+ENDFORM.
+
+FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
+          CHANGING shlp TYPE shlp_descr
+                   callcontrol LIKE ddshf4ctrl.
+
+FIELD-SYMBOLS: <field> type any.
+  LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
+    ASSIGN COMPONENT <interface>-shlpfield of STRUCTURE <g_str> to <field>.
+    IF sy-subrc = 0.
+        APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
+        <searchsel>-sign = 'I'.
+        <searchsel>-low = <FIELD>.
+        <searchsel>-shlpfield = <interface>-shlpfield.
+        <searchsel>-option = 'EQ'.
     ENDIF.
   ENDLOOP.
 ENDFORM.
