@@ -592,6 +592,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table ).
     create_alv( ).
     create_sel_alv( ).
+    mo_alv->set_focus( mo_alv ).
   ENDMETHOD.
 
   METHOD create_popup.
@@ -717,7 +718,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
     mo_alv->set_toolbar_interactive( ).
-    mo_alv->set_focus( mo_alv ).
   ENDMETHOD.
 
   METHOD create_sel_alv.
