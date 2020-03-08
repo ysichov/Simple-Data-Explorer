@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: alpha 0.4.167.137
+*& version: alpha 0.4.170.140
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *& Multi-windows program for viewing tables and links between them
 *& Written by Yurii Sychov
@@ -49,7 +49,7 @@ TYPES:
   END OF t_sel_row.
 
 DATA: gt_sel TYPE TABLE OF selection_display_s.
-FIELD-SYMBOLS: <G_STR> type any.
+FIELD-SYMBOLS: <g_str> TYPE any.
 
 SELECTION-SCREEN BEGIN OF SCREEN 101.
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
@@ -83,7 +83,6 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( element = 'PERSNO'   rtab = 'PA0002'  rfield = 'PERNR' )
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OBJID' )
       ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OTYPE' )
-      ( element = 'INFOTYP'  rtab = 'T777D'   rfield = 'INFTY' )
       ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' )
       ).
 
@@ -704,8 +703,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mt_alv_catalog ).
     LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       CLEAR <catalog>-key.
-      data(ls_f4) = value  lvc_s_f4( register   = 'X' chngeafter = 'X' fieldname  = <catalog>-fieldname ).
-      INSERT ls_f4 into table lt_f4.
+      DATA(ls_f4) = VALUE  lvc_s_f4( register   = 'X' chngeafter = 'X' fieldname  = <catalog>-fieldname ).
+      INSERT ls_f4 INTO TABLE lt_f4.
     ENDLOOP.
     mo_alv->register_f4_for_fields( it_f4 = lt_f4 ).
     mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mt_alv_catalog ).
@@ -755,9 +754,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD on_f4.
 
-    FIELD-SYMBOLS: <tab> type STANDARD TABLE.
+    FIELD-SYMBOLS: <tab> TYPE STANDARD TABLE.
     ASSIGN mr_table->* TO <tab>.
-    READ TABLE <tab> index es_row_no-row_id ASSIGNING <g_str>.
+    READ TABLE <tab> INDEX es_row_no-row_id ASSIGNING <g_str>.
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
       EXPORTING
         tabname           = m_tabname
@@ -985,7 +984,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <field>-col_pos = sy-tabix.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-tabname = m_tabname.
+            IF <field>-tabname = m_tabname and lines( <f_tab> ) > 0.
               CLEAR m_show_empty.
               lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
               LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
@@ -1136,7 +1135,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         REPLACE l_replace IN l_text_field WITH ''.
         ASSIGN COMPONENT ls_comp-name OF STRUCTURE <str> TO FIELD-SYMBOL(<to>).
         ASSIGN COMPONENT m_checkfield OF STRUCTURE <str> TO FIELD-SYMBOL(<check>).
-        lv_clause = |{ m_checkfield } = '{ <check> }'|." AND SPRSL = '{ m_lang }'|.
+        lv_clause = |{ m_checkfield } = '{ <check> }'|.
         LOOP AT <text_tab> ASSIGNING FIELD-SYMBOL(<text_str>)  WHERE (lv_clause).
           EXIT.
         ENDLOOP.
@@ -1167,7 +1166,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD link.
     DATA: i_viewer TYPE REF TO lcl_table_viewer.
     CLEAR r_done.
-
+    GET PARAMETER ID 'MOL' FIELD data(l_mol).
     "field to field links
     LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
       ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
@@ -1184,6 +1183,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
     IF sy-subrc = 0.
       i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1202,6 +1202,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
     IF sy-subrc = 0.
       i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1255,6 +1256,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
       ENDLOOP.
       <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ENDIF.
   ENDMETHOD.
@@ -2124,15 +2126,15 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
                    callcontrol LIKE ddshf4ctrl.
 
-FIELD-SYMBOLS: <field> type any.
+  FIELD-SYMBOLS: <field> TYPE any.
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
-    ASSIGN COMPONENT <interface>-shlpfield of STRUCTURE <g_str> to <field>.
+    ASSIGN COMPONENT <interface>-shlpfield OF STRUCTURE <g_str> TO <field>.
     IF sy-subrc = 0.
-        APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
-        <searchsel>-sign = 'I'.
-        <searchsel>-low = <FIELD>.
-        <searchsel>-shlpfield = <interface>-shlpfield.
-        <searchsel>-option = 'EQ'.
+      APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
+      <searchsel>-sign = 'I'.
+      <searchsel>-low = <field>.
+      <searchsel>-shlpfield = <interface>-shlpfield.
+      <searchsel>-option = 'EQ'.
     ENDIF.
   ENDLOOP.
 ENDFORM.
