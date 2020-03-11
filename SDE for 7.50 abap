@@ -112,7 +112,7 @@ CLASS lcl_ddic DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS: get_text_table IMPORTING i_tname      TYPE tabname
                                   EXPORTING e_checkfield TYPE fieldname
-                                  RETURNING VALUE(e_tab) TYPE tabname.
+                                            e_tab        TYPE tabname.
 ENDCLASS.
 
 CLASS lcl_ddic IMPLEMENTATION.
@@ -154,7 +154,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND tabclass = 'TRANSP'.
+       AND ( tabclass = 'TRANSP' or tabclass = 'CLUSTER' ).
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
@@ -163,7 +163,7 @@ CLASS lcl_rtti DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
       create_table_by_name IMPORTING i_tname TYPE tabname CHANGING c_table TYPE REF TO data,
-      create_struc_handle IMPORTING i_tname TYPE tabname EXPORTING e_t_comp TYPE abap_component_tab RETURNING VALUE(handle) TYPE REF TO cl_abap_structdescr      .
+      create_struc_handle IMPORTING i_tname TYPE tabname EXPORTING e_t_comp TYPE abap_component_tab e_handle TYPE REF TO cl_abap_structdescr.
 ENDCLASS.
 
 CLASS lcl_rtti IMPLEMENTATION.
@@ -174,14 +174,14 @@ CLASS lcl_rtti IMPLEMENTATION.
           lt_components TYPE abap_component_tab,
           lt_field_info TYPE TABLE OF dfies.
 
-    l_texttab = lcl_ddic=>get_text_table( i_tname ).
-    handle ?= cl_abap_typedescr=>describe_by_name( i_tname ).
+    lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
+    e_handle ?= cl_abap_typedescr=>describe_by_name( i_tname ).
 
     IF l_texttab IS NOT INITIAL.
       lo_texttab  ?= cl_abap_typedescr=>describe_by_name( l_texttab ).
-      LOOP AT handle->components INTO DATA(l_descr).
+      LOOP AT e_handle->components INTO DATA(l_descr).
         ls_comp-name = l_descr-name.
-        ls_comp-type ?= handle->get_component_type( ls_comp-name ).
+        ls_comp-type ?= e_handle->get_component_type( ls_comp-name ).
         APPEND ls_comp TO lt_components.
       ENDLOOP.
 
@@ -206,14 +206,15 @@ CLASS lcl_rtti IMPLEMENTATION.
           APPEND ls_comp TO e_t_comp.
         ENDIF.
       ENDLOOP.
-      handle  = cl_abap_structdescr=>create( lt_components ).
+      e_handle  = cl_abap_structdescr=>create( lt_components ).
     ENDIF.
   ENDMETHOD.
 
   METHOD create_table_by_name.
-    DATA: lo_new_tab  TYPE REF TO cl_abap_tabledescr.
+    DATA: lo_new_tab  TYPE REF TO cl_abap_tabledescr,
+          lo_new_type type ref to cl_abap_structdescr.
 
-    DATA(lo_new_type)  = create_struc_handle( i_tname ).
+    create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_handle = lo_new_type ).
     lo_new_tab = cl_abap_tabledescr=>create(
                     p_line_type  = lo_new_type
                     p_table_kind = cl_abap_tabledescr=>tablekind_std
@@ -731,15 +732,15 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD read_text_table.
+    DATA: l_tab type tabname.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
 
-    DATA(l_tab) = lcl_ddic=>get_text_table( m_tabname ).
+    lcl_ddic=>get_text_table( EXPORTING i_tname =  m_tabname IMPORTING e_tab = l_tab ).
     CHECK l_tab IS NOT INITIAL.
     lcl_rtti=>create_table_by_name( EXPORTING i_tname = l_tab CHANGING c_table = mr_text_table ).
     ASSIGN mr_text_table->* TO <f_tab>.
     SELECT * FROM (l_tab) INTO TABLE <f_tab> ORDER BY PRIMARY KEY.
   ENDMETHOD.
-
 
   METHOD set_header.
     DATA: lv_text       TYPE as4text,
@@ -805,18 +806,20 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           lt_field_info  TYPE TABLE OF dfies,
           l_fname        TYPE fieldname,
           l_tname        TYPE tabname,
-          l_replace      TYPE string.
+          l_replace      TYPE string,
+          l_texttab       type tabname,
+          lo_Str type ref to cl_abap_structdescr .
 
-    DATA(lo_str) = lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components ).
+    lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components e_handle = lo_Str ).
     CREATE DATA lr_struc TYPE HANDLE lo_str.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
 
-    DATA(l_texttab) = lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_checkfield = m_checkfield ).
+    lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_checkfield = m_checkfield e_tab = l_texttab ).
 
     l_replace = l_texttab && '_'.
 
-    LOOP AT it_tabdescr INTO DATA(ls).
+    LOOP AT it_tabdescr INTO DATA(ls) where name ne 'MANDT'.
       DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       <catalog>-col_pos = l_ind.
@@ -826,7 +829,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         l_fname = ls-name.
 
         IF l_texttab IS NOT INITIAL.
-
           l_fname = ls-name.
           REPLACE l_replace IN l_fname WITH ''.
           IF sy-subrc = 0.
@@ -989,8 +991,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       SET TITLEBAR 'SDE'.
       RETURN.
     ELSE.
-      DATA: r_struc TYPE REF TO data.
-      DATA(lo_str) = lcl_rtti=>create_struc_handle( EXPORTING i_tname = m_tabname ).
+      DATA: r_struc TYPE REF TO data,
+            lo_Str type ref to cl_abap_structdescr.
+      lcl_rtti=>create_struc_handle( EXPORTING i_tname = m_tabname  IMPORTING e_handle = lo_str ).
       CREATE DATA r_struc TYPE HANDLE lo_str.
       ASSIGN r_struc->* TO <f_line>.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
@@ -1077,8 +1080,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         IMPORTING
           where_clauses = lt_where.
 
-      LOOP AT lt_where INTO DATA(lt_where_tab) WHERE tablename = m_tabname.
-        LOOP AT lt_where_tab-where_tab INTO DATA(l_where).
+      LOOP AT lt_where INTO DATA(ls_where) WHERE tablename = m_tabname.
+        LOOP AT ls_where-where_tab INTO DATA(l_where).
           CONDENSE l_where-line.
           c_where = |{ c_where } { l_where-line }|.
         ENDLOOP.
@@ -1130,12 +1133,14 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD update_texts.
     DATA: l_text_field TYPE fieldname,
           l_replace    TYPE string,
-          lv_clause    TYPE string.
+          lv_clause    TYPE string,
+          l_tab type tabname.
+
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
     FIELD-SYMBOLS: <text_tab> TYPE ANY TABLE.
 
     "text fields
-    DATA(l_tab) = lcl_ddic=>get_text_table( m_tabname ).
+    lcl_ddic=>get_text_table( EXPORTING i_tname =  m_tabname IMPORTING e_tab = l_tab ).
     CHECK l_tab IS NOT INITIAL.
 
     ASSIGN mr_table->* TO <f_tab>.
@@ -1342,7 +1347,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'OPTION_ICON' coltext = 'Option' icon = 'X' outputlen = 4 style = cl_gui_alv_grid=>mc_style_button )
      ( fieldname = 'LOW'         coltext = 'From data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4 col_opt = 'X'  )
      ( fieldname = 'HIGH'        coltext = 'To data' edit = 'X' lowercase = 'X' outputlen = 45 style = cl_gui_alv_grid=>mc_style_f4  col_opt = 'X' )
-     ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = '20000000'  )
+     ( fieldname = 'MORE_ICON'   coltext = 'Range' icon = 'X'  style = cl_gui_alv_grid=>mc_style_button  )
      ( fieldname = 'RANGE'   tech = 'X'  )
      ( fieldname = 'INHERITED'   coltext = 'Inh.' icon = 'X' outputlen = 4 seltext = 'Inherited' style = '00000003')
      ( fieldname = 'EMITTER'    coltext = 'Emit.' icon = 'X' outputlen = 4 seltext = 'Emitter' style = '00000003')
@@ -1354,7 +1359,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
      ( fieldname = 'RECEIVER'    tech = 'X'  )
      ( fieldname = 'COLOR'    tech = 'X'  )
-     ( fieldname = 'CHANGE'    tech = 'X'  ) ).
+      ).
   ENDMETHOD.
 
   METHOD raise_selection_done.
