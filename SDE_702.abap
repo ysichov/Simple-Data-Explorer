@@ -1,6 +1,6 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
-*& version: alpha 0.1.104.84
+*& version: alpha 0.1.178.145
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
