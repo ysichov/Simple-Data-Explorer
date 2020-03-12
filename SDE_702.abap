@@ -1,6 +1,6 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
-*& version: alpha 0.1.178.145
+*& version: alpha 0.5.178.145
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -300,7 +300,7 @@ class lcl_alv_common definition.
 
     class-methods:
       refresh importing i_obj type ref to cl_gui_alv_grid i_layout type lvc_s_layo optional,
-      translate_field importing i_lang like sy-ucomm optional changing c_fld type lvc_s_fcat.
+      translate_field importing i_lang type ddlanguage optional changing c_fld type lvc_s_fcat.
 endclass.                    "lcl_alv_common DEFINITION
 
 *----------------------------------------------------------------------*
@@ -535,7 +535,7 @@ class lcl_table_viewer definition.
           mo_column_emitters type table of t_column_emitter,
           mo_sel_width       type i,
           m_visible,
-           m_std_tbar         type x,
+          m_std_tbar         type x,
           m_show_empty.
 
     methods:
@@ -1134,31 +1134,31 @@ class lcl_table_viewer implementation.
         ls_tf-fieldname = ls-name.
 
         "check empty field
-*        IF ls_tf-domname NE 'MANDT'.
-*          DATA: dref TYPE REF TO data,
-*                l_x  TYPE xstring.
-*          FIELD-SYMBOLS <field> TYPE any.
-*
-*          IF ls_tf-rollname IS NOT INITIAL.
-*            CREATE DATA dref TYPE (ls_tf-rollname).
-*            ASSIGN dref->* TO <field>.
-*            lv_clause = |{ l_fname } NE ''|.
-*            SELECT SINGLE (l_fname) INTO <field>
-*              FROM (l_tname)
-*             WHERE (lv_clause).
-*            IF sy-subrc NE 0.
-*              ls_tf-empty = 'X'.
-*            ENDIF.
-*          ELSEIF ls_tf-datatype = 'RAWSTRING'.
-*            lv_clause = |{ ls_tf-fieldname } NE ''|.
-*            SELECT SINGLE (ls_tf-fieldname) INTO l_x
-*              FROM (l_tname)
-*             WHERE (lv_clause).
-*            IF sy-subrc NE 0.
-*              ls_tf-empty = 'X'.
-*            ENDIF.
-*          ENDIF.
-*        ENDIF.
+        if ls_tf-domname ne 'MANDT'.
+          data: dref type ref to data,
+                l_x  type xstring.
+          field-symbols <field> type any.
+
+          if ls_tf-rollname is not initial.
+            create data dref type (ls_tf-rollname).
+            assign dref->* to <field>.
+            lv_clause = |{ l_fname } NE ''|.
+            select single (l_fname) into <field>
+              from (l_tname)
+             where (lv_clause).
+            if sy-subrc ne 0.
+              ls_tf-empty = 'X'.
+            endif.
+          elseif ls_tf-datatype = 'RAWSTRING'.
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+            select single (ls_tf-fieldname) into l_x
+              from (l_tname)
+             where (lv_clause).
+            if sy-subrc ne 0.
+              ls_tf-empty = 'X'.
+            endif.
+          endif.
+        endif.
         insert ls_tf into table lcl_alv_common=>mt_tabfields.
       endif.
       <catalog>-style = lcl_alv_common=>c_white.
@@ -1365,7 +1365,8 @@ class lcl_table_viewer implementation.
     data:
       it_fields    type lvc_t_fcat,
       lv_clause    type string,
-      lv_sel_width type i.
+      lv_sel_width type i,
+      ls_lang type lcl_appl=>t_lang.
 
     field-symbols: <field>  like line of it_fields,
                    <f_tab>  type any table,
@@ -1393,6 +1394,7 @@ class lcl_table_viewer implementation.
     loop at it_fields assigning <field>.
       case e_ucomm.
         when 'HIDE'. "hide select options
+          CLEAR m_show_empty.
           lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
           loop at <f_tab> assigning <f_line>  where (lv_clause).
             exit.
@@ -1403,6 +1405,8 @@ class lcl_table_viewer implementation.
           endif.
 
         when 'SHOW'.
+
+          m_show_empty = 'X'.
           <field>-no_out = ' '.
         when 'TECH'. "technical field name
           <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
@@ -1420,9 +1424,9 @@ class lcl_table_viewer implementation.
           set titlebar 'SDE'.
           return.
         when others. "header names translation
-          read table lcl_appl=>mt_lang with key spras = e_ucomm transporting no fields.
+          read table lcl_appl=>mt_lang with key spras = e_ucomm into ls_lang.
           if sy-subrc = 0.
-            lcl_alv_common=>translate_field( exporting i_lang = e_ucomm changing c_fld = <field> ).
+            lcl_alv_common=>translate_field( exporting i_lang = ls_lang-spras changing c_fld = <field> ).
             if mo_sel is bound.
               field-symbols <sel> type selection_display_s.
               read table mo_sel->mt_sel_tab assigning <sel> with key field_label = <field>-fieldname.
@@ -1457,40 +1461,40 @@ class lcl_table_viewer implementation.
 
   method get_where."dynamic where clause
 
-   DATA: lt_where TYPE rsds_twhere,
-         ls_where type RSDS_WHERE,
-         l_where type RSDSWHERE,
-          lt_range TYPE rsds_trange.
+    data: lt_where type rsds_twhere,
+          ls_where type rsds_where,
+          l_where type rsdswhere,
+           lt_range type rsds_trange.
 
 
-   FIELD-SYMBOLS: <tabl> type RSDS_RANGE,
-                  <t_range> type RSDS_FRANGE.
+    field-symbols: <tabl> type rsds_range,
+                   <t_range> type rsds_frange.
 
-    IF  mo_sel IS NOT INITIAL.
-      APPEND INITIAL LINE TO lt_range ASSIGNING <tabl>.
+    if  mo_sel is not initial.
+      append initial line to lt_range assigning <tabl>.
       <tabl>-tablename = m_tabname.
       data: ls_tab type selection_display_s.
-      LOOP AT mo_sel->mt_sel_tab INTO ls_tab WHERE range IS NOT INITIAL.
-        APPEND INITIAL LINE TO <tabl>-frange_t ASSIGNING <t_range>.
-        IF sy-subrc = 0.
+      loop at mo_sel->mt_sel_tab into ls_tab where range is not initial.
+        append initial line to <tabl>-frange_t assigning <t_range>.
+        if sy-subrc = 0.
           <t_range>-fieldname = ls_tab-field_label.
           <t_range>-selopt_t  = ls_tab-range.
-        ENDIF.
-      ENDLOOP.
+        endif.
+      endloop.
 
-      CALL FUNCTION 'FREE_SELECTIONS_RANGE_2_WHERE'
-        EXPORTING
+      call function 'FREE_SELECTIONS_RANGE_2_WHERE'
+        exporting
           field_ranges  = lt_range
-        IMPORTING
+        importing
           where_clauses = lt_where.
 
-      LOOP AT lt_where INTO ls_where WHERE tablename = m_tabname.
-        LOOP AT ls_where-where_tab INTO l_where.
-          CONDENSE l_where-line.
+      loop at lt_where into ls_where where tablename = m_tabname.
+        loop at ls_where-where_tab into l_where.
+          condense l_where-line.
           c_where = |{ c_where } { l_where-line }|.
-        ENDLOOP.
-      ENDLOOP.
-    ENDIF.
+        endloop.
+      endloop.
+    endif.
   endmethod.                    "get_where
 
   method refresh_table.
@@ -1549,6 +1553,9 @@ class lcl_sel_opt implementation.
     init_fcat( handle_alv ).
 
     ls_layout-cwidth_opt = 'X'.
+    ls_layout-ctab_fname = 'COLOR'.
+    ls_layout-stylefname = 'STYLE'.
+
     "fields for F4 event handling
     data: gt_f4 type lvc_t_f4,
           gs_f4 type lvc_s_f4.
@@ -1561,6 +1568,7 @@ class lcl_sel_opt implementation.
 
     mo_sel_alv->register_f4_for_fields( it_f4 = gt_f4 ).
     mo_sel_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_enter ).
+    mo_sel_alv->register_edit_event( i_event_id = cl_gui_alv_grid=>mc_evt_modified ).
 
     set handler handle_user_command
                 handle_sel_toolbar
@@ -1648,6 +1656,7 @@ class lcl_sel_opt implementation.
     clear ls_fcat.
     ls_fcat-fieldname = 'NAME'.
     ls_fcat-coltext = 'Field name'.
+    ls_fcat-style = '00000003'.
     ls_fcat-outputlen = 60.
     append ls_fcat to mt_fcat.
     clear ls_fcat.
@@ -1674,6 +1683,7 @@ class lcl_sel_opt implementation.
   endmethod.                    "raise_selection_done
 
   method update_sel_tab.
+    data: l_tfield type lcl_alv_common=>t_tabfields.
     if mt_sel_tab[] is not initial.
       data lt_copy type table of selection_display_s.
       lt_copy = mt_sel_tab.
@@ -1681,23 +1691,51 @@ class lcl_sel_opt implementation.
     clear mt_sel_tab[].
     mo_viewer->mo_alv->get_frontend_fieldcatalog( importing et_fieldcatalog = mo_viewer->mt_alv_catalog ).
     data l_catalog type lvc_s_fcat.
-    loop at mo_viewer->mt_alv_catalog into l_catalog WHERE domname NE 'MANDT'.
+    loop at mo_viewer->mt_alv_catalog into l_catalog where domname ne 'MANDT'.
       data lv_ind like sy-tabix.
       lv_ind = sy-tabix.
-      check l_catalog-no_out is initial.
-      field-symbols <sel_tab> type selection_display_s.
-      append initial line to mt_sel_tab assigning <sel_tab>.
-      data ls_copy type selection_display_s.
-      read table lt_copy into ls_copy with key field_label = l_catalog-fieldname.
-      if sy-subrc = 0.
-        move-corresponding ls_copy to <sel_tab>.
-      else.
-        <sel_tab>-option_icon = icon_led_inactive.
-        <sel_tab>-more_icon = icon_enter_more.
+      read table lcl_alv_common=>mt_tabfields with key tabname = l_catalog-tabname fieldname = l_catalog-fieldname  into l_tfield.
+      if l_tfield-empty = '' or mo_viewer->m_show_empty is not initial.
+        "check l_catalog-no_out is initial.
+        field-symbols <sel_tab> type selection_display_s.
+        append initial line to mt_sel_tab assigning <sel_tab>.
+        data ls_copy type selection_display_s.
+        read table lt_copy into ls_copy with key field_label = l_catalog-fieldname.
+        if sy-subrc = 0.
+          move-corresponding ls_copy to <sel_tab>.
+        else.
+          <sel_tab>-option_icon = icon_led_inactive.
+          <sel_tab>-more_icon = icon_enter_more.
+        endif.
+        <sel_tab>-ind = lv_ind.
+        <sel_tab>-field_label = l_catalog-fieldname.
+        lcl_alv_common=>translate_field( exporting i_lang = mo_viewer->m_lang changing c_fld = l_catalog ).
+
+        <sel_tab>-name = l_catalog-scrtext_l.
+
+        data: l_style type lvc_s_styl,
+                       l_color type lvc_s_scol.
+        if l_tfield-keyflag = 'X'.
+          "append initial line to <sel_tab>-style assigning <style>.
+          l_style-fieldname = 'FIELD_LABEL'.
+          l_style-style = '00000020'.
+          INSERT l_style into TABLE <sel_tab>-style.
+        endif.
+        if l_tfield-empty = 'X'.
+          "append initial line to <sel_tab>-color assigning <color>.
+          l_color-fname = 'FIELD_LABEL'.
+          l_color-color-col = 2.
+          l_color-color-int = 0.
+          l_color-color-inv = 1.
+        else.
+          "append initial line to <sel_tab>-color assigning <color>.
+          l_color-fname = 'FIELD_LABEL'.
+          l_color-color-col = 4.
+          l_color-color-int = 0.
+          l_color-color-inv = 1.
+        endif.
+        INSERT l_color into table <sel_tab>-color.
       endif.
-      <sel_tab>-ind = lv_ind.
-      <sel_tab>-field_label = l_catalog-fieldname.
-      <sel_tab>-name = l_catalog-scrtext_l.
     endloop.
   endmethod.                    "update_sel_tab
   method handle_sel_toolbar.
@@ -1721,21 +1759,25 @@ class lcl_sel_opt implementation.
                    <range> type aqadh_s_ranges.
     read table mt_sel_tab assigning <to> with key field_label = i_field.
     check sy-subrc = 0.
-    if i_clear = abap_true.
-      clear <to>-range.
-    endif.
-    if i_clear is initial.
-      append initial line to <to>-range assigning <range>.
-      <range> = 'IEQ'.
-      <range>-low = i_low.
+
+    if i_low is supplied.
+      if i_clear is initial.
+        append initial line to <to>-range assigning <range>.
+        <range> = 'IEQ'.
+        <range>-low = i_low.
+      else.
+        clear:  <to>-opti, <to>-sign,<to>-range.
+        if i_low is supplied.
+          <to>-low = i_low.
+        endif.
+        if i_high is supplied.
+          <to>-high = i_high.
+        endif.
+        update_sel_row( changing c_sel_row = <to> ).
+      endif.
     else.
       clear:  <to>-opti, <to>-sign.
-      if i_low is supplied.
-        <to>-low = i_low.
-      endif.
-      if i_high is supplied.
-        <to>-high = i_high.
-      endif.
+      <to>-high = i_high.
       update_sel_row( changing c_sel_row = <to> ).
     endif.
     if <to>-transmitter is bound.
@@ -1802,21 +1844,21 @@ class lcl_sel_opt implementation.
 
   method on_f4.
     data: return_tab  type standard table of ddshretval,
-          lv_retfield type dynfnam,
           l_multiple type xfeld,
-          l_clear    type xfeld..
+          l_clear    type xfeld,
+          l_fname type fieldname.
 
-    field-symbols: <itab> type lvc_t_modi.
-    data: l_fname type fieldname,
-          ls_sel_tab type selection_display_s.
+    field-symbols: <itab> type lvc_t_modi,
+                   <sel> type selection_display_s.
 
-    IF e_fieldname = 'LOW'.
+
+    if e_fieldname = 'LOW'.
       l_multiple = 'X'.
-    ENDIF.
+    endif.
 
-    read table mt_sel_tab into ls_sel_tab index es_row_no-row_id .
+    read table mt_sel_tab assigning <sel> index es_row_no-row_id .
     if sy-subrc = 0.
-      l_fname = ls_sel_tab-field_label.
+      l_fname = <sel>-field_label.
     endif.
     call function 'F4IF_FIELD_VALUE_REQUEST'
       exporting
@@ -1827,7 +1869,7 @@ class lcl_sel_opt implementation.
         multiple_choice   = l_multiple
       tables
         return_tab        = return_tab
-                                                                                "todo: callback for  f4 dependent fields
+                                                                                            "todo: callback for  f4 dependent fields
       exceptions
         field_not_found   = 1
         no_help_for_field = 2
@@ -1835,21 +1877,22 @@ class lcl_sel_opt implementation.
         no_values_found   = 4
         others            = 5.
 
-    lv_retfield = |{ mo_viewer->m_tabname }-{ l_fname }| .
-    if sy-subrc = 0.
+    if sy-subrc = 0 and lines( return_tab ) > 0..
       field-symbols <ret> type ddshretval.
-        assign er_event_data->m_data->* to <itab>.
-           LOOP AT return_tab ASSIGNING <ret> WHERE fieldname = l_fname.
-          IF e_fieldname = 'LOW'.
-            set_value( EXPORTING i_field = ls_sel_tab-field_label i_low = <ret>-fieldval i_clear = l_clear ).
-            CLEAR l_clear.
-          ELSE.
-            set_value( EXPORTING i_field = ls_sel_tab-field_label i_high = <ret>-fieldval ).
-          ENDIF.
-        ENDLOOP.
-        er_event_data->m_event_handled = 'X'.
+      assign er_event_data->m_data->* to <itab>.
+      clear <sel>-range.
+      l_clear = abap_true.
+      loop at return_tab assigning <ret> where fieldname = l_fname.
+        if e_fieldname = 'LOW'.
+          set_value( exporting i_field = <sel>-field_label i_low = <ret>-fieldval i_clear = l_clear ).
+          clear l_clear.
+        else.
+          set_value( exporting i_field = <sel>-field_label i_high = <ret>-fieldval ).
+        endif.
+      endloop.
+      er_event_data->m_event_handled = 'X'.
     endif.
-      raise_selection_done( ).
+    raise_selection_done( ).
   endmethod.                    "on_f4
 
   method on_grid_button_click.
