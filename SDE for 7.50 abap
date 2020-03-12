@@ -1427,19 +1427,22 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD set_value.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = i_field.
     CHECK sy-subrc = 0.
-    IF i_clear = abap_true.
-      CLEAR <to>-range.
-    ENDIF.
+    IF i_low is SUPPLIED.
     IF i_clear IS INITIAL.
-      APPEND VALUE #( sign = 'I' opti = 'EQ' low = i_low ) TO <to>-range.
+      APPEND VALUE #( sign = 'I' opti = 'EQ' low = i_low high = i_high ) TO <to>-range.
     ELSE.
-      CLEAR:  <to>-opti, <to>-sign.
+      CLEAR:  <to>-opti, <to>-sign,<to>-range.
       IF i_low IS SUPPLIED.
         <to>-low = i_low.
       ENDIF.
       IF i_high IS SUPPLIED.
         <to>-high = i_high.
       ENDIF.
+      update_sel_row( CHANGING c_sel_row = <to> ).
+    ENDIF.
+    else.
+      CLEAR:  <to>-opti, <to>-sign.
+      <to>-high = i_high.
       update_sel_row( CHANGING c_sel_row = <to> ).
     ENDIF.
     IF <to>-transmitter IS BOUND.
