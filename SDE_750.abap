@@ -1200,8 +1200,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = COND aqadh_type_of_icon( WHEN ls_link-const IS INITIAL THEN <field> ELSE ls_link-const ) ).
     ENDLOOP.
     IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol i_clear = 'X' ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1216,11 +1216,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         i_viewer = <obj>-alv_viewer.
       ENDIF.
       ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
-      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
+      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field> i_clear = 'X'  ).
     ENDLOOP.
     IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  i_clear = 'X').
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  i_clear = 'X' ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1241,7 +1241,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       IF sy-subrc = 0.
         APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
+        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr> i_clear = 'X' ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
         r_done = 'X'.
       ENDIF.
@@ -1273,8 +1273,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CHECK sy-subrc = 0.
         <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
       ENDLOOP.
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol i_clear = 'X' ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ENDIF.
   ENDMETHOD.
