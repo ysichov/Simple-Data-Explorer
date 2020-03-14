@@ -1230,13 +1230,13 @@ class lcl_table_viewer implementation.
         endif.
       endif.
       if ls_link-const is initial.
-        i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = <field>  ).
+        i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = <field> i_clear = 'X' ).
       else.
-        i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = ls_link-const  ).
+        i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = ls_link-const i_clear = 'X'  ).
       endif.
     endloop.
     if sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     endif.
@@ -1255,10 +1255,10 @@ class lcl_table_viewer implementation.
         i_viewer = <obj>-alv_viewer.
       endif.
       assign component i_column of structure i_str to <field>.
-      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
+      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field> i_clear = 'X' ).
     endloop.
     if sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     endif.
@@ -1294,9 +1294,9 @@ class lcl_table_viewer implementation.
       loop at lt_keys into ls_key.
         assign component ls_key-forkey of structure i_str to <field>.
         check sy-subrc = 0.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = ls_key-checkfield i_low = <field>  ).
+        <obj>-alv_viewer->mo_sel->set_value( i_field = ls_key-checkfield i_low = <field> i_clear = 'X'  ).
       endloop.
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     endif.
   endmethod.                    "link
