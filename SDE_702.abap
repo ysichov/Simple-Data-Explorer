@@ -1015,16 +1015,16 @@ class lcl_table_viewer implementation.
     assign cr_tab->* to <f_tab>.
     if i_where is not initial.
       try.
-          select * from (i_tabname) into table <f_tab> where (i_where) order by primary key.
+          select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab> where (i_where) order by primary key.
         catch cx_sy_dynamic_osql_semantics.
         catch cx_sy_dynamic_osql_syntax.
         catch cx_sy_conversion_no_number.
       endtry.
     else.
       if i_row_count is not supplied.
-        select * from (i_tabname) into table <f_tab>.
+        select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab>.
       else.
-        select * from (i_tabname) into table <f_tab> up to i_row_count rows.
+        select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab> up to i_row_count rows.
       endif.
     endif.
     c_count = sy-dbcnt.
