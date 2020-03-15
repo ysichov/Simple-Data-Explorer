@@ -239,7 +239,7 @@ CLASS lcl_alv_common DEFINITION.
 
     CLASS-METHODS:
       refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
-      translate_field IMPORTING i_lang LIKE sy-langu OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
+      translate_field IMPORTING i_lang type ddlanguage OPTIONAL CHANGING c_fld TYPE lvc_s_fcat.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
@@ -375,7 +375,7 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
-      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE xfeld OPTIONAL,
+      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE xfeld DEFAULT 'X' ,
       update_sel_row CHANGING c_sel_row TYPE selection_display_s.
 
   PRIVATE SECTION.
@@ -1153,6 +1153,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         REPLACE l_replace IN l_text_field WITH ''.
         ASSIGN COMPONENT ls_comp-name OF STRUCTURE <str> TO FIELD-SYMBOL(<to>).
         ASSIGN COMPONENT m_checkfield OF STRUCTURE <str> TO FIELD-SYMBOL(<check>).
+        check sy-subrc = 0.
         lv_clause = |{ m_checkfield } = '{ <check> }'|.
         LOOP AT <text_tab> ASSIGNING FIELD-SYMBOL(<text_str>)  WHERE (lv_clause).
           EXIT.
@@ -1200,8 +1201,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = COND aqadh_type_of_icon( WHEN ls_link-const IS INITIAL THEN <field> ELSE ls_link-const ) ).
     ENDLOOP.
     IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol i_clear = 'X' ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1216,11 +1217,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         i_viewer = <obj>-alv_viewer.
       ENDIF.
       ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
-      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field> i_clear = 'X'  ).
+      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
     ENDLOOP.
     IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  i_clear = 'X').
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  i_clear = 'X' ).
+      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       i_viewer->mo_sel->raise_selection_done( ).
       r_done = 'X'.
     ENDIF.
@@ -1241,7 +1242,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       IF sy-subrc = 0.
         APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr> i_clear = 'X' ).
+        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
         r_done = 'X'.
       ENDIF.
@@ -1273,8 +1274,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         CHECK sy-subrc = 0.
         <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
       ENDLOOP.
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang i_clear = 'X' ).
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol i_clear = 'X' ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ENDIF.
   ENDMETHOD.
@@ -1393,14 +1394,13 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           <sel_tab>-more_icon = icon_enter_more.
         ENDIF.
         <sel_tab>-ind = lv_ind.
-
         <sel_tab>-field_label = l_catalog-fieldname.
+
         <sel_tab>-int_type = l_catalog-inttype.
         <sel_tab>-element = l_catalog-rollname.
         <sel_tab>-domain =  l_catalog-domname.
         <sel_tab>-datatype = l_catalog-datatype.
         <sel_tab>-length = l_catalog-outputlen.
-
 
         lcl_alv_common=>translate_field( EXPORTING i_lang = mo_viewer->m_lang CHANGING c_fld = l_catalog ).
         <sel_tab>-name = l_catalog-scrtext_l.
