@@ -1015,16 +1015,16 @@ class lcl_table_viewer implementation.
     assign cr_tab->* to <f_tab>.
     if i_where is not initial.
       try.
-          select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab> where (i_where) order by primary key.
+          select * from (i_tabname) into corresponding fields of table <f_tab> where (i_where) order by primary key.
         catch cx_sy_dynamic_osql_semantics.
         catch cx_sy_dynamic_osql_syntax.
         catch cx_sy_conversion_no_number.
       endtry.
     else.
       if i_row_count is not supplied.
-        select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab>.
+        select * from (i_tabname) into corresponding fields of table <f_tab>.
       else.
-        select * from (i_tabname) into CORRESPONDING FIELDS OF table <f_tab> up to i_row_count rows.
+        select * from (i_tabname) into corresponding fields of table <f_tab> up to i_row_count rows.
       endif.
     endif.
     c_count = sy-dbcnt.
@@ -1394,7 +1394,7 @@ class lcl_table_viewer implementation.
     loop at it_fields assigning <field>.
       case e_ucomm.
         when 'HIDE'. "hide select options
-          CLEAR m_show_empty.
+          clear m_show_empty.
           lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
           loop at <f_tab> assigning <f_line>  where (lv_clause).
             exit.
@@ -1719,7 +1719,7 @@ class lcl_sel_opt implementation.
           "append initial line to <sel_tab>-style assigning <style>.
           l_style-fieldname = 'FIELD_LABEL'.
           l_style-style = '00000020'.
-          INSERT l_style into TABLE <sel_tab>-style.
+          insert l_style into table <sel_tab>-style.
         endif.
         if l_tfield-empty = 'X'.
           "append initial line to <sel_tab>-color assigning <color>.
@@ -1734,7 +1734,7 @@ class lcl_sel_opt implementation.
           l_color-color-int = 0.
           l_color-color-inv = 1.
         endif.
-        INSERT l_color into table <sel_tab>-color.
+        insert l_color into table <sel_tab>-color.
       endif.
     endloop.
   endmethod.                    "update_sel_tab
@@ -1869,7 +1869,7 @@ class lcl_sel_opt implementation.
         multiple_choice   = l_multiple
       tables
         return_tab        = return_tab
-                                                                                            "todo: callback for  f4 dependent fields
+                                                                                                  "todo: callback for  f4 dependent fields
       exceptions
         field_not_found   = 1
         no_help_for_field = 2
@@ -1957,18 +1957,96 @@ class lcl_sel_opt implementation.
   endmethod.                    "on_grid_button_click
 
   method on_data_changed.
-    field-symbols: <field> type any.
-    field-symbols <ls_cells> type lvc_s_modi.
-    loop at er_data_changed->mt_mod_cells assigning <ls_cells>.
-      field-symbols <tab> type selection_display_s.
+    data: l_start type i,
+          l_cat type lvc_s_fcat,
+          l_second type aqadh_s_ranges.
+    field-symbols: <field> type any,
+                   <ls_cells> type lvc_s_modi,
+                   <tab> type selection_display_s.
+
+    loop at er_data_changed->mt_good_cells assigning <ls_cells>.
       read table mt_sel_tab index <ls_cells>-row_id assigning <tab>.
       assign component <ls_cells>-fieldname of structure <tab> to <field>.
+      read table mo_viewer->mt_alv_catalog with key fieldname = <tab>-field_label into l_cat.
+
+      if <field> is not initial and <ls_cells>-value is initial.
+
+        read table <tab>-range into l_second index 2.
+        if sy-subrc = 0.
+          if ( <ls_cells>-fieldname = 'LOW' and <tab>-high is initial ) or  ( <ls_cells>-fieldname = 'HIGH' and <tab>-low is initial  ).
+            delete <tab>-range index 1.
+          else.
+            clear l_second.
+          endif.
+        endif.
+      endif.
+
+      if l_cat-convexit = 'ALPHA' and not  <ls_cells>-value ca '+*'.
+
+        call function 'CONVERSION_EXIT_ALPHA_INPUT'
+          exporting
+            input  = <ls_cells>-value
+          importing
+            output = <ls_cells>-value.
+
+        l_start = 128 - l_cat-dd_outlen.
+        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-dd_outlen).
+      endif.
+
+      if <ls_cells>-value is not initial.
+        if <tab>-int_type = 'D'.
+          data: lv_date type sy-datum.
+          call function 'CONVERT_DATE_INPUT'
+            exporting
+              input                     = <ls_cells>-value
+              plausibility_check        = 'X'
+            importing
+              output                    = lv_date
+            exceptions
+              plausibility_check_failed = 1
+              wrong_format_in_input     = 2
+              others                    = 3.
+          <ls_cells>-value = |{ lv_date date = user }|.
+        elseif <tab>-int_type = 'T'.
+          data: lv_time type sy-uzeit.
+          call function 'CONVERT_TIME_INPUT'
+            exporting
+              input                     = <ls_cells>-value
+            importing
+              output                    = lv_time
+            exceptions
+              plausibility_check_failed = 1
+              wrong_format_in_input     = 2
+              others                    = 3.
+          <ls_cells>-value = lv_time+0(2) && ':' && lv_time+2(2) && ':' && lv_time+4(2).
+        endif.
+      endif.
+    endloop.
+    check sy-subrc = 0.
+
+    if l_second is initial.
       <field> = <ls_cells>-value.
-    endloop.
-    loop at mt_sel_tab  assigning <tab>.
-      update_sel_row( changing c_sel_row = <tab> ).
-    endloop.
-    lcl_alv_common=>refresh( mo_sel_alv ).
+      er_data_changed->modify_cell( exporting i_row_id = <ls_cells>-row_id i_fieldname = <ls_cells>-fieldname i_value = <ls_cells>-value ).
+    else.
+      <tab>-low = l_second-low.
+      er_data_changed->modify_cell( exporting i_row_id = <ls_cells>-row_id i_fieldname = 'LOW' i_value = l_second-low ).
+      if l_second-high co '0 '.
+        clear l_second-high.
+      endif.
+      <tab>-high = l_second-high.
+      er_data_changed->modify_cell( exporting i_row_id = <ls_cells>-row_id i_fieldname = 'HIGH' i_value = l_second-high ).
+
+      <tab>-opti = l_second-opti.
+      er_data_changed->modify_cell( exporting i_row_id = <ls_cells>-row_id i_fieldname = 'OPTI' i_value = l_second-opti ).
+      <tab>-sign = l_second-sign.
+      er_data_changed->modify_cell( exporting i_row_id = <ls_cells>-row_id i_fieldname = 'SIGN' i_value = l_second-sign ).
+    endif.
+
+    update_sel_row( changing c_sel_row = <tab> ).
+    lcl_alv_common=>refresh( exporting i_obj = mo_sel_alv i_layout = ms_layout  ).
+    raise_selection_done( ).
+
+
   endmethod.                    "on_data_changed
 
   method on_data_changed_finished.
