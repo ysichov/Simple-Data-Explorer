@@ -477,6 +477,7 @@ class lcl_sel_opt definition.
 
     methods:
       init_fcat importing i_dd_handle type i,
+      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no,
       handle_sel_toolbar for event toolbar of cl_gui_alv_grid
         importing e_object e_interactive,
       on_f4 for event onf4 of cl_gui_alv_grid
@@ -1572,6 +1573,7 @@ class lcl_sel_opt implementation.
 
     set handler handle_user_command
                 handle_sel_toolbar
+                handle_doubleclick
                 lcl_dragdrop=>drag
                 lcl_dragdrop=>drop
                 on_data_changed
@@ -1660,6 +1662,31 @@ class lcl_sel_opt implementation.
     ls_fcat-outputlen = 60.
     append ls_fcat to mt_fcat.
     clear ls_fcat.
+    ls_fcat-fieldname = 'ELEMENT'.
+    ls_fcat-coltext = 'Data element'.
+    ls_fcat-style = '00000209'.
+    ls_fcat-outputlen = 15.
+    append ls_fcat to mt_fcat.
+    clear ls_fcat.
+    ls_fcat-fieldname = 'DOMAIN'.
+    ls_fcat-coltext = 'Domain'.
+    ls_fcat-style = '00000209'.
+    ls_fcat-outputlen = 15.
+    append ls_fcat to mt_fcat.
+    clear ls_fcat.
+    ls_fcat-fieldname = 'DATATYPE'.
+    ls_fcat-coltext = 'Type'.
+    ls_fcat-style = '00000003'.
+    ls_fcat-outputlen = 5.
+    append ls_fcat to mt_fcat.
+    clear ls_fcat.
+    ls_fcat-fieldname = 'LENGTH'.
+    ls_fcat-coltext = 'Length'.
+    ls_fcat-style = '00000003'.
+    ls_fcat-outputlen = 5.
+    append ls_fcat to mt_fcat.
+
+    clear ls_fcat.
     ls_fcat-fieldname = 'TRANSMITTER'.
     ls_fcat-tech = 'X'.
     append ls_fcat to mt_fcat.
@@ -1709,6 +1736,12 @@ class lcl_sel_opt implementation.
         endif.
         <sel_tab>-ind = lv_ind.
         <sel_tab>-field_label = l_catalog-fieldname.
+        <sel_tab>-int_type = l_catalog-inttype.
+        <sel_tab>-element = l_catalog-rollname.
+        <sel_tab>-domain =  l_catalog-domname.
+        <sel_tab>-datatype = l_catalog-datatype.
+        <sel_tab>-length = l_catalog-outputlen.
+
         lcl_alv_common=>translate_field( exporting i_lang = mo_viewer->m_lang changing c_fld = l_catalog ).
 
         <sel_tab>-name = l_catalog-scrtext_l.
@@ -1738,6 +1771,32 @@ class lcl_sel_opt implementation.
       endif.
     endloop.
   endmethod.                    "update_sel_tab
+
+  METHOD handle_doubleclick.
+    data: l_sel type selection_display_s.
+    CHECK es_row_no-row_id IS NOT INITIAL.
+    READ TABLE mt_sel_tab INDEX es_row_no-row_id INTO l_sel.
+    IF e_column = 'ELEMENT'.
+      SET PARAMETER ID 'DTYP' FIELD l_sel-element.
+      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+    ELSEIF e_column = 'DOMAIN'.
+      SET PARAMETER ID 'DOM' FIELD l_sel-domain.
+      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+    ELSE.
+      CALL FUNCTION 'DOCU_CALL'
+        EXPORTING
+          id                = 'DE'
+          langu             = mo_viewer->m_lang
+          object            = l_sel-element
+          typ               = 'E'
+          displ             = 'X'
+          displ_mode        = 3
+          use_sec_langu     = 'X'
+          display_shorttext = 'X'.
+    ENDIF.
+  ENDMETHOD.
+
+
   method handle_sel_toolbar.
     data: ls_toolbar type stb_button.
 
@@ -1869,7 +1928,7 @@ class lcl_sel_opt implementation.
         multiple_choice   = l_multiple
       tables
         return_tab        = return_tab
-                                                                                                  "todo: callback for  f4 dependent fields
+                                                                                                        "todo: callback for  f4 dependent fields
       exceptions
         field_not_found   = 1
         no_help_for_field = 2
