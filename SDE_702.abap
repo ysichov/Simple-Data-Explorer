@@ -981,6 +981,7 @@ class lcl_table_viewer implementation.
         replace l_replace in l_text_field with ''.
         assign component ls_comp-name of structure <str> to <to>.
         assign component m_checkfield of structure <str> to <check>.
+        check sy-subrc = 0.
         lv_clause = |{ m_checkfield } = '{ <check> }'|.
         loop at <text_tab> assigning <text_str>  where (lv_clause).
           exit.
