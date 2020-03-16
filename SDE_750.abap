@@ -185,6 +185,10 @@ CLASS lcl_rtti IMPLEMENTATION.
         APPEND ls_comp TO lt_components.
       ENDLOOP.
 
+
+      "Read table lo_texttab->components with key
+
+
       LOOP AT lo_texttab->components INTO l_descr.
 
         CALL FUNCTION 'DDIF_FIELDINFO_GET'
@@ -1179,7 +1183,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <to> = <from>.
       ENDLOOP.
     ENDLOOP.
-
   ENDMETHOD.
 
   METHOD link.
@@ -1721,8 +1724,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
       IF l_cat-convexit = 'ALPHA' AND NOT  <ls_cells>-value CA '+*'.
         <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
-        l_start = 128 - l_cat-intlen.
-        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-intlen).
+        l_start = 128 - l_cat-DD_OUTLEN.
+        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-DD_OUTLEN).
       ENDIF.
 
       IF <ls_cells>-value IS NOT INITIAL.
