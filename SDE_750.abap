@@ -51,9 +51,7 @@ TYPES:
 DATA: gt_sel TYPE TABLE OF selection_display_s.
 FIELD-SYMBOLS: <g_str> TYPE any.
 
-SELECTION-SCREEN BEGIN OF SCREEN 101.
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
-SELECTION-SCREEN END OF SCREEN 0101.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
 CLASS lcl_plugins DEFINITION.
@@ -297,8 +295,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
           lo_str         TYPE REF TO cl_abap_structdescr.
 
     lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tab
-                                   IMPORTING "e_t_comp = mt_text_components
-                                     e_handle = lo_str ).
+                                   IMPORTING e_handle = lo_str ).
     CREATE DATA lr_struc TYPE HANDLE lo_str.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
@@ -901,12 +898,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           fcode = 'DETAIL'
           text  = 'Просмотр объекта'.
 
-      IF l_dbtab+0(2) = 'PA'.
-        CALL METHOD l_smenu->add_function
-          EXPORTING
-            fcode = 'PY'
-            text  = 'PaYroll Clusters'.
-      ENDIF.
+*      IF l_dbtab+0(2) = 'PA'.
+*        CALL METHOD l_smenu->add_function
+*          EXPORTING
+*            fcode = 'PY'
+*            text  = 'PaYroll Clusters'.
+*      ENDIF.
     ENDIF.
 
     CALL METHOD e_object->add_submenu
@@ -2354,8 +2351,6 @@ INITIALIZATION.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
-
-  CALL SELECTION-SCREEN 101.
 
 AT SELECTION-SCREEN OUTPUT.
   %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
