@@ -144,10 +144,38 @@ ENDCLASS.
 CLASS lcl_sql DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
+      read_any_table IMPORTING i_tabname   TYPE tabname
+                               i_where     TYPE string
+                               i_row_count TYPE i OPTIONAL
+                     CHANGING  cr_tab      TYPE REF TO data
+                               c_count     TYPE i,
       exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
+  METHOD read_any_table.
+    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
+
+    ASSIGN cr_tab->* TO <f_tab>.
+    IF i_where IS NOT INITIAL.
+      TRY.
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
+        CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
+        CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
+        CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
+      ENDTRY.
+    ELSE.
+      IF i_row_count IS NOT SUPPLIED.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> ORDER BY PRIMARY KEY.
+      ELSE.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO i_row_count ROWS ORDER BY PRIMARY KEY..
+      ENDIF.
+    ENDIF.
+    c_count = sy-dbcnt.
+    "update_texts( ).
+  ENDMETHOD.
+
+
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
@@ -429,12 +457,6 @@ CLASS lcl_table_viewer DEFINITION.
       set_header,
       read_text_table,
       update_texts,
-      read_table IMPORTING i_tabname   TYPE tabname
-                           i_where     TYPE string
-                           i_row_count TYPE i OPTIONAL
-                 CHANGING  cr_tab      TYPE REF TO data
-                           c_count     TYPE i,
-
       link IMPORTING  i_str TYPE any
                       i_column TYPE any RETURNING VALUE(r_done) TYPE xfeld,
       create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
@@ -666,8 +688,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ASSIGN mr_table->* TO <f_tab>.
     read_text_table( ).
 
-    read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+    lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
                          CHANGING cr_tab =  mr_table c_count = m_count ).
+    update_texts( ).
     set_header( ).
     ls_layout-col_opt = 'X'.
     ls_layout-cwidth_opt = 'X'.
@@ -780,7 +803,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     e_object->add_separator( ).
     CREATE OBJECT l_smenu.
 
-    SELECT SINGLE infty INTO @DATA(l_infty)
+    SELECT SINGLE dbtab INTO @DATA(l_dbtab)
       FROM t777d
       WHERE dbtab = @m_tabname.
 
@@ -790,10 +813,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           fcode = 'DETAIL'
           text  = 'Просмотр объекта'.
 
-      CALL METHOD l_smenu->add_function
-        EXPORTING
-          fcode = 'PY'
-          text  = 'PaYroll Clusters'.
+      IF l_dbtab+0(2) = 'PA'.
+        CALL METHOD l_smenu->add_function
+          EXPORTING
+            fcode = 'PY'
+            text  = 'PaYroll Clusters'.
+      ENDIF.
     ENDIF.
 
     CALL METHOD e_object->add_submenu
@@ -1122,7 +1147,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD refresh_table.
     DATA: ls_row TYPE t_sel_row.
-    read_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
+    lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
+    update_texts( ).
     set_header( ).
 
     LOOP AT mo_sel->mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
@@ -1137,28 +1163,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
-  ENDMETHOD.
-
-  METHOD read_table.
-    FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
-
-    ASSIGN cr_tab->* TO <f_tab>.
-    IF i_where IS NOT INITIAL.
-      TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
-        CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
-        CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
-        CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
-      ENDTRY.
-    ELSE.
-      IF i_row_count IS NOT SUPPLIED.
-        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> ORDER BY PRIMARY KEY.
-      ELSE.
-        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO i_row_count ROWS ORDER BY PRIMARY KEY..
-      ENDIF.
-    ENDIF.
-    c_count = sy-dbcnt.
-    update_texts( ).
   ENDMETHOD.
 
   METHOD update_texts.
@@ -1609,14 +1613,21 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
+    DATA: it_bdcdata TYPE TABLE OF  bdcdata.
     CHECK es_row_no-row_id IS NOT INITIAL.
+
     READ TABLE mt_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
+    APPEND VALUE #( program = 'SAPLSD_ENTRY' dynpro = '1000' dynbegin = 'X' ) TO it_bdcdata.
+    APPEND VALUE #( fnam = 'BDC_OKCODE' fval = 'WB_DISPLAY' ) TO it_bdcdata.
+
     IF e_column = 'ELEMENT'.
       SET PARAMETER ID 'DTYP' FIELD l_sel-element.
-      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+      APPEND VALUE #( fnam = 'RSRD1-DDTYPE' fval = 'X' ) TO it_bdcdata.
+      CALL TRANSACTION 'SE11' USING it_bdcdata MODE 'E'.
     ELSEIF e_column = 'DOMAIN'.
       SET PARAMETER ID 'DOM' FIELD l_sel-domain.
-      CALL TRANSACTION 'SE11' AND SKIP FIRST SCREEN.
+      APPEND VALUE #( fnam = 'RSRD1-DOMA' fval = 'X' ) TO it_bdcdata.
+      CALL TRANSACTION 'SE11' USING it_bdcdata MODE 'E'.
     ELSE.
       CALL FUNCTION 'DOCU_CALL'
         EXPORTING
