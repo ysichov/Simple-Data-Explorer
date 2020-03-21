@@ -267,7 +267,7 @@ CLASS lcl_alv_common DEFINITION.
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
 
     CLASS-METHODS:
-      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL,
+      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL i_soft type char01 OPTIONAL,
       translate_field IMPORTING i_lang TYPE ddlanguage OPTIONAL CHANGING c_fld TYPE lvc_s_fcat,
       get_field_info IMPORTING i_tab TYPE tabname.
 ENDCLASS.
@@ -279,7 +279,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
-    i_obj->refresh_table_display( EXPORTING is_stable = l_stable  ).
+    i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = i_soft  ).
   ENDMETHOD.
 
   METHOD get_field_info.
@@ -2338,7 +2338,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
     ENDIF.
 
     lo_alv ?= e_dragdropobj->dragsourcectrl.
-    lcl_alv_common=>refresh( lo_alv ).
+    lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = 'X' ).
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
     lo_to->raise_selection_done( ).
