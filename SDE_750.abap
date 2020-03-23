@@ -291,8 +291,6 @@ CLASS lcl_alv_common IMPLEMENTATION.
           lt_field_info  TYPE TABLE OF dfies,
           l_fname        TYPE fieldname,
           l_tname        TYPE tabname,
-          l_replace      TYPE string,
-          l_texttab      TYPE tabname,
           lo_str         TYPE REF TO cl_abap_structdescr.
 
     lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tab
@@ -354,8 +352,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD translate_field.
-    DATA: lv_lang       LIKE sy-langu,
-          lt_field_info TYPE TABLE OF dfies.
+    DATA: lt_field_info TYPE TABLE OF dfies.
 
     CALL FUNCTION 'DDIF_FIELDINFO_GET'
       EXPORTING
@@ -949,8 +946,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
 
   METHOD create_field_cat.
-    DATA: lv_clause      TYPE string,
-          lr_struc       TYPE REF TO data,
+    DATA: lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
           lt_field_info  TYPE TABLE OF dfies,
@@ -966,7 +962,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     it_tabdescr[] = lr_table_descr->components[].
 
     lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
-
     l_replace = l_texttab && '_'.
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
@@ -1003,8 +998,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
         ls_tf-fieldname = ls-name.
         INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
-
-
       ENDIF.
 
       <catalog>-style = lcl_alv_common=>c_white.
@@ -1060,7 +1053,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
-    DATA: lt_keys TYPE TABLE OF dd05p.
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
@@ -1126,8 +1118,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       SET TITLEBAR 'SDE'.
       RETURN.
     ELSE.
-      DATA: r_struc TYPE REF TO data,
-            lo_str  TYPE REF TO cl_abap_structdescr.
       LOOP AT it_fields ASSIGNING <fields> WHERE domname NE 'MANDT'.
         <fields>-col_pos = sy-tabix.
         CASE e_ucomm.
