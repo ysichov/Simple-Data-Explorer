@@ -57,11 +57,12 @@ PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_f
 CLASS lcl_plugins DEFINITION.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_field_links,
-             tab    TYPE tablename,
-             field  TYPE fieldname,
-             rtab   TYPE tablename,
-             rfield TYPE fieldname,
-             const  TYPE aqadh_range_value,
+             tab        TYPE tablename,
+             field      TYPE fieldname,
+             method(30),
+             rtab       TYPE tablename,
+             rfield     TYPE fieldname,
+             const      TYPE aqadh_range_value,
            END OF t_field_links,
            BEGIN OF t_el_links,
              element TYPE tablename,
@@ -81,24 +82,24 @@ CLASS lcl_plugins IMPLEMENTATION.
     mt_el_links = VALUE #(
       ( element = 'PERSNO'   tcode = 'PA20' )
       ( element = 'HROBJID'  tcode = 'PP01' )
-      ( element = 'HROBJID'  rtab = 'HRP1000' rfield = 'OTYPE' )
       ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' )
       ).
 
     "field to field links
     mt_field_links = VALUE #(
-      ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
-      ( tab = 'PA0001'    field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'PA0001'    field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
-      ( tab = 'PA0001'    field = 'ORGEH' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'PA0001'    field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' const = 'C' )
-      ( tab = 'PA0001'    field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'HRP1001'   field = 'SCLAS' rfield = 'OTYPE' )
-      ( tab = 'HRP1001'   field = 'SOBID' rfield = 'OBJID' )
-      ( tab = 'HRP1002'   field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
-      ( tab = 'PA2006'    field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
-      ( tab = 'PTQUODED'  field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
-      ( tab = 'PTQUODED'  field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
+      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
+      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
+      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' const = 'C' )
+      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
+      ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
+      ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
+      ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
+      ( tab = 'PTQUODED'   field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
+      ( tab = 'HRPY_RGDIR' field = 'SEQNR' method = 'SHOW_CLUSTER' )
       ).
   ENDMETHOD.
 ENDCLASS.
@@ -414,7 +415,7 @@ CLASS lcl_appl DEFINITION.
            END OF t_obj,
 
            BEGIN OF t_lang,
-             spras TYPE spras,
+             spras(4)," TYPE spras,
              sptxt TYPE sptxt,
            END OF t_lang  .
 
@@ -1074,7 +1075,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_clause(45),
       lv_sel_width  TYPE i.
 
-    FIELD-SYMBOLS: <fields>  LIKE LINE OF it_fields,
+    FIELD-SYMBOLS: <fields> LIKE LINE OF it_fields,
                    <f_tab>  TYPE STANDARD  TABLE.
 
     ASSIGN mr_table->* TO <f_tab>.
@@ -1094,8 +1095,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ELSEIF e_ucomm = 'PY'.
       APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
       CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
-      READ TABLE <f_tab> index lcl_alv_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
-      ASSIGN COMPONENT 'PERNR' of structure <f_line> to FIELD-SYMBOL(<pernr>).
+      READ TABLE <f_tab> INDEX lcl_alv_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
+      ASSIGN COMPONENT 'PERNR' OF STRUCTURE <f_line> TO FIELD-SYMBOL(<pernr>).
       <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = <pernr>  ).
       <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ELSEIF e_ucomm = 'DETAIL'.
@@ -1388,9 +1389,21 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: i_viewer TYPE REF TO lcl_table_viewer.
     CLEAR r_done.
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
+
+    "field to plugin link
+    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column AND method IS NOT INITIAL.
+      CASE ls_link-method.
+        WHEN 'SHOW_CLUSTER'.
+          ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
+          ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+           r_done = 'X'.
+      ENDCASE.
+    ENDLOOP.
+
+    CHECK r_done IS INITIAL.
     "field to field links
-    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column.
-      ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+    LOOP AT lcl_plugins=>mt_field_links INTO ls_link WHERE tab = m_tabname AND field = i_column AND method IS INITIAL.
+      ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO <field>.
       IF i_viewer IS INITIAL.
         IF ls_link-rtab IS INITIAL.
           i_viewer = me.
@@ -2066,7 +2079,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
     IF e_ucomm = 'SEL_CLEAR' OR e_ucomm = 'DELR'. "clear all selections
-      mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = data(lt_sel_rows) ).
+      mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
 
       LOOP AT lt_sel_rows INTO DATA(l_row).
         READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX l_row-index.
@@ -2308,8 +2321,15 @@ CLASS lcl_dragdrop IMPLEMENTATION.
     lo_to->raise_selection_done( ).
   ENDMETHOD.
 ENDCLASS.
+
+class lcl_salary_viewer DEFINITION.
+
+endclass.
 "END OF INCLUDE YS_SDE_CLASSES.
 
+class lcl_salary_viewer IMPLEMENTATION.
+
+endclass.
 *------------REPORT EVENTS--------------------
 INITIALIZATION.
   lcl_appl=>init_lang( ).
