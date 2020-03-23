@@ -415,7 +415,7 @@ CLASS lcl_appl DEFINITION.
            END OF t_obj,
 
            BEGIN OF t_lang,
-             spras(4)," TYPE spras,
+             spras(4),
              sptxt TYPE sptxt,
            END OF t_lang  .
 
@@ -1280,6 +1280,10 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ASSIGN COMPONENT 'SPRAS' OF STRUCTURE <text_dummy> TO <dummy>.
       IF sy-subrc = 0.
         lv_clause = |{ lv_clause } AND SPRAS = '{ m_lang }'|.
+      ENDIF.
+      ASSIGN COMPONENT 'LANGU' OF STRUCTURE <text_dummy> TO <dummy>.
+      IF sy-subrc = 0.
+        lv_clause = |{ lv_clause } AND LANGU = '{ m_lang }'|.
       ENDIF.
 
       LOOP AT <text_tab> ASSIGNING FIELD-SYMBOL(<text_str>)  WHERE (lv_clause).
