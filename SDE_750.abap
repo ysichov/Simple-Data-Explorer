@@ -2056,8 +2056,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_user_command.
-    DATA: lv_sel_width TYPE i,
-          lt_sel_rows  TYPE lvc_t_row.
+    DATA: lv_sel_width TYPE i.
 
     IF e_ucomm = 'SEL_OFF'. "Hide select-options alv
       mo_viewer->m_visible = ''.
@@ -2082,7 +2081,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
     IF e_ucomm = 'SEL_CLEAR' OR e_ucomm = 'DELR'. "clear all selections
-      mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = lt_sel_rows ).
+      mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = data(lt_sel_rows) ).
 
       LOOP AT lt_sel_rows INTO DATA(l_row).
         READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX l_row-index.
