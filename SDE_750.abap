@@ -1306,9 +1306,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
 
-    SELECT SINGLE infty INTO l_infty
-      FROM t777d
-     WHERE dbtab = m_tabname.
+    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = m_tabname.
     ASSIGN COMPONENT 'PERNR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
     l_temp = <field>.
     SET PARAMETER ID 'PER' FIELD l_temp.
@@ -1335,7 +1333,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           l_temp(10).
 
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-
     DATA(l_row) = lcl_alv_common=>get_selected( mo_alv ).
 
     ASSIGN mr_table->* TO  <f_tab>.
