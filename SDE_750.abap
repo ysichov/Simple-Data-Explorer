@@ -1101,10 +1101,10 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_alv->set_toolbar_interactive( ).
       RETURN.
     ELSEIF e_ucomm = 'PY'.
-      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = '33'  ).
-      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+*      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+*      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
+*      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = '33'  ).
+*      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ELSEIF e_ucomm = 'DETAIL'.
       IF m_tabname+0(2) = 'PA'.
         jump_pa20( ).
