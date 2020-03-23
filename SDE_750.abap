@@ -267,9 +267,10 @@ CLASS lcl_alv_common DEFINITION.
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
 
     CLASS-METHODS:
-      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL i_soft type char01 OPTIONAL,
+      refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL i_soft TYPE char01 OPTIONAL,
       translate_field IMPORTING i_lang TYPE ddlanguage OPTIONAL CHANGING c_fld TYPE lvc_s_fcat,
-      get_field_info IMPORTING i_tab TYPE tabname.
+      get_field_info IMPORTING i_tab TYPE tabname,
+      get_selected IMPORTING i_obj TYPE REF TO cl_gui_alv_grid RETURNING VALUE(e_index) TYPE lvc_index.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
@@ -322,30 +323,30 @@ CLASS lcl_alv_common IMPLEMENTATION.
         CLEAR ls_tf.
         MOVE-CORRESPONDING l_info TO ls_tf.
 
-          "check empty field
-          DATA: dref TYPE REF TO data,
-                l_x  TYPE xstring.
-          FIELD-SYMBOLS <field> TYPE any.
+        "check empty field
+        DATA: dref TYPE REF TO data,
+              l_x  TYPE xstring.
+        FIELD-SYMBOLS <field> TYPE any.
 
-          IF ls_tf-rollname IS NOT INITIAL.
-            CREATE DATA dref TYPE (ls_tf-rollname).
-            ASSIGN dref->* TO <field>.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-              FROM (i_tab)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = 'X'.
-            ENDIF.
-          ELSEIF ls_tf-datatype = 'RAWSTRING'.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
-              FROM (i_tab)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = 'X'.
-            ENDIF.
+        IF ls_tf-rollname IS NOT INITIAL.
+          CREATE DATA dref TYPE (ls_tf-rollname).
+          ASSIGN dref->* TO <field>.
+          lv_clause = |{ ls_tf-fieldname } NE ''|.
+          SELECT SINGLE (ls_tf-fieldname) INTO @<field>
+            FROM (i_tab)
+           WHERE (lv_clause).
+          IF sy-subrc NE 0.
+            ls_tf-empty = 'X'.
           ENDIF.
+        ELSEIF ls_tf-datatype = 'RAWSTRING'.
+          lv_clause = |{ ls_tf-fieldname } NE ''|.
+          SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+            FROM (i_tab)
+           WHERE (lv_clause).
+          IF sy-subrc NE 0.
+            ls_tf-empty = 'X'.
+          ENDIF.
+        ENDIF.
 
         INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
       ENDIF.
@@ -386,10 +387,21 @@ CLASS lcl_alv_common IMPLEMENTATION.
       ENDIF.
     ENDIF.
   ENDMETHOD.
+
+  METHOD get_selected.
+    i_obj->get_selected_cells( IMPORTING et_cell = DATA(lt_sel_cells) ).
+    READ TABLE lt_sel_cells INTO DATA(l_cells) INDEX 1 TRANSPORTING row_id.
+    IF sy-subrc = 0.
+      e_index = l_cells-row_id.
+    ELSE.
+      i_obj->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
+      READ TABLE lt_sel_rows INDEX 1 INTO DATA(l_row) TRANSPORTING index.
+      IF sy-subrc = 0.
+        e_index = l_row-index.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
 ENDCLASS.
-
-
-
 
 CLASS lcl_appl DEFINITION.
   PUBLIC SECTION.
@@ -898,12 +910,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           fcode = 'DETAIL'
           text  = 'Просмотр объекта'.
 
-*      IF l_dbtab+0(2) = 'PA'.
-*        CALL METHOD l_smenu->add_function
-*          EXPORTING
-*            fcode = 'PY'
-*            text  = 'PaYroll Clusters'.
-*      ENDIF.
+      IF l_dbtab+0(2) = 'PA'.
+        CALL METHOD l_smenu->add_function
+          EXPORTING
+            fcode = 'PY'
+            text  = 'PaYroll Clusters'.
+      ENDIF.
     ENDIF.
 
     CALL METHOD e_object->add_submenu
@@ -1088,6 +1100,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_splitter->set_column_width( EXPORTING id    = 1 width = lv_sel_width ).
       mo_alv->set_toolbar_interactive( ).
       RETURN.
+    ELSEIF e_ucomm = 'PY'.
+      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = '33'  ).
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ELSEIF e_ucomm = 'DETAIL'.
       IF m_tabname+0(2) = 'PA'.
         jump_pa20( ).
@@ -1235,7 +1252,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     FIELD-SYMBOLS: <text_tab> TYPE  table,
                    <check>    TYPE any.
 
-   check m_texttabname is not INITIAL.
+    CHECK m_texttabname IS NOT INITIAL.
 
     "text fields
     ASSIGN mr_text_table->* TO <text_tab>.
@@ -1292,28 +1309,19 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD jump_pa20.
-    DATA: ls_row     TYPE lvc_s_row,
-          l_infty    TYPE infty,
+    DATA: l_infty    TYPE infty,
           l_temp(10) TYPE c.
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE,
-                   <field> TYPE any.
-    mo_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
-    IF lines( lt_sel_rows ) = 0.
-      mo_alv->get_current_cell( IMPORTING
-        es_row_id = ls_row
-        es_col_id = DATA(ls_col) ).
-    ELSE.
-      ls_row-index = lt_sel_rows[ 1 ]-index.
-    ENDIF.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    DATA(l_row) = lcl_alv_common=>get_selected( mo_alv ).
 
     ASSIGN mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX ls_row ASSIGNING FIELD-SYMBOL(<tab>).
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
 
     SELECT SINGLE infty INTO l_infty
       FROM t777d
      WHERE dbtab = m_tabname.
-    ASSIGN COMPONENT 'PERNR' OF STRUCTURE <tab> TO <field>.
+    ASSIGN COMPONENT 'PERNR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
     l_temp = <field>.
     SET PARAMETER ID 'PER' FIELD l_temp.
     SET PARAMETER ID 'FCD' FIELD 'DIS'.
@@ -1334,41 +1342,27 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: save_plvar(2),
           save_otype(2),
           save_objid(8),
-          ls_row        TYPE lvc_s_row,
           l_infty(4),
           l_subty(4),
           l_temp(10).
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE,
-                   <field> TYPE any,
-                   <istat> TYPE any,
-                   <plvar> TYPE plvar,
-                   <date>  TYPE begda.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
 
-    mo_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
-    IF lines( lt_sel_rows ) = 0.
-      mo_alv->get_current_cell( IMPORTING
-        es_row_id = ls_row
-        es_col_id = DATA(ls_col) ).
-    ELSE.
-      ls_row-index = lt_sel_rows[ 1 ]-index.
-    ENDIF.
+    DATA(l_row) = lcl_alv_common=>get_selected( mo_alv ).
 
     ASSIGN mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX ls_row ASSIGNING FIELD-SYMBOL(<tab>).
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
 
-    SELECT SINGLE infty INTO l_infty
-      FROM t777d
-     WHERE dbtab = m_tabname.
+    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = m_tabname.
 
-    GET PARAMETER ID 'POP' FIELD save_plvar.                    "RITPP01
-    GET PARAMETER ID 'POT' FIELD save_otype.                    "RITPP01
-    GET PARAMETER ID 'PON' FIELD save_objid.                    "RITPP01
+    GET PARAMETER ID 'POP' FIELD save_plvar.
+    GET PARAMETER ID 'POT' FIELD save_otype.
+    GET PARAMETER ID 'PON' FIELD save_objid.
 
-    ASSIGN COMPONENT 'PLVAR' OF STRUCTURE <tab> TO <plvar>.
+    ASSIGN COMPONENT 'PLVAR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<plvar>).
     SET PARAMETER ID 'POP' FIELD <plvar>.                   "RITPP01
 
-    ASSIGN COMPONENT 'OBJID' OF STRUCTURE <tab> TO <field>.
+    ASSIGN COMPONENT 'OBJID' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
     l_temp = <field>.
     SET PARAMETER ID 'PON' FIELD l_temp.
 
@@ -1376,7 +1370,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     l_temp = <field>.
     SET PARAMETER ID 'POT' FIELD l_temp.
 
-    ASSIGN COMPONENT 'ISTAT' OF STRUCTURE <tab> TO <istat>.
+    ASSIGN COMPONENT 'ISTAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<istat>).
     l_temp = <istat>.
 
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
@@ -1386,11 +1380,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       CLEAR l_subty.
     ENDIF.
 
-    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO <date>.
-    SET PARAMETER ID 'BEG' FIELD <date>.                      "RITPP01
+    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO FIELD-SYMBOL(<date>).
+    SET PARAMETER ID 'BEG' FIELD <date>.
 
     ASSIGN COMPONENT 'ENDDA' OF STRUCTURE <tab> TO <date>.
-    SET PARAMETER ID 'END' FIELD <date>.                      "RITPP01
+    SET PARAMETER ID 'END' FIELD <date>.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
 
     DATA: it_bdcdata TYPE TABLE OF  bdcdata.
@@ -1433,7 +1427,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_tabname fieldname = i_column INTO DATA(l_field).
     "data element to field links
-
     LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname." 'PA20' .
       CASE l_el_link-tcode.
         WHEN 'PA20'.
@@ -2027,25 +2020,12 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_context_menu_request.
-    DATA: lt_fcodes    TYPE ui_funcattr,
-          ls_fcode     TYPE uiattentry,
-          ls_func      TYPE ui_func,
-          lt_func      TYPE ui_functions,
-          lt_sel_cells TYPE lvc_t_cell,
-          lt_sel_rows  TYPE lvc_t_row,
-          l_index      TYPE lvc_index.
+    DATA: lt_fcodes TYPE ui_funcattr,
+          ls_fcode  TYPE uiattentry,
+          ls_func   TYPE ui_func,
+          lt_func   TYPE ui_functions.
 
-    mo_sel_alv->get_selected_cells( IMPORTING et_cell = lt_sel_cells ).
-    READ TABLE lt_sel_cells INTO DATA(l_cells) INDEX 1 TRANSPORTING row_id.
-    IF sy-subrc = 0.
-      l_index = l_cells-row_id.
-    ELSE.
-      mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = lt_sel_rows ).
-      READ TABLE lt_sel_rows INDEX 1 INTO DATA(l_row) TRANSPORTING index.
-      IF sy-subrc = 0.
-        l_index = l_row-index.
-      ENDIF.
-    ENDIF.
+    DATA(l_index) = lcl_alv_common=>get_selected( mo_sel_alv ).
 
     IF l_index IS NOT INITIAL.
       READ TABLE mt_sel_tab INTO DATA(l_sel) INDEX l_index.

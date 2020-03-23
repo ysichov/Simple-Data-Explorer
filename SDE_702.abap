@@ -13,7 +13,7 @@ class lcl_data_receiver definition deferred.
 class lcl_data_transmitter definition deferred.
 
 types:
-begin of selection_display_s,
+ begin of selection_display_s,
     ind         type i,
     field_label type lvc_fname,
     int_type(1),
