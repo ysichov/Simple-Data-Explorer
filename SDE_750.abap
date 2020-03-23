@@ -1083,7 +1083,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_sel_width  TYPE i.
 
     FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
-                   <f_line> TYPE any,
                    <f_tab>  TYPE STANDARD  TABLE.
 
     ASSIGN mr_table->* TO <f_tab>.
@@ -1127,9 +1126,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ELSE.
       DATA: r_struc TYPE REF TO data,
             lo_str  TYPE REF TO cl_abap_structdescr.
-      lcl_rtti=>create_struc_handle( EXPORTING i_tname = m_tabname  IMPORTING e_handle = lo_str ).
-      CREATE DATA r_struc TYPE HANDLE lo_str.
-      ASSIGN r_struc->* TO <f_line>.
       LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
         <field>-col_pos = sy-tabix.
         CASE e_ucomm.
@@ -1137,7 +1133,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             IF <field>-tabname = m_tabname AND lines( <f_tab> ) > 0.
               CLEAR m_show_empty.
               lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
-              LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+              LOOP AT <f_tab> ASSIGNING FIELD-SYMBOL(<f_line>)  WHERE (lv_clause).
                 EXIT.
               ENDLOOP.
               IF sy-subrc NE 0.
