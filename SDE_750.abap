@@ -270,7 +270,7 @@ CLASS lcl_alv_common DEFINITION.
       refresh IMPORTING i_obj TYPE REF TO cl_gui_alv_grid i_layout TYPE lvc_s_layo OPTIONAL i_soft TYPE char01 OPTIONAL,
       translate_field IMPORTING i_lang TYPE ddlanguage OPTIONAL CHANGING c_fld TYPE lvc_s_fcat,
       get_field_info IMPORTING i_tab TYPE tabname,
-      get_selected IMPORTING i_obj TYPE REF TO cl_gui_alv_grid RETURNING VALUE(e_index) TYPE lvc_index.
+      get_selected IMPORTING i_obj TYPE REF TO cl_gui_alv_grid RETURNING VALUE(e_index) TYPE i.
 ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
@@ -1082,7 +1082,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_clause(45),
       lv_sel_width  TYPE i.
 
-    FIELD-SYMBOLS: <field>  LIKE LINE OF it_fields,
+    FIELD-SYMBOLS: <fields>  LIKE LINE OF it_fields,
                    <f_tab>  TYPE STANDARD  TABLE.
 
     ASSIGN mr_table->* TO <f_tab>.
@@ -1100,10 +1100,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_alv->set_toolbar_interactive( ).
       RETURN.
     ELSEIF e_ucomm = 'PY'.
-*      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-*      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
-*      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = '33'  ).
-*      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
+      READ TABLE <f_tab> index lcl_alv_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
+      ASSIGN COMPONENT 'PERNR' of structure <f_line> to FIELD-SYMBOL(<pernr>).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = <pernr>  ).
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     ELSEIF e_ucomm = 'DETAIL'.
       IF m_tabname+0(2) = 'PA'.
         jump_pa20( ).
@@ -1126,43 +1128,43 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ELSE.
       DATA: r_struc TYPE REF TO data,
             lo_str  TYPE REF TO cl_abap_structdescr.
-      LOOP AT it_fields ASSIGNING <field> WHERE domname NE 'MANDT'.
-        <field>-col_pos = sy-tabix.
+      LOOP AT it_fields ASSIGNING <fields> WHERE domname NE 'MANDT'.
+        <fields>-col_pos = sy-tabix.
         CASE e_ucomm.
           WHEN 'HIDE'. "hide select options
-            IF <field>-tabname = m_tabname AND lines( <f_tab> ) > 0.
+            IF <fields>-tabname = m_tabname AND lines( <f_tab> ) > 0.
               CLEAR m_show_empty.
-              lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
-              LOOP AT <f_tab> ASSIGNING FIELD-SYMBOL(<f_line>)  WHERE (lv_clause).
+              lv_clause = |{ <fields>-fieldname } IS NOT INITIAL|.
+              LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
                 EXIT.
               ENDLOOP.
               IF sy-subrc NE 0.
-                <field>-no_out = 'X'.
+                <fields>-no_out = 'X'.
               ENDIF.
             ENDIF.
           WHEN 'SHOW'.
             m_show_empty = 'X'.
-            <field>-no_out = ' '.
+            <fields>-no_out = ' '.
           WHEN 'UPDATE'.
-            lv_clause = |{ <field>-fieldname } IS NOT INITIAL|.
+            lv_clause = |{ <fields>-fieldname } IS NOT INITIAL|.
             LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
               EXIT.
             ENDLOOP.
             IF sy-subrc = 0.
-              <field>-no_out = ''.
+              <fields>-no_out = ''.
             ENDIF.
           WHEN 'TECH'. "technical field name
-            <field>-scrtext_l = <field>-scrtext_m = <field>-scrtext_s =  <field>-reptext = <field>-fieldname.
+            <fields>-scrtext_l = <fields>-scrtext_m = <fields>-scrtext_s =  <fields>-reptext = <fields>-fieldname.
           WHEN OTHERS. "header names translation
             READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
             IF sy-subrc = 0.
-              lcl_alv_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <field> ).
+              lcl_alv_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <fields> ).
               IF mo_sel IS BOUND.
-                READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <field>-fieldname.
+                READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <fields>-fieldname.
                 IF sy-subrc = 0.
-                  <sel>-name = <field>-scrtext_l.
+                  <sel>-name = <fields>-scrtext_l.
                   IF <sel>-name IS INITIAL.
-                    <sel>-name = <field>-reptext.
+                    <sel>-name = <fields>-reptext.
                   ENDIF.
                 ENDIF.
               ENDIF.
