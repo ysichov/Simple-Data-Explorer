@@ -416,7 +416,7 @@ CLASS lcl_appl DEFINITION.
 
            BEGIN OF t_lang,
              spras(4),
-             sptxt TYPE sptxt,
+             sptxt    TYPE sptxt,
            END OF t_lang  .
 
     CLASS-DATA: m_option_icons     TYPE TABLE OF sign_option_icon_s,
@@ -1235,7 +1235,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD update_texts.
     DATA: l_text_field TYPE fieldname,
           l_replace    TYPE string,
-          lv_clause    TYPE string.
+          lv_clause    TYPE string,
+          l_lang       TYPE fieldname.
 
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
     FIELD-SYMBOLS: <text_tab> TYPE  table,
@@ -1248,12 +1249,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     READ TABLE <text_tab> INDEX 1 ASSIGNING FIELD-SYMBOL(<text_dummy>).
     CHECK sy-subrc = 0.
 
+    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_texttabname domname = 'SPRAS' INTO DATA(l_texttabfield).
+    IF sy-subrc = 0.
+      l_lang = l_texttabfield-fieldname.
+    ENDIF.
+
     l_replace = m_texttabname && '_'.
     ASSIGN mr_table->* TO <f_tab>.
 
     LOOP AT <f_tab> ASSIGNING FIELD-SYMBOL(<str>).
       CLEAR lv_clause.
-      LOOP AT lcl_alv_common=>mt_tabfields INTO DATA(l_texttabfield) WHERE tabname = m_texttabname AND keyflag = 'X'.
+      LOOP AT lcl_alv_common=>mt_tabfields INTO l_texttabfield WHERE tabname = m_texttabname AND keyflag = 'X'.
         UNASSIGN <check>.
         ASSIGN COMPONENT l_texttabfield-fieldname OF STRUCTURE <str> TO <check>.
         IF sy-subrc NE 0.
@@ -1273,17 +1279,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         ENDIF.
       ENDLOOP.
 
-      ASSIGN COMPONENT 'SPRSL' OF STRUCTURE <text_dummy> TO FIELD-SYMBOL(<dummy>).
-      IF sy-subrc = 0.
-        lv_clause = |{ lv_clause } AND SPRSL = '{ m_lang }'|.
-      ENDIF.
-      ASSIGN COMPONENT 'SPRAS' OF STRUCTURE <text_dummy> TO <dummy>.
-      IF sy-subrc = 0.
-        lv_clause = |{ lv_clause } AND SPRAS = '{ m_lang }'|.
-      ENDIF.
-      ASSIGN COMPONENT 'LANGU' OF STRUCTURE <text_dummy> TO <dummy>.
-      IF sy-subrc = 0.
-        lv_clause = |{ lv_clause } AND LANGU = '{ m_lang }'|.
+      IF l_lang IS NOT INITIAL.
+        ASSIGN COMPONENT l_lang OF STRUCTURE <text_dummy> TO FIELD-SYMBOL(<dummy>).
+        IF sy-subrc = 0.
+          lv_clause = |{ lv_clause } AND { l_lang } = '{ m_lang }'|.
+        ENDIF.
       ENDIF.
 
       LOOP AT <text_tab> ASSIGNING FIELD-SYMBOL(<text_str>)  WHERE (lv_clause).
@@ -1400,7 +1400,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         WHEN 'SHOW_CLUSTER'.
           ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
           ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
-           r_done = 'X'.
+          r_done = 'X'.
       ENDCASE.
     ENDLOOP.
 
@@ -2326,14 +2326,14 @@ CLASS lcl_dragdrop IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-class lcl_salary_viewer DEFINITION.
+CLASS lcl_salary_viewer DEFINITION.
 
-endclass.
+ENDCLASS.
 "END OF INCLUDE YS_SDE_CLASSES.
 
-class lcl_salary_viewer IMPLEMENTATION.
+CLASS lcl_salary_viewer IMPLEMENTATION.
 
-endclass.
+ENDCLASS.
 *------------REPORT EVENTS--------------------
 INITIALIZATION.
   lcl_appl=>init_lang( ).
