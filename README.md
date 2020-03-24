@@ -1,7 +1,7 @@
 # SDE
 Simple Data Explorer
 
-Its a tool for viewing more than one table simultaneously. 
+ Multi-windows program for viewing tables and links between them
 
 Basic capabilities: 
 - multiple windows;
