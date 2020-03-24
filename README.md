@@ -14,3 +14,5 @@ Basic capabilities:
 https://github.com/ysichov/SDE/wiki  - detailed description in English
 
 https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/ - features description in Russian
+
+https://github.com/ysichov/SDE_abapgit - 7.50 abapgit version
