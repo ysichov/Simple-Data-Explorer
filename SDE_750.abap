@@ -82,8 +82,7 @@ CLASS lcl_plugins IMPLEMENTATION.
     mt_el_links = VALUE #(
       ( element = 'PERSNO'   tcode = 'PA20' )
       ( element = 'HROBJID'  tcode = 'PP01' )
-      ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' )
-      ).
+      ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' ) ).
 
     "field to field links
     mt_field_links = VALUE #(
@@ -99,8 +98,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
-      ( tab = 'HRPY_RGDIR' field = 'SEQNR' method = 'SHOW_CLUSTER' )
-      ).
+      ( tab = 'HRPY_RGDIR' field = 'SEQNR' method = 'SHOW_CLUSTER' ) ).
   ENDMETHOD.
 ENDCLASS.
 
@@ -169,9 +167,7 @@ CLASS lcl_sql IMPLEMENTATION.
       ENDIF.
     ENDIF.
     c_count = sy-dbcnt.
-    "update_texts( ).
   ENDMETHOD.
-
 
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
@@ -235,7 +231,6 @@ CLASS lcl_rtti IMPLEMENTATION.
       ENDLOOP.
       e_handle  = cl_abap_structdescr=>create( lt_components ).
     ENDIF.
-
   ENDMETHOD.
 
   METHOD create_table_by_name.
@@ -250,8 +245,6 @@ CLASS lcl_rtti IMPLEMENTATION.
     CREATE DATA c_table TYPE HANDLE lo_new_tab.  "Create a New table type
   ENDMETHOD.
 ENDCLASS.
-
-
 
 CLASS lcl_alv_common DEFINITION.
   PUBLIC SECTION.
@@ -526,7 +519,6 @@ CLASS lcl_table_viewer DEFINITION.
           mo_alv_parent      TYPE REF TO cl_gui_container,
           mt_alv_catalog     TYPE lvc_t_fcat,
           mt_text_components TYPE abap_component_tab,
-          "m_check_domain     TYPE fieldname,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
           m_visible,
@@ -565,7 +557,6 @@ CLASS lcl_data_receiver IMPLEMENTATION.
     lo_sel_to = io_sel_to.
     m_from_field =  i_from_field.
     m_to_field =  i_to_field.
-
     lo_tab_from = io_tab_from.
     mo_transmitter = io_transmitter.
 
@@ -870,8 +861,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_f4.
-
     FIELD-SYMBOLS: <tab> TYPE STANDARD TABLE.
+
     ASSIGN mr_table->* TO <tab>.
     READ TABLE <tab> INDEX es_row_no-row_id ASSIGNING <g_str>.
     CALL FUNCTION 'F4IF_FIELD_VALUE_REQUEST'
@@ -944,7 +935,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
     ENDIF.
   ENDMETHOD.
-
 
   METHOD create_field_cat.
     DATA: lr_struc       TYPE REF TO data,
@@ -1590,8 +1580,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
      ( fieldname = 'LENGTH' coltext = 'Length'  outputlen = 5 style = '00000003')
      ( fieldname = 'TRANSMITTER'   tech = 'X'  )
      ( fieldname = 'RECEIVER'    tech = 'X'  )
-     ( fieldname = 'COLOR'    tech = 'X'  )
-      ).
+     ( fieldname = 'COLOR'    tech = 'X'  ) ).
   ENDMETHOD.
 
   METHOD raise_selection_done.
@@ -1650,8 +1639,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD handle_sel_toolbar.
     e_object->mt_toolbar[] = VALUE #( butn_type = 0 disabled = ''
      ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
-     ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' )
-      ).
+     ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
   ENDMETHOD.
 
   METHOD set_value.
@@ -2326,14 +2314,6 @@ CLASS lcl_dragdrop IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_salary_viewer DEFINITION.
-
-ENDCLASS.
-"END OF INCLUDE YS_SDE_CLASSES.
-
-CLASS lcl_salary_viewer IMPLEMENTATION.
-
-ENDCLASS.
 *------------REPORT EVENTS--------------------
 INITIALIZATION.
   lcl_appl=>init_lang( ).
