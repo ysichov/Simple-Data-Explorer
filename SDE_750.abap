@@ -53,55 +53,13 @@ FIELD-SYMBOLS: <g_str> TYPE any.
 
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
 
+
+
+CLASS lcl_table_viewer DEFINITION DEFERRED.
+CLASS lcl_box_handler  DEFINITION DEFERRED.
+CLASS lcl_sel_opt DEFINITION DEFERRED.
+
 "Begin of INCLUDE YS_SDE_CLASSES.
-CLASS lcl_plugins DEFINITION.
-  PUBLIC SECTION.
-    TYPES: BEGIN OF t_field_links,
-             tab        TYPE tablename,
-             field      TYPE fieldname,
-             method(30),
-             rtab       TYPE tablename,
-             rfield     TYPE fieldname,
-             const      TYPE aqadh_range_value,
-           END OF t_field_links,
-           BEGIN OF t_el_links,
-             element TYPE tablename,
-             rtab    TYPE tablename,
-             rfield  TYPE fieldname,
-             tcode   TYPE tcode,
-           END OF t_el_links.
-
-    CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
-                mt_el_links    TYPE  TABLE OF t_el_links.
-    CLASS-METHODS: init.
-ENDCLASS.
-
-CLASS lcl_plugins IMPLEMENTATION.
-  METHOD init.
-    "data elements links
-    mt_el_links = VALUE #(
-      ( element = 'PERSNO'   tcode = 'PA20' )
-      ( element = 'HROBJID'  tcode = 'PP01' )
-      ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' ) ).
-
-    "field to field links
-    mt_field_links = VALUE #(
-      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
-      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
-      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' const = 'C' )
-      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' )
-      ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
-      ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
-      ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
-      ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
-      ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
-      ( tab = 'PTQUODED'   field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
-      ( tab = 'HRPY_RGDIR' field = 'SEQNR' method = 'SHOW_CLUSTER' ) ).
-  ENDMETHOD.
-ENDCLASS.
-
 CLASS lcl_ddic DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS: get_text_table IMPORTING i_tname TYPE tabname
@@ -118,10 +76,6 @@ CLASS lcl_ddic IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
-
-CLASS lcl_table_viewer DEFINITION DEFERRED.
-CLASS lcl_box_handler  DEFINITION DEFERRED.
-CLASS lcl_sel_opt DEFINITION DEFERRED.
 
 CLASS lcl_dd_data DEFINITION."drag&drop data
   PUBLIC  SECTION.
@@ -538,18 +492,319 @@ CLASS lcl_table_viewer DEFINITION.
       set_header,
       read_text_table,
       update_texts,
-      link IMPORTING  i_str TYPE any
-                      i_column TYPE any RETURNING VALUE(r_done) TYPE xfeld,
-      create_field_cat IMPORTING i_tname TYPE tabname RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
-      on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING e_fieldname es_row_no er_event_data,
+      create_field_cat IMPORTING i_tname           TYPE tabname
+                       RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
+      on_f4 FOR EVENT onf4 OF cl_gui_alv_grid
+        IMPORTING e_fieldname
+                  es_row_no
+                  er_event_data,
       on_menu_request FOR EVENT context_menu_request OF cl_gui_alv_grid IMPORTING e_object,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
       before_user_command FOR EVENT before_user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
-      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no,
-      jump_pa20,
-      jump_pp01.
+      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
+ENDCLASS.
+
+CLASS lcl_plugins DEFINITION.
+  PUBLIC SECTION.
+    TYPES: BEGIN OF t_field_links,
+             tab        TYPE tablename,
+             field      TYPE fieldname,
+             method(30),
+             rtab       TYPE tablename,
+             rfield     TYPE fieldname,
+             const      TYPE aqadh_range_value,
+           END OF t_field_links,
+           BEGIN OF t_el_links,
+             element TYPE tablename,
+             rtab    TYPE tablename,
+             rfield  TYPE fieldname,
+             plugin   TYPE tcode,
+           END OF t_el_links.
+
+    CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
+                mt_el_links    TYPE  TABLE OF t_el_links.
+    CLASS-METHODS: init,
+      link IMPORTING i_str     TYPE any
+                     io_viewer TYPE REF TO lcl_table_viewer
+                     i_column  TYPE any,
+      run_pa20 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
+      run_pp01 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
+      run_dictionary_key IMPORTING i_str     TYPE any
+                                   io_viewer TYPE REF TO lcl_table_viewer
+                                   i_column  TYPE any,
+      run_data_element IMPORTING i_str          TYPE any
+                                 io_viewer      TYPE REF TO lcl_table_viewer
+                                 i_column       TYPE any
+                       RETURNING VALUE(is_done) TYPE xfeld,
+      run_field_2_field IMPORTING i_str          TYPE any
+                                  io_viewer      TYPE REF TO lcl_table_viewer
+                                  i_column       TYPE any
+                        RETURNING VALUE(is_done) TYPE xfeld,
+
+      run_hrp1001_adatanr IMPORTING i_str          TYPE any
+                                    io_viewer      TYPE REF TO lcl_table_viewer
+                                    i_column       TYPE any
+                          RETURNING VALUE(is_done) TYPE xfeld,
+      run_hrpy_rgdir IMPORTING i_str          TYPE any.
+ENDCLASS.
+
+CLASS lcl_plugins IMPLEMENTATION.
+  METHOD init.
+    "data elements links
+    mt_el_links = VALUE #(
+      ( element = 'PERSNO'   plugin = 'PA20' )
+      ( element = 'HROBJID'  plugin = 'PP01' )
+      ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' ) ).
+
+    "field to field links
+    mt_field_links = VALUE #(
+      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OTYPE' const = 'S' )
+      ( tab = 'PA0001'     field = 'PLANS' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OTYPE' const = 'O' )
+      ( tab = 'PA0001'     field = 'ORGEH' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' const = 'C' )
+      ( tab = 'PA0001'     field = 'STELL' rtab = 'HRP1000' rfield = 'OBJID' )
+      ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
+      ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
+      ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
+      ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
+      ( tab = 'PTQUODED'   field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
+      ( tab = 'HRPY_RGDIR' field = 'SEQNR' method = 'RUN_PY_CLUSTER' ) ).
+  ENDMETHOD.
+
+  METHOD link.
+    DATA: lo_viewer TYPE REF TO lcl_table_viewer.
+    DATA is_done TYPE xfeld.
+    "field to plugin link
+    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
+      CASE ls_link-method.
+        WHEN 'RUN_PY_CLUSTER'.
+          ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
+          ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+          is_done = 'X'.
+      ENDCASE.
+    ENDLOOP.
+
+    CHECK run_field_2_field( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+    CHECK run_data_element( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+    CHECK run_hrp1001_adatanr( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+    run_dictionary_key( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ).
+  ENDMETHOD.
+
+  METHOD run_pa20.
+    DATA: l_infty    TYPE infty,
+          l_temp(10) TYPE c.
+
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+
+    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
+
+    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = io_viewer->m_tabname.
+    ASSIGN COMPONENT 'PERNR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
+    l_temp = <field>.
+    SET PARAMETER ID 'PER' FIELD l_temp.
+    SET PARAMETER ID 'FCD' FIELD 'DIS'.
+    SET PARAMETER ID 'ITP' FIELD l_infty.
+    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
+    l_temp = <field>.
+    SET PARAMETER ID 'SUB' FIELD l_temp.
+    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO <field>.
+    l_temp = <field>.
+    SET PARAMETER ID 'BEG' FIELD <field>.
+    ASSIGN COMPONENT 'ENDDA' OF STRUCTURE <tab> TO <field>.
+    l_temp = <field>.
+    SET PARAMETER ID 'END' FIELD <field>.
+    CALL TRANSACTION 'PA20' AND SKIP FIRST SCREEN.
+  ENDMETHOD.
+
+  METHOD run_pp01.
+    DATA: save_plvar(2),
+          save_otype(2),
+          save_objid(8),
+          l_infty(4),
+          l_subty(4),
+          l_temp(10).
+
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+
+    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
+
+    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = io_viewer->m_tabname.
+
+    GET PARAMETER ID 'POP' FIELD save_plvar.
+    GET PARAMETER ID 'POT' FIELD save_otype.
+    GET PARAMETER ID 'PON' FIELD save_objid.
+
+    ASSIGN COMPONENT 'PLVAR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<plvar>).
+    SET PARAMETER ID 'POP' FIELD <plvar>.                   "RITPP01
+
+    ASSIGN COMPONENT 'OBJID' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
+    l_temp = <field>.
+    SET PARAMETER ID 'PON' FIELD l_temp.
+
+    ASSIGN COMPONENT 'OTYPE' OF STRUCTURE <tab> TO <field>.
+    l_temp = <field>.
+    SET PARAMETER ID 'POT' FIELD l_temp.
+
+    ASSIGN COMPONENT 'ISTAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<istat>).
+    l_temp = <istat>.
+
+    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
+    IF sy-subrc = 0.
+      l_subty = <field>.
+    ELSE.
+      CLEAR l_subty.
+    ENDIF.
+
+    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO FIELD-SYMBOL(<date>).
+    SET PARAMETER ID 'BEG' FIELD <date>.
+
+    ASSIGN COMPONENT 'ENDDA' OF STRUCTURE <tab> TO <date>.
+    SET PARAMETER ID 'END' FIELD <date>.
+    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
+
+    DATA: it_bdcdata TYPE TABLE OF  bdcdata.
+
+    it_bdcdata = VALUE #(
+      ( program = 'SAPMH5A0' dynpro = '1000' dynbegin = 'X' )
+      ( fnam = 'PPHDR-INFTY' fval = l_infty )
+      ( fnam = 'PPHDR-subty' fval = l_subty )
+      ( fnam = 'PPHDR-istat' fval = l_temp )
+      ( fnam = 'BDC_OKCODE' fval = 'DISP' )
+      ).
+    CALL TRANSACTION 'PP02' USING it_bdcdata MODE 'E'.
+  ENDMETHOD.
+
+  METHOD run_hrpy_rgdir.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
+    ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
+    <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = <pernr>  ).
+    <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+  ENDMETHOD.
+
+  METHOD run_hrp1001_adatanr.
+    IF i_column = 'ADATANR' AND io_viewer->m_tabname = 'HRP1001'.
+      ASSIGN COMPONENT 'ADATANR' OF STRUCTURE i_str TO FIELD-SYMBOL(<datanr>).
+      ASSIGN COMPONENT 'RELAT' OF STRUCTURE i_str TO FIELD-SYMBOL(<relat>).
+      SELECT SINGLE pasub INTO @DATA(lv_struc)
+        FROM t77ar
+       WHERE relat = @<relat>.
+
+      SELECT SINGLE dbtab INTO @DATA(lv_dbtab)
+        FROM t77ad
+       WHERE pasub = @lv_struc.
+
+      IF sy-subrc = 0.
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
+        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
+        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+        is_done = 'X'.
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD run_field_2_field.
+    DATA: lo_viewer TYPE REF TO lcl_table_viewer.
+    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
+    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS INITIAL.
+      ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+      IF lo_viewer IS INITIAL.
+        IF ls_link-rtab IS INITIAL.
+          lo_viewer = io_viewer.
+        ELSE.
+          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = ls_link-rtab.
+          lo_viewer = <obj>-alv_viewer.
+        ENDIF.
+      ENDIF.
+      lo_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = COND aqadh_type_of_icon( WHEN ls_link-const IS INITIAL THEN <field> ELSE ls_link-const ) ).
+    ENDLOOP.
+    IF sy-subrc = 0.
+      lo_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = io_viewer->m_lang  ).
+      lo_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      lo_viewer->mo_sel->raise_selection_done( ).
+      is_done = 'X'.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD run_data_element.
+    DATA: lo_viewer TYPE REF TO lcl_table_viewer.
+    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
+
+    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = io_viewer->m_tabname fieldname = i_column INTO DATA(l_field).
+    LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname." 'PA20' .
+      CASE l_el_link-plugin.
+        WHEN 'PA20'.
+          lcl_plugins=>run_pa20( io_viewer = io_viewer ).
+        WHEN 'PP01'.
+          lcl_plugins=>run_pp01( io_viewer = io_viewer ).
+      ENDCASE.
+      is_done = 'X'.
+    ENDLOOP.
+    IF is_done = abap_true.
+      RETURN.
+    ENDIF.
+
+    LOOP AT lcl_plugins=>mt_el_links INTO l_el_link WHERE element = l_field-rollname .
+      IF lo_viewer IS INITIAL.
+        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_el_link-rtab.
+        lo_viewer = <obj>-alv_viewer.
+      ENDIF.
+      ASSIGN COMPONENT i_column OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+      lo_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
+    ENDLOOP.
+    IF sy-subrc = 0.
+      lo_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = io_viewer->m_lang  ).
+      lo_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      lo_viewer->mo_sel->raise_selection_done( ).
+      is_done = 'X'.
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD run_dictionary_key.
+    DATA: lt_keys TYPE TABLE OF dd05p.
+    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
+    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = io_viewer->m_tabname fieldname = i_column .
+    ASSIGN COMPONENT i_column OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+    CHECK <field> IS NOT INITIAL.
+    CALL FUNCTION 'DD_FORKEY_GET'
+      EXPORTING
+        feldname  = CONV fieldname( i_column )
+        tabname   = io_viewer->m_tabname
+      TABLES
+        forkeytab = lt_keys
+      EXCEPTIONS
+        not_equal = 1
+        not_found = 2
+        not_valid = 3
+        OTHERS    = 4.
+
+    IF sy-subrc < 2.
+      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
+      LOOP AT lt_keys INTO DATA(l_keys).
+        ASSIGN COMPONENT l_keys-forkey OF STRUCTURE i_str TO <field>.
+        CHECK sy-subrc = 0.
+        <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
+      ENDLOOP.
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = io_viewer->m_lang  ).
+      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+    ENDIF.
+  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_data_receiver IMPLEMENTATION.
@@ -1048,7 +1303,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
-    link( EXPORTING i_str = <tab> i_column = e_column ).
+    lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
   ENDMETHOD.
 
   METHOD before_user_command.
@@ -1083,17 +1338,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_alv->set_toolbar_interactive( ).
       RETURN.
     ELSEIF e_ucomm = 'PY'.
-      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
       READ TABLE <f_tab> INDEX lcl_alv_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
-      ASSIGN COMPONENT 'PERNR' OF STRUCTURE <f_line> TO FIELD-SYMBOL(<pernr>).
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = <pernr>  ).
-      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      lcl_plugins=>run_hrpy_rgdir( <f_line> ).
     ELSEIF e_ucomm = 'DETAIL'.
       IF m_tabname+0(2) = 'PA'.
-        jump_pa20( ).
+        lcl_plugins=>run_pa20( io_viewer = me ).
       ELSEIF m_tabname+0(3) = 'HRP'.
-        jump_pp01( ).
+        lcl_plugins=>run_pp01(  io_viewer = me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
       mo_sel->raise_selection_done( ).
@@ -1291,215 +1542,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
-  METHOD jump_pa20.
-    DATA: l_infty    TYPE infty,
-          l_temp(10) TYPE c.
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( mo_alv ).
-
-    ASSIGN mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
-
-    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = m_tabname.
-    ASSIGN COMPONENT 'PERNR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
-    l_temp = <field>.
-    SET PARAMETER ID 'PER' FIELD l_temp.
-    SET PARAMETER ID 'FCD' FIELD 'DIS'.
-    SET PARAMETER ID 'ITP' FIELD l_infty.
-    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
-    l_temp = <field>.
-    SET PARAMETER ID 'SUB' FIELD l_temp.
-    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO <field>.
-    l_temp = <field>.
-    SET PARAMETER ID 'BEG' FIELD <field>.
-    ASSIGN COMPONENT 'ENDDA' OF STRUCTURE <tab> TO <field>.
-    l_temp = <field>.
-    SET PARAMETER ID 'END' FIELD <field>.
-    CALL TRANSACTION 'PA20' AND SKIP FIRST SCREEN.
-  ENDMETHOD.
-
-  METHOD jump_pp01.
-    DATA: save_plvar(2),
-          save_otype(2),
-          save_objid(8),
-          l_infty(4),
-          l_subty(4),
-          l_temp(10).
-
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( mo_alv ).
-
-    ASSIGN mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
-
-    SELECT SINGLE infty INTO l_infty FROM t777d WHERE dbtab = m_tabname.
-
-    GET PARAMETER ID 'POP' FIELD save_plvar.
-    GET PARAMETER ID 'POT' FIELD save_otype.
-    GET PARAMETER ID 'PON' FIELD save_objid.
-
-    ASSIGN COMPONENT 'PLVAR' OF STRUCTURE <tab> TO FIELD-SYMBOL(<plvar>).
-    SET PARAMETER ID 'POP' FIELD <plvar>.                   "RITPP01
-
-    ASSIGN COMPONENT 'OBJID' OF STRUCTURE <tab> TO FIELD-SYMBOL(<field>).
-    l_temp = <field>.
-    SET PARAMETER ID 'PON' FIELD l_temp.
-
-    ASSIGN COMPONENT 'OTYPE' OF STRUCTURE <tab> TO <field>.
-    l_temp = <field>.
-    SET PARAMETER ID 'POT' FIELD l_temp.
-
-    ASSIGN COMPONENT 'ISTAT' OF STRUCTURE <tab> TO FIELD-SYMBOL(<istat>).
-    l_temp = <istat>.
-
-    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
-    IF sy-subrc = 0.
-      l_subty = <field>.
-    ELSE.
-      CLEAR l_subty.
-    ENDIF.
-
-    ASSIGN COMPONENT 'BEGDA' OF STRUCTURE <tab> TO FIELD-SYMBOL(<date>).
-    SET PARAMETER ID 'BEG' FIELD <date>.
-
-    ASSIGN COMPONENT 'ENDDA' OF STRUCTURE <tab> TO <date>.
-    SET PARAMETER ID 'END' FIELD <date>.
-    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
-
-    DATA: it_bdcdata TYPE TABLE OF  bdcdata.
-
-    it_bdcdata = VALUE #(
-      ( program = 'SAPMH5A0' dynpro = '1000' dynbegin = 'X' )
-      ( fnam = 'PPHDR-INFTY' fval = l_infty )
-      ( fnam = 'PPHDR-subty' fval = l_subty )
-      ( fnam = 'PPHDR-istat' fval = l_temp )
-      ( fnam = 'BDC_OKCODE' fval = 'DISP' )
-      ).
-    CALL TRANSACTION 'PP02' USING it_bdcdata MODE 'E'.
-  ENDMETHOD.
-
-  METHOD link.
-    DATA: i_viewer TYPE REF TO lcl_table_viewer.
-    CLEAR r_done.
-    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
-
-    "field to plugin link
-    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = m_tabname AND field = i_column AND method IS NOT INITIAL.
-      CASE ls_link-method.
-        WHEN 'SHOW_CLUSTER'.
-          ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
-          ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
-          r_done = 'X'.
-      ENDCASE.
-    ENDLOOP.
-
-    CHECK r_done IS INITIAL.
-    "field to field links
-    LOOP AT lcl_plugins=>mt_field_links INTO ls_link WHERE tab = m_tabname AND field = i_column AND method IS INITIAL.
-      ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO <field>.
-      IF i_viewer IS INITIAL.
-        IF ls_link-rtab IS INITIAL.
-          i_viewer = me.
-        ELSE.
-          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-          CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = ls_link-rtab.
-          i_viewer = <obj>-alv_viewer.
-        ENDIF.
-      ENDIF.
-      i_viewer->mo_sel->set_value( i_field = ls_link-rfield i_low = COND aqadh_type_of_icon( WHEN ls_link-const IS INITIAL THEN <field> ELSE ls_link-const ) ).
-    ENDLOOP.
-    IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
-      i_viewer->mo_sel->raise_selection_done( ).
-      r_done = 'X'.
-    ENDIF.
-    CHECK r_done IS INITIAL.
-
-    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_tabname fieldname = i_column INTO DATA(l_field).
-    "data element to field links
-    LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname." 'PA20' .
-      CASE l_el_link-tcode.
-        WHEN 'PA20'.
-          jump_pa20( ).
-        WHEN 'PP01'.
-          jump_pp01( ).
-      ENDCASE.
-      r_done = 'X'.
-
-    ENDLOOP.
-    CHECK r_done IS INITIAL.
-
-    LOOP AT lcl_plugins=>mt_el_links INTO l_el_link WHERE element = l_field-rollname .
-      IF i_viewer IS INITIAL.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_el_link-rtab.
-        i_viewer = <obj>-alv_viewer.
-      ENDIF.
-      ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
-      i_viewer->mo_sel->set_value( i_field = l_el_link-rfield i_low = <field>  ).
-    ENDLOOP.
-    IF sy-subrc = 0.
-      i_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      i_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
-      i_viewer->mo_sel->raise_selection_done( ).
-      r_done = 'X'.
-    ENDIF.
-    CHECK r_done IS INITIAL.
-
-    "special plugin for HRP1001-ADATANR
-    IF i_column = 'ADATANR' AND m_tabname = 'HRP1001'.
-      ASSIGN COMPONENT 'ADATANR' OF STRUCTURE i_str TO FIELD-SYMBOL(<datanr>).
-      ASSIGN COMPONENT 'RELAT' OF STRUCTURE i_str TO FIELD-SYMBOL(<relat>).
-      SELECT SINGLE pasub INTO @DATA(lv_struc)
-        FROM t77ar
-       WHERE relat = @<relat>.
-
-      SELECT SINGLE dbtab INTO @DATA(lv_dbtab)
-        FROM t77ad
-       WHERE pasub = @lv_struc.
-
-      IF sy-subrc = 0.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-        CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
-        <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-        r_done = 'X'.
-      ENDIF.
-    ENDIF.
-    CHECK r_done IS INITIAL.
-
-    "dictionary key links plugin
-    DATA: lt_keys TYPE TABLE OF dd05p.
-    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = m_tabname fieldname = i_column .
-    ASSIGN COMPONENT i_column OF STRUCTURE i_str TO <field>.
-    CHECK <field> IS NOT INITIAL.
-    CALL FUNCTION 'DD_FORKEY_GET'
-      EXPORTING
-        feldname  = CONV fieldname( i_column )
-        tabname   = m_tabname
-      TABLES
-        forkeytab = lt_keys
-      EXCEPTIONS
-        not_equal = 1
-        not_found = 2
-        not_valid = 3
-        OTHERS    = 4.
-
-    IF sy-subrc < 2.
-      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-      CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
-      LOOP AT lt_keys INTO DATA(l_keys).
-        ASSIGN COMPONENT l_keys-forkey OF STRUCTURE i_str TO <field>.
-        CHECK sy-subrc = 0.
-        <obj>-alv_viewer->mo_sel->set_value( i_field = l_keys-checkfield i_low = <field>  ).
-      ENDLOOP.
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'SPRSL' i_low = m_lang  ).
-      <obj>-alv_viewer->mo_sel->set_value( i_field = 'MOLGA' i_low = l_mol  ).
-      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-    ENDIF.
-  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_sel_opt IMPLEMENTATION.
