@@ -578,7 +578,6 @@ CLASS lcl_plugins IMPLEMENTATION.
   METHOD link.
     DATA: lo_viewer TYPE REF TO lcl_table_viewer.
     DATA is_done TYPE xfeld.
-    "field to plugin link
     LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
       CASE ls_link-method.
         WHEN 'RUN_PY_CLUSTER'.
@@ -2217,31 +2216,26 @@ CLASS lcl_dragdrop IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD drop."It should be refactored someday...
-    DATA: lo_from_sel     TYPE REF TO lcl_sel_opt,
-          lo_from_tab     TYPE REF TO lcl_table_viewer,
-          lo_to           TYPE REF TO lcl_sel_opt,
-          lo_alv          TYPE REF TO cl_gui_alv_grid,
-          lt_sel_col      TYPE  lvc_t_col,
-          ls_row          TYPE t_sel_row,
+    DATA: ls_row          TYPE t_sel_row,
           lv_set_receiver.
 
     LOOP AT lcl_appl=>mt_obj INTO DATA(lo).
       "to
       IF lo-alv_viewer->mo_sel IS BOUND.
         IF e_dragdropobj->droptargetctrl = lo-alv_viewer->mo_sel->mo_sel_alv.
-          lo_to = lo-alv_viewer->mo_sel.
+          data(lo_to) = lo-alv_viewer->mo_sel.
         ENDIF.
       ENDIF.
 
       "from tab
       IF lo-alv_viewer->mo_alv = e_dragdropobj->dragsourcectrl.
-        lo_from_tab = lo-alv_viewer.
+        data(lo_from_tab) = lo-alv_viewer.
         CONTINUE.
       ENDIF.
 
-      CHECK lo-alv_viewer->mo_sel IS BOUND.
+      "CHECK lo-alv_viewer->mo_sel IS BOUND.
       IF e_dragdropobj->dragsourcectrl = lo-alv_viewer->mo_sel->mo_sel_alv.
-        lo_from_sel = lo-alv_viewer->mo_sel.
+        data(lo_from_sel) = lo-alv_viewer->mo_sel.
         lo-alv_viewer->mo_sel->mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
         lo-alv_viewer->mo_sel->mo_sel_alv->get_selected_cells( IMPORTING et_cell = DATA(lt_sel_cells) ).
       ENDIF.
@@ -2249,15 +2243,15 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
     IF lo_from_tab IS BOUND." tab to select
       FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE,
-                     <f_str>   TYPE any,
+                     "<f_str>   TYPE any,
                      <f_field> TYPE any.
       lo_from_tab->mo_alv->get_selected_cells( IMPORTING et_cell = lt_sel_cells  ).
-      lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = lt_sel_col  ).
+      lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = data(lt_sel_col)  ).
 
       LOOP AT lt_sel_col INTO DATA(l_col).
         TRY.
             lo_from_tab->mt_alv_catalog[ fieldname = l_col-fieldname ]-style = cl_gui_alv_grid=>mc_style_button.
-          CATCH cx_sy_itab_line_not_found.              "#EC NO_HANDLER
+          CATCH cx_sy_itab_line_not_found.
         ENDTRY.
         READ TABLE lo_from_tab->mo_column_emitters WITH KEY column = l_col ASSIGNING FIELD-SYMBOL(<emitter>).
         IF sy-subrc NE 0.
@@ -2279,7 +2273,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
             IF sy-tabix = 1.
               DATA(l_colname) = l_cell-col_id-fieldname.
             ENDIF.
-            READ TABLE <f_tab> INDEX l_cell-row_id ASSIGNING <f_str>.
+            READ TABLE <f_tab> INDEX l_cell-row_id ASSIGNING FIELD-SYMBOL(<f_str>).
             ASSIGN COMPONENT l_colname OF STRUCTURE <f_str> TO <f_field>.
             IF sy-subrc = 0.
               IF lv_set_receiver IS NOT INITIAL.
@@ -2349,7 +2343,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    lo_alv ?= e_dragdropobj->dragsourcectrl.
+    data(lo_alv) = cast cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
     lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = 'X' ).
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
