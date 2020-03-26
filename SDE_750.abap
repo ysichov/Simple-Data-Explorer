@@ -53,8 +53,6 @@ FIELD-SYMBOLS: <g_str> TYPE any.
 
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
 
-
-
 CLASS lcl_table_viewer DEFINITION DEFERRED.
 CLASS lcl_box_handler  DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
@@ -74,7 +72,6 @@ CLASS lcl_ddic IMPLEMENTATION.
       IMPORTING
         texttable = e_tab.
   ENDMETHOD.
-
 ENDCLASS.
 
 CLASS lcl_dd_data DEFINITION."drag&drop data
@@ -144,8 +141,7 @@ ENDCLASS.
 
 CLASS lcl_rtti IMPLEMENTATION.
   METHOD create_struc_handle.
-    DATA: lo_texttab    TYPE REF TO cl_abap_structdescr,
-          ls_comp       TYPE abap_componentdescr,
+    DATA: ls_comp       TYPE abap_componentdescr,
           lt_components TYPE abap_component_tab,
           lt_field_info TYPE TABLE OF dfies.
 
@@ -153,7 +149,7 @@ CLASS lcl_rtti IMPLEMENTATION.
     e_handle ?= cl_abap_typedescr=>describe_by_name( i_tname ).
 
     IF l_texttab IS NOT INITIAL.
-      lo_texttab  ?= cl_abap_typedescr=>describe_by_name( l_texttab ).
+      DATA(lo_texttab)  = CAST cl_abap_structdescr( cl_abap_typedescr=>describe_by_name( l_texttab ) ).
       LOOP AT e_handle->components INTO DATA(l_descr).
         ls_comp-name = l_descr-name.
         ls_comp-type ?= e_handle->get_component_type( ls_comp-name ).
@@ -293,7 +289,6 @@ CLASS lcl_alv_common IMPLEMENTATION.
             ls_tf-empty = 'X'.
           ENDIF.
         ENDIF.
-
         INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
       ENDIF.
     ENDLOOP.
@@ -520,7 +515,7 @@ CLASS lcl_plugins DEFINITION.
              element TYPE tablename,
              rtab    TYPE tablename,
              rfield  TYPE fieldname,
-             plugin   TYPE tcode,
+             plugin  TYPE tcode,
            END OF t_el_links.
 
     CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
@@ -622,7 +617,8 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_pp01.
-    DATA: save_plvar(2),
+    DATA: it_bdcdata    TYPE TABLE OF  bdcdata,
+          save_plvar(2),
           save_otype(2),
           save_objid(8),
           l_infty(4),
@@ -669,8 +665,6 @@ CLASS lcl_plugins IMPLEMENTATION.
     SET PARAMETER ID 'END' FIELD <date>.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <tab> TO <field>.
 
-    DATA: it_bdcdata TYPE TABLE OF  bdcdata.
-
     it_bdcdata = VALUE #(
       ( program = 'SAPMH5A0' dynpro = '1000' dynbegin = 'X' )
       ( fnam = 'PPHDR-INFTY' fval = l_infty )
@@ -709,7 +703,6 @@ CLASS lcl_plugins IMPLEMENTATION.
         is_done = 'X'.
       ENDIF.
     ENDIF.
-
   ENDMETHOD.
 
   METHOD run_field_2_field.
@@ -734,13 +727,12 @@ CLASS lcl_plugins IMPLEMENTATION.
       lo_viewer->mo_sel->raise_selection_done( ).
       is_done = 'X'.
     ENDIF.
-
   ENDMETHOD.
 
   METHOD run_data_element.
     DATA: lo_viewer TYPE REF TO lcl_table_viewer.
-    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
 
+    GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
     READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = io_viewer->m_tabname fieldname = i_column INTO DATA(l_field).
     LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname." 'PA20' .
       CASE l_el_link-plugin.
@@ -770,7 +762,6 @@ CLASS lcl_plugins IMPLEMENTATION.
       lo_viewer->mo_sel->raise_selection_done( ).
       is_done = 'X'.
     ENDIF.
-
   ENDMETHOD.
 
   METHOD run_dictionary_key.
@@ -835,14 +826,12 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_grid_button_click.
-    FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE,
-                   <f_field> TYPE any.
+    FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
 
     CHECK m_from_field = es_col_id-fieldname.
     ASSIGN lo_tab_from->mr_table->* TO <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
-    ASSIGN COMPONENT es_col_id-fieldname OF STRUCTURE <tab> TO  <f_field>.
-
+    ASSIGN COMPONENT es_col_id-fieldname OF STRUCTURE <tab> TO  FIELD-SYMBOL(<f_field>).
     CHECK lo_sel_to IS NOT INITIAL.
     lo_sel_to->set_value( i_field = m_to_field i_low = <f_field>  ).
     lo_sel_to->raise_selection_done( ).
@@ -863,15 +852,13 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
   METHOD update_col.
     DATA: l_updated,
-          lt_old_range TYPE aqadh_t_ranges.
-
-    DATA: lt_sel_row TYPE t_sel_row.
+          lt_sel_row   TYPE t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
 
     CHECK lo_sel_to IS NOT INITIAL.
     READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
-    lt_old_range = <to>-range.
+    data(lt_old_range) = <to>-range.
     CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
     ASSIGN lo_tab_from->mr_table->* TO <tab>.
 
@@ -2223,19 +2210,19 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       "to
       IF lo-alv_viewer->mo_sel IS BOUND.
         IF e_dragdropobj->droptargetctrl = lo-alv_viewer->mo_sel->mo_sel_alv.
-          data(lo_to) = lo-alv_viewer->mo_sel.
+          DATA(lo_to) = lo-alv_viewer->mo_sel.
         ENDIF.
       ENDIF.
 
       "from tab
       IF lo-alv_viewer->mo_alv = e_dragdropobj->dragsourcectrl.
-        data(lo_from_tab) = lo-alv_viewer.
+        DATA(lo_from_tab) = lo-alv_viewer.
         CONTINUE.
       ENDIF.
 
       "CHECK lo-alv_viewer->mo_sel IS BOUND.
       IF e_dragdropobj->dragsourcectrl = lo-alv_viewer->mo_sel->mo_sel_alv.
-        data(lo_from_sel) = lo-alv_viewer->mo_sel.
+        DATA(lo_from_sel) = lo-alv_viewer->mo_sel.
         lo-alv_viewer->mo_sel->mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
         lo-alv_viewer->mo_sel->mo_sel_alv->get_selected_cells( IMPORTING et_cell = DATA(lt_sel_cells) ).
       ENDIF.
@@ -2246,7 +2233,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
                      "<f_str>   TYPE any,
                      <f_field> TYPE any.
       lo_from_tab->mo_alv->get_selected_cells( IMPORTING et_cell = lt_sel_cells  ).
-      lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = data(lt_sel_col)  ).
+      lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = DATA(lt_sel_col)  ).
 
       LOOP AT lt_sel_col INTO DATA(l_col).
         TRY.
@@ -2343,7 +2330,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    data(lo_alv) = cast cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
+    DATA(lo_alv) = CAST cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
     lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = 'X' ).
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
