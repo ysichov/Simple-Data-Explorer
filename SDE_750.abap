@@ -246,7 +246,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     it_tabdescr[] = lr_table_descr->components[].
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
-      IF line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
+      IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
         l_fname = ls-name.
 
@@ -1187,9 +1187,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CREATE DATA lr_struc TYPE HANDLE lo_str.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
+    "lcl_alv_common=>get_field_info( i_tname ).
 
     lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
     l_replace = l_texttab && '_'.
+    "lcl_alv_common=>get_field_info( l_texttab ).
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
       DATA(l_ind) = sy-tabix.
@@ -1197,6 +1199,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       <catalog>-col_pos = l_ind.
       READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
       IF sy-subrc NE 0.
+
         l_tname = i_tname.
         l_fname = ls-name.
 
