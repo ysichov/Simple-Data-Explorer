@@ -156,7 +156,6 @@ CLASS lcl_rtti IMPLEMENTATION.
         APPEND ls_comp TO lt_components.
       ENDLOOP.
 
-      "Read table lo_texttab->components with key
       LOOP AT lo_texttab->components INTO l_descr.
 
         CALL FUNCTION 'DDIF_FIELDINFO_GET'
@@ -171,12 +170,12 @@ CLASS lcl_rtti IMPLEMENTATION.
             internal_error = 2
             OTHERS         = 3.
 
-        READ TABLE lt_field_info INDEX 1 INTO DATA(l_field).
-        IF l_field-keyflag = abap_false.
+        CHECK sy-subrc = 0.
+        IF lt_field_info[ 1 ]-keyflag = abap_false.
           ls_comp-name =  l_texttab && '_' && l_descr-name.
           ls_comp-type ?= lo_texttab->get_component_type( l_descr-name ).
-          APPEND ls_comp TO lt_components.
-          APPEND ls_comp TO e_t_comp.
+          APPEND: ls_comp TO lt_components,
+                  ls_comp TO e_t_comp.
         ENDIF.
       ENDLOOP.
       e_handle  = cl_abap_structdescr=>create( lt_components ).
@@ -235,7 +234,10 @@ CLASS lcl_alv_common IMPLEMENTATION.
           lt_field_info  TYPE TABLE OF dfies,
           l_fname        TYPE fieldname,
           l_tname        TYPE tabname,
-          lo_str         TYPE REF TO cl_abap_structdescr.
+          ls_tf          LIKE LINE OF lcl_alv_common=>mt_tabfields,
+          lo_str         TYPE REF TO cl_abap_structdescr,
+          dref           TYPE REF TO data,
+          l_x            TYPE xstring.
 
     lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tab
                                    IMPORTING e_handle = lo_str ).
@@ -244,8 +246,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
     it_tabdescr[] = lr_table_descr->components[].
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
-      READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tab fieldname = ls-name.
-      IF sy-subrc NE 0.
+      IF line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
         l_fname = ls-name.
 
@@ -260,19 +261,15 @@ CLASS lcl_alv_common IMPLEMENTATION.
             not_found      = 1
             internal_error = 2
             OTHERS         = 3.
-        READ TABLE lt_field_info INDEX 1 INTO DATA(l_info).
+
         CHECK sy-subrc = 0.
         CLEAR ls_tf.
-        MOVE-CORRESPONDING l_info TO ls_tf.
-
+        MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
         "check empty field
-        DATA: dref TYPE REF TO data,
-              l_x  TYPE xstring.
-        FIELD-SYMBOLS <field> TYPE any.
 
         IF ls_tf-rollname IS NOT INITIAL.
           CREATE DATA dref TYPE (ls_tf-rollname).
-          ASSIGN dref->* TO <field>.
+          ASSIGN dref->* TO FIELD-SYMBOL(<field>).
           lv_clause = |{ ls_tf-fieldname } NE ''|.
           SELECT SINGLE (ls_tf-fieldname) INTO @<field>
             FROM (i_tab)
@@ -330,14 +327,13 @@ CLASS lcl_alv_common IMPLEMENTATION.
 
   METHOD get_selected.
     i_obj->get_selected_cells( IMPORTING et_cell = DATA(lt_sel_cells) ).
-    READ TABLE lt_sel_cells INTO DATA(l_cells) INDEX 1 TRANSPORTING row_id.
-    IF sy-subrc = 0.
-      e_index = l_cells-row_id.
+    IF lines( lt_sel_cells ) > 0.
+      e_index = lt_sel_cells[ 1 ]-row_id.
     ELSE.
       i_obj->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
       READ TABLE lt_sel_rows INDEX 1 INTO DATA(l_row) TRANSPORTING index.
-      IF sy-subrc = 0.
-        e_index = l_row-index.
+      IF lines( lt_sel_rows ) > 0.
+        e_index = lt_sel_rows[ 1 ]-index.
       ENDIF.
     ENDIF.
   ENDMETHOD.
