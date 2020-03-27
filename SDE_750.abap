@@ -858,14 +858,13 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
     CHECK lo_sel_to IS NOT INITIAL.
     READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
-    data(lt_old_range) = <to>-range.
+    DATA(lt_old_range) = <to>-range.
     CLEAR: <to>-sign, <to>-opti, <to>-low, <to>-high, <to>-range.
     ASSIGN lo_tab_from->mr_table->* TO <tab>.
 
     LOOP AT <tab> ASSIGNING FIELD-SYMBOL(<row>).
       ASSIGN COMPONENT e_column OF STRUCTURE <row> TO <field>.
-      READ TABLE <to>-range WITH KEY low = <field>  TRANSPORTING NO FIELDS.
-      IF sy-subrc NE 0.
+      IF line_exists( <to>-range[ low = <field> ] ).
         APPEND VALUE #( sign = 'I' opti = 'EQ' low = <field> ) TO <to>-range.
       ENDIF.
     ENDLOOP.
@@ -1244,13 +1243,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         <catalog>-style = lcl_alv_common=>c_blue.
       ENDIF.
 
-      READ TABLE lcl_plugins=>mt_field_links WITH KEY tab = i_tname field = ls_tf-fieldname TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
+      IF line_exists( lcl_plugins=>mt_field_links[ tab = i_tname field = ls_tf-fieldname ] ).
         <catalog>-style = lcl_alv_common=>c_green.
       ENDIF.
 
-      READ TABLE lcl_plugins=>mt_el_links WITH KEY element = ls_tf-rollname TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
+      IF line_exists( lcl_plugins=>mt_el_links[ element = ls_tf-rollname ] ).
         <catalog>-style = lcl_alv_common=>c_green.
       ENDIF.
 
@@ -1374,8 +1371,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           WHEN 'TECH'. "technical field name
             <fields>-scrtext_l = <fields>-scrtext_m = <fields>-scrtext_s =  <fields>-reptext = <fields>-fieldname.
           WHEN OTHERS. "header names translation
-            READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
-            IF sy-subrc = 0.
+            IF line_exists( lcl_appl=>mt_lang[ spras = e_ucomm ] ).
               lcl_alv_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <fields> ).
               IF mo_sel IS BOUND.
                 READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <fields>-fieldname.
@@ -1391,8 +1387,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    READ TABLE lcl_appl=>mt_lang WITH KEY spras = e_ucomm TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0.
+    IF line_exists( lcl_appl=>mt_lang[ spras = e_ucomm ] ).
       m_lang = e_ucomm.
       set_header( ).
       update_texts( ).
@@ -2280,8 +2275,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
               IF <to_tab>-range IS INITIAL.
                 <to_tab>-low = <f_field>.
               ENDIF.
-              READ TABLE <to_tab>-range WITH KEY low = <f_field> TRANSPORTING NO FIELDS.
-              IF sy-subrc NE 0.
+              IF NOT line_exists( <to_tab>-range[ low = <f_field> ] ).
                 APPEND VALUE #( sign = 'I' opti = 'EQ' low = <f_field>  ) TO <to_tab>-range.
               ENDIF.
             ENDIF.
@@ -2381,11 +2375,7 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE 'X'.
     ASSIGN COMPONENT <interface>-shlpfield OF STRUCTURE <g_str> TO <field>.
     IF sy-subrc = 0.
-      APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
-      <searchsel>-sign = 'I'.
-      <searchsel>-low = <field>.
-      <searchsel>-shlpfield = <interface>-shlpfield.
-      <searchsel>-option = 'EQ'.
+      APPEND VALUE #( sign = 'I' option = 'EQ' low = <field> shlpfield = <interface>-shlpfield  ) TO shlp-selopt.
     ENDIF.
   ENDLOOP.
 ENDFORM.
