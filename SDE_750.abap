@@ -1210,7 +1210,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
       <catalog>-style = lcl_alv_common=>c_white.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
-      <catalog>-no_zero = 'X'.
       <catalog>-f4availabl = 'X'.
       IF ls_tf-is_text = abap_true.
         <catalog>-style = lcl_alv_common=>c_grey.
