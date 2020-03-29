@@ -755,21 +755,17 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_subty.
-    DATA: l_tab   TYPE t777d-stypt,
-          l_field TYPE t777d-namst,
-          l_infty type infty.
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
 
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
-
-    SELECT SINGLE stypt namst INTO (l_tab, l_field )  FROM t777d WHERE dbtab = io_viewer->m_tabname.
+    SELECT SINGLE stypt, namst INTO @data(l_result)   FROM t777d WHERE dbtab = @io_viewer->m_tabname.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <str> TO FIELD-SYMBOL(<subty>).
-    l_infty = io_viewer->m_tabname+2(4).
+    data(l_infty) = io_viewer->m_tabname+2(4).
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_tab.
-    <obj>-alv_viewer->mo_sel->set_value( i_field = l_field i_low = <subty> ).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_result-stypt.
+    <obj>-alv_viewer->mo_sel->set_value( i_field = l_result-namst i_low = <subty> ).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'SUBTY' i_low = <subty> ).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'INFTY' i_low = l_infty ).
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
