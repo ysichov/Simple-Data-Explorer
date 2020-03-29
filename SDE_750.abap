@@ -517,7 +517,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
     load_text( io_viewer ).
   ENDMETHOD.
 
-  METHOD load_text.
+  METHOD load_text."only for HR systems
 *    DATA: lt_text TYPE hrpad_text_tab,
 *          l_pskey TYPE pskey.
 *
@@ -576,7 +576,7 @@ CLASS lcl_plugins DEFINITION.
       run_pa20 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_pp01 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_text IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-
+      run_subty IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_dictionary_key IMPORTING i_str     TYPE any
                                    io_viewer TYPE REF TO lcl_table_viewer
                                    i_column  TYPE any,
@@ -603,7 +603,8 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( element = 'PERSNO'   plugin = 'PA20' )
       ( element = 'HROBJID'  plugin = 'PP01' )
       ( element = 'LGART'    rtab = 'T512W'   rfield = 'LGART' )
-      ( element = 'ITXEX'    plugin = 'SHOW_TEXT' ) ).
+      ( element = 'ITXEX'    plugin = 'SHOW_TEXT' )
+      ( element = 'SUBTY'    plugin = 'SUBTY' ) ).
 
     "field to field links
     mt_field_links = VALUE #(
@@ -624,7 +625,7 @@ CLASS lcl_plugins IMPLEMENTATION.
 
   METHOD link.
     CHECK run_field_2_field( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
-    CHECK run_data_element( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+    CHECK run_data_element(  EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
     CHECK run_hrp1001_adatanr( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
     run_dictionary_key( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ).
 
@@ -753,6 +754,27 @@ CLASS lcl_plugins IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+  METHOD run_subty.
+    DATA: l_tab   TYPE t777d-stypt,
+          l_field TYPE t777d-namst,
+          l_infty type infty.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+
+    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
+
+    SELECT SINGLE stypt namst INTO (l_tab, l_field )  FROM t777d WHERE dbtab = io_viewer->m_tabname.
+    ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <str> TO FIELD-SYMBOL(<subty>).
+    l_infty = io_viewer->m_tabname+2(4).
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_tab.
+    <obj>-alv_viewer->mo_sel->set_value( i_field = l_field i_low = <subty> ).
+    <obj>-alv_viewer->mo_sel->set_value( i_field = 'SUBTY' i_low = <subty> ).
+    <obj>-alv_viewer->mo_sel->set_value( i_field = 'INFTY' i_low = l_infty ).
+    <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+  ENDMETHOD.
+
   METHOD run_field_2_field.
     DATA: lo_viewer TYPE REF TO lcl_table_viewer.
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
@@ -782,7 +804,7 @@ CLASS lcl_plugins IMPLEMENTATION.
 
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
     READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = io_viewer->m_tabname fieldname = i_column INTO DATA(l_field).
-    LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname." 'PA20' .
+    LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname AND plugin NE '' ." 'PA20' .
       CASE l_el_link-plugin.
         WHEN 'PA20'.
           lcl_plugins=>run_pa20( io_viewer ).
@@ -790,6 +812,8 @@ CLASS lcl_plugins IMPLEMENTATION.
           lcl_plugins=>run_pp01( io_viewer ).
         WHEN 'SHOW_TEXT'.
           lcl_plugins=>run_text( io_viewer ).
+        WHEN 'SUBTY'.
+          lcl_plugins=>run_subty( io_viewer ).
       ENDCASE.
       is_done = abap_true.
     ENDLOOP.
@@ -2421,6 +2445,7 @@ AT SELECTION-SCREEN ON EXIT-COMMAND.
   lcl_appl=>exit( ).
 
 AT SELECTION-SCREEN .
+  CONDENSE gv_tname.
   CHECK lcl_sql=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
   CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
