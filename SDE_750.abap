@@ -58,6 +58,45 @@ CLASS lcl_box_handler  DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
+class lcl_popup DEFINITION.
+ PUBLIC SECTION.
+ class-data m_counter type i.
+ METHODS: create importing i_width type i
+                           i_hight type i
+                 RETURNING VALUE(ro_box) type ref to cl_gui_dialogbox_container.
+
+endclass.
+
+class lcl_popup IMPLEMENTATION.
+ method create.
+       DATA: l_top  TYPE i,
+          l_left TYPE i.
+
+    ADD 1 TO m_counter.
+    l_top  = l_left =  10 + 10 * ( m_counter DIV 5 ) +  ( m_counter MOD 5 ) * 50.
+
+    CREATE OBJECT ro_box
+      EXPORTING
+        width                       = i_width
+        height                      = i_hight
+        top                         = l_top
+        left                        = l_left
+        caption                     = 'text'
+      EXCEPTIONS
+        cntl_error                  = 1
+        cntl_system_error           = 2
+        create_error                = 3
+        lifetime_error              = 4
+        lifetime_dynpro_dynpro_link = 5
+        event_already_registered    = 6
+        error_regist_event          = 7
+        OTHERS                      = 8.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+ ENDMETHOD.
+endclass.
+
 CLASS lcl_ddic DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS: get_text_table IMPORTING i_tname TYPE tabname
@@ -386,7 +425,7 @@ CLASS lcl_sel_opt DEFINITION.
       handle_context_menu_request FOR EVENT context_menu_request OF cl_gui_alv_grid IMPORTING e_object.
 ENDCLASS.
 
-CLASS lcl_table_viewer DEFINITION.
+CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_column_emitter,
              column  TYPE lvc_fname,
@@ -441,9 +480,8 @@ CLASS lcl_table_viewer DEFINITION.
       handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
 ENDCLASS.
 
-CLASS lcl_text_viewer DEFINITION FINAL.
+CLASS lcl_text_viewer DEFINITION FINAL INHERITING FROM lcl_popup.
   PUBLIC SECTION.
-    CLASS-DATA: m_counter TYPE i.
     DATA: mo_box      TYPE REF TO cl_gui_dialogbox_container,
           mo_splitter TYPE REF TO cl_gui_splitter_container,
           mo_parent   TYPE REF TO cl_gui_container,
@@ -456,32 +494,8 @@ ENDCLASS.
 
 CLASS lcl_text_viewer IMPLEMENTATION.
   METHOD constructor.
-    DATA: l_top  TYPE i,
-          l_left TYPE i.
-
-    ADD 1 TO lcl_text_viewer=>m_counter.
-    l_top  = l_left =  10 + 10 * ( lcl_text_viewer=>m_counter DIV 5 ) +  ( lcl_text_viewer=>m_counter MOD 5 ) * 50.
-
-    CREATE OBJECT mo_box
-      EXPORTING
-        width                       = '200'
-        height                      = '100'
-        top                         = l_top
-        left                        = l_left
-        caption                     = 'text'
-      EXCEPTIONS
-        cntl_error                  = 1
-        cntl_system_error           = 2
-        create_error                = 3
-        lifetime_error              = 4
-        lifetime_dynpro_dynpro_link = 5
-        event_already_registered    = 6
-        error_regist_event          = 7
-        OTHERS                      = 8.
-    IF sy-subrc <> 0.
-      RETURN.
-    ENDIF.
-
+    super->constructor( ).
+    mo_box = create( i_width = 200 i_hight = 100 ).
     CREATE OBJECT mo_splitter ##FM_SUBRC_OK
       EXPORTING
         parent  = mo_box
@@ -490,7 +504,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
       EXCEPTIONS
         OTHERS  = 1.
 
-    CALL METHOD mo_splitter->get_container(
+     mo_splitter->get_container(
       EXPORTING
         row       = 1
         column    = 1
@@ -514,6 +528,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
     ENDIF.
 
     mo_text->set_readonly_mode( ).
+
     load_text( io_viewer ).
   ENDMETHOD.
 
@@ -997,6 +1012,7 @@ ENDCLASS.               "lcl_box_handler
 
 CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD constructor.
+    super->constructor( ).
     m_lang = sy-langu.
     mo_sel_width = 0.
     m_tabname = i_tname.
@@ -1014,33 +1030,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD create_popup.
-    DATA: l_top  TYPE i,
-          l_left TYPE i.
-
-    DATA(l_lines) = lines( lcl_appl=>mt_obj ) - 1.
-
-    l_top  = 20 + 30 * ( l_lines DIV 5 ) +  ( l_lines MOD 5 ) * 50.
-    l_left = 420 + 300 * ( l_lines DIV 5 )  +  ( l_lines MOD 5 ) * 50.
-
-    CREATE OBJECT mo_box
-      EXPORTING
-        width                       = '800'
-        height                      = '150'
-        top                         = l_top
-        left                        = l_left
-        caption                     = m_tabname
-      EXCEPTIONS
-        cntl_error                  = 1
-        cntl_system_error           = 2
-        create_error                = 3
-        lifetime_error              = 4
-        lifetime_dynpro_dynpro_link = 5
-        event_already_registered    = 6
-        error_regist_event          = 7
-        OTHERS                      = 8.
-    IF sy-subrc <> 0.
-      RETURN.
-    ENDIF.
+    mo_box = create( i_width = 800 i_hight = 150 ).
 
     CREATE OBJECT mo_splitter ##FM_SUBRC_OK
       EXPORTING
