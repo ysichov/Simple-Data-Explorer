@@ -61,19 +61,27 @@ CLASS lcl_sel_opt DEFINITION DEFERRED.
 CLASS lcl_popup DEFINITION.
   PUBLIC SECTION.
     CLASS-DATA m_counter TYPE i.
-    DATA: mo_box      TYPE REF TO cl_gui_dialogbox_container,
-          mo_splitter TYPE REF TO cl_gui_splitter_container,
-          mo_parent   TYPE REF TO cl_gui_container.
+    DATA: mo_box            TYPE REF TO cl_gui_dialogbox_container,
+          mo_splitter       TYPE REF TO cl_gui_splitter_container,
+          mo_parent         TYPE REF TO cl_gui_container,
+          m_additional_name TYPE string.
 
-    METHODS: create IMPORTING i_width       TYPE i
-                              i_hight       TYPE i
-                              i_name        TYPE text100 OPTIONAL
-                    RETURNING VALUE(ro_box) TYPE REF TO cl_gui_dialogbox_container,
+    METHODS: constructor IMPORTING i_tname           TYPE any OPTIONAL
+                                   ir_tab            TYPE REF TO data OPTIONAL
+                                   i_additional_name TYPE string OPTIONAL,
+      create IMPORTING i_width       TYPE i
+                       i_hight       TYPE i
+                       i_name        TYPE text100 OPTIONAL
+             RETURNING VALUE(ro_box) TYPE REF TO cl_gui_dialogbox_container,
       on_box_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
-
 ENDCLASS.
 
 CLASS lcl_popup IMPLEMENTATION.
+
+  METHOD constructor.
+    m_additional_name = i_additional_name.
+  ENDMETHOD.
+
   METHOD create.
     DATA: l_top  TYPE i,
           l_left TYPE i.
@@ -465,8 +473,9 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
           m_show_empty.
 
     METHODS:
-      constructor IMPORTING i_tname TYPE any OPTIONAL
-                            ir_tab  TYPE REF TO data OPTIONAL,
+      constructor IMPORTING i_tname           TYPE any OPTIONAL
+                            ir_tab            TYPE REF TO data OPTIONAL
+                            i_additional_name TYPE string OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -504,20 +513,25 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
         name      TYPE string,
         tab_ref   TYPE REF TO data,
       END OF ts_hier,
-      tt_hier TYPE TABLE OF ts_hier.
+      tt_hier TYPE TABLE OF ts_hier,
+      BEGIN of t_children,
+        item type ref to lcl_table_viewer,
+      end of t_children.
 
     DATA: mt_hier    TYPE tt_hier, " Tree hierarchy
           mo_nodes   TYPE REF TO cl_salv_nodes,
           mo_node    TYPE REF TO cl_salv_node,
           mo_events  TYPE REF TO cl_salv_events_tree,
-          mt_empty   TYPE tt_hier, "must be empty
-          ms_cluster TYPE payru_result,
+          mt_empty   TYPE tt_hier,
+          mr_cluster TYPE REF TO data, "payru_result,
           m_pernr(8) TYPE n,
-          m_seqnr(5) TYPE n.
+          m_seqnr(5) TYPE n,
+          mt_children type table of t_children.
 
     DATA :  mo_tree  TYPE REF TO cl_salv_tree.
     METHODS: constructor IMPORTING i_pernr TYPE any i_seqnr TYPE any,
-      show_tree.
+      show_tree,
+       on_box_close  REDEFINITION .
 
   PRIVATE SECTION.
     METHODS: init_alv_tree,
@@ -568,6 +582,29 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
 
     CALL METHOD mo_tree->get_event RECEIVING value = DATA(lo_event).
     SET HANDLER me->hndl_double_click FOR lo_event.
+  ENDMETHOD.
+
+  method on_box_close.
+   sender->free( ).
+
+   LOOP AT MT_children into data(child).
+    Read table lcl_appl=>mt_obj with key alv_viewer = child-item ASSIGNING FIELD-SYMBOL(<obj>).
+    data(l_indx) = sy-tabix.
+    child-item->mo_box->free( ).
+      FREE <obj>-alv_viewer->mr_table.
+      FREE <obj>-alv_viewer->mo_alv.
+
+      "shutdown receivers.
+      IF <obj>-alv_viewer->mo_sel IS NOT INITIAL.
+        LOOP AT <obj>-alv_viewer->mo_sel->mt_sel_tab INTO DATA(l_sel).
+          IF l_sel-receiver IS BOUND.
+            l_sel-receiver->shut_down( ).
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+      FREE <obj>-alv_viewer.
+      DELETE lcl_appl=>mt_obj INDEX l_indx.
+   ENDLOOP.
   ENDMETHOD.
 
   METHOD show_tree.
@@ -630,19 +667,30 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       ls_hier-tab_ref = lr_tab.
     ENDIF.
 
+    data(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
     REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_struc_name ir_tab = ls_hier-tab_ref.
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_struc_name ir_tab = ls_hier-tab_ref i_additional_name = l_name.
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+    append value #( item = <obj>-alv_viewer  ) to mt_children.
   ENDMETHOD.
 
   METHOD read_cluster.
+    DATA: lr_cluster TYPE REF TO data,
+          lo_handle  TYPE REF TO cl_abap_complexdescr.
+
+    FIELD-SYMBOLS: <cluster> TYPE any.
+
+    lo_handle ?= cl_abap_typedescr=>describe_by_name( 'PAYRU_RESULT' ).
+    CREATE DATA mr_cluster TYPE HANDLE lo_handle.
+    ASSIGN mr_cluster->* TO <cluster>.
+
     CALL FUNCTION 'PYXX_READ_PAYROLL_RESULT'
       EXPORTING
         employeenumber               = m_pernr
         sequencenumber               = m_seqnr
       CHANGING
-        payroll_result               = ms_cluster
+        payroll_result               = <cluster>
       EXCEPTIONS
         illegal_isocode_or_clusterid = 1
         error_generating_import      = 2
@@ -662,10 +710,11 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
           ls_hier    LIKE LINE OF mt_hier,
           l_lines    TYPE i.
 
-    FIELD-SYMBOLS: <table> TYPE ANY TABLE,
-                   <struc> TYPE any.
+    FIELD-SYMBOLS: <table>   TYPE ANY TABLE,
+                   <struc>   TYPE any,
+                   <cluster> TYPE any.
 
-    lo_stru ?= cl_abap_typedescr=>describe_by_data( ms_cluster ).
+    lo_stru ?= cl_abap_typedescr=>describe_by_name( 'PAYRU_RESULT' ).
 
     "top node
     APPEND VALUE #( anynode = 'Main' anyparent = '' name = 'Cluster' ) TO mt_hier.
@@ -679,7 +728,8 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
 *        GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
       APPEND ls_hier TO mt_hier.
 
-      ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO FIELD-SYMBOL(<element>).
+      ASSIGN mr_cluster->* TO <cluster>.
+      ASSIGN COMPONENT ls_comp-name OF STRUCTURE <cluster> TO FIELD-SYMBOL(<element>).
       lo_element ?= cl_abap_typedescr=>describe_by_data( <element> ).
       DATA(lt_comp) = lo_element->get_components( ).
 
@@ -794,29 +844,43 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-    DATA: lt_text TYPE hrpad_text_tab,
-          l_pskey TYPE pskey.
+    DATA: lr_pskey  TYPE REF TO data,
+          lr_text   TYPE REF TO data,
+
+          lo_handle TYPE REF TO cl_abap_complexdescr.
+
+    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+                   <pskey>    TYPE any.
+    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'HRPAD_TEXT_TAB' ).
+    CREATE DATA lr_text TYPE HANDLE lo_handle.
+    ASSIGN lr_text->* TO <text_tab>.
+
+    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'PSKEY' ).
+    CREATE DATA lr_pskey TYPE HANDLE lo_handle.
+    ASSIGN lr_pskey->* TO <pskey>.
+
 
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-    MOVE-CORRESPONDING <row> TO l_pskey.
-    l_pskey-infty = io_viewer->m_tabname+2(4).
+    MOVE-CORRESPONDING <row> TO <pskey>.
+    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+    <field> = io_viewer->m_tabname+2(4).
 
     TRY.
         CALL METHOD cl_hrpa_text_cluster=>read
           EXPORTING
             tclas         = 'A'
-            pskey         = l_pskey
+            pskey         = <pskey>
             no_auth_check = abap_true
           IMPORTING
-            text_tab      = lt_text.
+            text_tab      = <text_tab>.
       CATCH cx_hrpa_missing_authorization .
       CATCH cx_hrpa_violated_assertion .
     ENDTRY.
 
-    mo_text->set_text_as_r3table( lt_text ).
+    mo_text->set_text_as_r3table( <text_tab> ).
     CALL METHOD cl_gui_cfw=>flush.
     mo_text->set_focus( mo_box ).
   ENDMETHOD.
@@ -1301,7 +1365,7 @@ ENDCLASS.               "lcl_box_handler
 
 CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD constructor.
-    super->constructor( ).
+    super->constructor( i_additional_name = i_additional_name ).
     m_lang = sy-langu.
     mo_sel_width = 0.
     m_tabname = i_tname.
@@ -1451,7 +1515,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
      WHERE tabname = m_tabname
        AND ddlanguage = m_lang.
 
-    lv_header = |{ m_tabname } - { lv_text } ({ m_count })|.
+    lv_header = |{ m_tabname } - { lv_text } ({ m_count }) { m_additional_name }|.
     mo_box->set_caption( lv_header ).
   ENDMETHOD.
 
