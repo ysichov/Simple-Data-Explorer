@@ -510,8 +510,8 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
           mo_nodes   TYPE REF TO cl_salv_nodes,
           mo_node    TYPE REF TO cl_salv_node,
           mo_events  TYPE REF TO cl_salv_events_tree,
-          mt_empty   TYPE tt_hier, "must be empty
-          "ms_cluster TYPE payru_result,
+          mt_empty   TYPE tt_hier,
+          mr_cluster TYPE REF TO data, "payru_result,
           m_pernr(8) TYPE n,
           m_seqnr(5) TYPE n.
 
@@ -637,76 +637,87 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD read_cluster.
-*    CALL FUNCTION 'PYXX_READ_PAYROLL_RESULT'
-*      EXPORTING
-*        employeenumber               = m_pernr
-*        sequencenumber               = m_seqnr
-*      CHANGING
-*        payroll_result               = ms_cluster
-*      EXCEPTIONS
-*        illegal_isocode_or_clusterid = 1
-*        error_generating_import      = 2
-*        import_mismatch_error        = 3
-*        subpool_dir_full             = 4
-*        no_read_authority            = 5
-*        no_record_found              = 6
-*        versions_do_not_match        = 7
-*        error_reading_archive        = 8
-*        error_reading_relid          = 9
-*        OTHERS                       = 10.
+    DATA: lr_cluster TYPE REF TO data,
+          lo_handle  TYPE REF TO cl_abap_complexdescr.
+
+    FIELD-SYMBOLS: <cluster> TYPE any.
+
+    lo_handle ?= cl_abap_typedescr=>describe_by_name( 'PAYRU_RESULT' ).
+    CREATE DATA mr_cluster TYPE HANDLE lo_handle.
+    ASSIGN mr_cluster->* TO <cluster>.
+
+    CALL FUNCTION 'PYXX_READ_PAYROLL_RESULT'
+      EXPORTING
+        employeenumber               = m_pernr
+        sequencenumber               = m_seqnr
+      CHANGING
+        payroll_result               = <cluster>
+      EXCEPTIONS
+        illegal_isocode_or_clusterid = 1
+        error_generating_import      = 2
+        import_mismatch_error        = 3
+        subpool_dir_full             = 4
+        no_read_authority            = 5
+        no_record_found              = 6
+        versions_do_not_match        = 7
+        error_reading_archive        = 8
+        error_reading_relid          = 9
+        OTHERS                       = 10.
   ENDMETHOD.
 
   METHOD create_hierarchy.
-*    DATA: lo_stru    TYPE REF TO cl_abap_structdescr,
-*          lo_element TYPE REF TO cl_abap_structdescr,
-*          ls_hier    LIKE LINE OF mt_hier,
-*          l_lines    TYPE i.
-*
-*    FIELD-SYMBOLS: <table> TYPE ANY TABLE,
-*                   <struc> TYPE any.
-*
-*    lo_stru ?= cl_abap_typedescr=>describe_by_data( ms_cluster ).
-*
-*    "top node
-*    APPEND VALUE #( anynode = 'Main' anyparent = '' name = 'Cluster' ) TO mt_hier.
-*
-*    LOOP AT lo_stru->components INTO DATA(ls_comp).
-*
-*      ls_hier-anynode = ls_comp-name.
-*      ls_hier-anyparent = 'Main'.
-*      ls_hier-name = ls_comp-name.
-**        ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO <struc>.
-**        GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
-*      APPEND ls_hier TO mt_hier.
-*
-*      ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO FIELD-SYMBOL(<element>).
-*      lo_element ?= cl_abap_typedescr=>describe_by_data( <element> ).
-*      DATA(lt_comp) = lo_element->get_components( ).
-*
-*      LOOP AT lt_comp INTO DATA(ls_el).
-*        CHECK ls_el-type->type_kind = 'u' "structure
-*           OR ls_el-type->type_kind = 'h'. "table
-*
-*        CLEAR: l_lines, ls_hier.
-*        IF ls_el-type->type_kind = 'h'.
-*          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <table>.
-*          l_lines = lines( <table> ).
-*          GET REFERENCE OF <table> INTO ls_hier-tab_ref.
-*        ELSE.
-*          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <struc>.
-*          GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
-*        ENDIF.
-*        CHECK l_lines NE 0 OR ls_el-type->type_kind = 'u'.
-*
-*        ls_hier-anynode = ls_el-name.
-*        ls_hier-anyparent = ls_comp-name.
-*        ls_hier-name = ls_el-name.
-*        IF ls_el-type->type_kind = 'h'.
-*          ls_hier-name = |{ ls_hier-name } ({ l_lines })|.
-*        ENDIF.
-*        APPEND ls_hier TO mt_hier.
-*      ENDLOOP.
-*    ENDLOOP.
+    DATA: lo_stru    TYPE REF TO cl_abap_structdescr,
+          lo_element TYPE REF TO cl_abap_structdescr,
+          ls_hier    LIKE LINE OF mt_hier,
+          l_lines    TYPE i.
+
+    FIELD-SYMBOLS: <table>   TYPE ANY TABLE,
+                   <struc>   TYPE any,
+                   <cluster> TYPE any.
+
+    lo_stru ?= cl_abap_typedescr=>describe_by_name( 'PAYRU_RESULT' ).
+
+    "top node
+    APPEND VALUE #( anynode = 'Main' anyparent = '' name = 'Cluster' ) TO mt_hier.
+
+    LOOP AT lo_stru->components INTO DATA(ls_comp).
+
+      ls_hier-anynode = ls_comp-name.
+      ls_hier-anyparent = 'Main'.
+      ls_hier-name = ls_comp-name.
+*        ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO <struc>.
+*        GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
+      APPEND ls_hier TO mt_hier.
+
+      ASSIGN mr_cluster->* TO <cluster>.
+      ASSIGN COMPONENT ls_comp-name OF STRUCTURE <cluster> TO FIELD-SYMBOL(<element>).
+      lo_element ?= cl_abap_typedescr=>describe_by_data( <element> ).
+      DATA(lt_comp) = lo_element->get_components( ).
+
+      LOOP AT lt_comp INTO DATA(ls_el).
+        CHECK ls_el-type->type_kind = 'u' "structure
+           OR ls_el-type->type_kind = 'h'. "table
+
+        CLEAR: l_lines, ls_hier.
+        IF ls_el-type->type_kind = 'h'.
+          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <table>.
+          l_lines = lines( <table> ).
+          GET REFERENCE OF <table> INTO ls_hier-tab_ref.
+        ELSE.
+          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <struc>.
+          GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
+        ENDIF.
+        CHECK l_lines NE 0 OR ls_el-type->type_kind = 'u'.
+
+        ls_hier-anynode = ls_el-name.
+        ls_hier-anyparent = ls_comp-name.
+        ls_hier-name = ls_el-name.
+        IF ls_el-type->type_kind = 'h'.
+          ls_hier-name = |{ ls_hier-name } ({ l_lines })|.
+        ENDIF.
+        APPEND ls_hier TO mt_hier.
+      ENDLOOP.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD create_tree.
@@ -794,29 +805,43 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-*    DATA: lt_text TYPE hrpad_text_tab,
-*          l_pskey TYPE pskey.
+*    DATA: lr_pskey   TYPE REF to DATA,
+*          lr_text   TYPE REF TO data,
+*
+*          lo_handle TYPE REF TO cl_abap_complexdescr.
+*
+*    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+*                   <pskey>  type any.
+*    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'HRPAD_TEXT_TAB' ).
+*    CREATE DATA lr_text TYPE HANDLE lo_handle.
+*    ASSIGN lr_text->* TO <text_tab>.
+*
+*    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'PSKEY' ).
+*    CREATE DATA lr_pskey TYPE HANDLE lo_handle.
+*    ASSIGN lr_pskey->* TO <pskey>.
+*
 *
 *    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
 *    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
 *    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
 *    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-*    MOVE-CORRESPONDING <row> TO l_pskey.
-*    l_pskey-infty = io_viewer->m_tabname+2(4).
+*    MOVE-CORRESPONDING <row> TO <pskey>.
+*    ASSIGN COMPONENT 'INFTY' of STRUCTURE <pskey> to FIELD-SYMBOL(<FIELD>).
+*    <field> = io_viewer->m_tabname+2(4).
 *
 *    TRY.
 *        CALL METHOD cl_hrpa_text_cluster=>read
 *          EXPORTING
 *            tclas         = 'A'
-*            pskey         = l_pskey
+*            pskey         = <pskey>
 *            no_auth_check = abap_true
 *          IMPORTING
-*            text_tab      = lt_text.
+*            text_tab      = <text_tab>.
 *      CATCH cx_hrpa_missing_authorization .
 *      CATCH cx_hrpa_violated_assertion .
 *    ENDTRY.
 *
-*    mo_text->set_text_as_r3table( lt_text ).
+*    mo_text->set_text_as_r3table( <text_tab> ).
 *    CALL METHOD cl_gui_cfw=>flush.
 *    mo_text->set_focus( mo_box ).
   ENDMETHOD.
