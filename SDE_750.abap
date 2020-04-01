@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.5.200.160
+*& version: beta 0.6.230.186
 *& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
 *& Multi-windows program for viewing tables and links between them
 *& Written by Yurii Sychov
@@ -58,18 +58,24 @@ CLASS lcl_box_handler  DEFINITION DEFERRED.
 CLASS lcl_sel_opt DEFINITION DEFERRED.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
-class lcl_popup DEFINITION.
- PUBLIC SECTION.
- class-data m_counter type i.
- METHODS: create importing i_width type i
-                           i_hight type i
-                 RETURNING VALUE(ro_box) type ref to cl_gui_dialogbox_container.
+CLASS lcl_popup DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA m_counter TYPE i.
+    DATA: mo_box      TYPE REF TO cl_gui_dialogbox_container,
+          mo_splitter TYPE REF TO cl_gui_splitter_container,
+          mo_parent   TYPE REF TO cl_gui_container.
 
-endclass.
+    METHODS: create IMPORTING i_width       TYPE i
+                              i_hight       TYPE i
+                              i_name        TYPE text100 OPTIONAL
+                    RETURNING VALUE(ro_box) TYPE REF TO cl_gui_dialogbox_container,
+      on_box_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
 
-class lcl_popup IMPLEMENTATION.
- method create.
-       DATA: l_top  TYPE i,
+ENDCLASS.
+
+CLASS lcl_popup IMPLEMENTATION.
+  METHOD create.
+    DATA: l_top  TYPE i,
           l_left TYPE i.
 
     ADD 1 TO m_counter.
@@ -81,7 +87,7 @@ class lcl_popup IMPLEMENTATION.
         height                      = i_hight
         top                         = l_top
         left                        = l_left
-        caption                     = 'text'
+        caption                     = i_name
       EXCEPTIONS
         cntl_error                  = 1
         cntl_system_error           = 2
@@ -94,8 +100,13 @@ class lcl_popup IMPLEMENTATION.
     IF sy-subrc <> 0.
       RETURN.
     ENDIF.
- ENDMETHOD.
-endclass.
+  ENDMETHOD.
+
+  METHOD on_box_close.
+    sender->free( ).
+  ENDMETHOD.
+
+ENDCLASS.
 
 CLASS lcl_ddic DEFINITION.
   PUBLIC SECTION.
@@ -142,6 +153,8 @@ CLASS lcl_sql IMPLEMENTATION.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
 
     ASSIGN cr_tab->* TO <f_tab>.
+    c_count = lines( <f_tab> ).
+    CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
           SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
@@ -433,15 +446,14 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
            END OF t_column_emitter.
 
     DATA: m_lang             TYPE ddlanguage,
+          m_is_sql           TYPE xfeld,
           m_tabname          TYPE tabname,
           m_texttabname      TYPE tabname,
           m_count            TYPE i,
           mo_alv             TYPE REF TO cl_gui_alv_grid,
           mo_sel             TYPE REF TO lcl_sel_opt,
-          mo_box             TYPE REF TO cl_gui_dialogbox_container,
           mr_table           TYPE REF TO data,
           mr_text_table      TYPE REF TO data,
-          mo_splitter        TYPE REF TO cl_gui_splitter_container,
           mo_sel_parent      TYPE REF TO cl_gui_container,
           mo_alv_parent      TYPE REF TO cl_gui_container,
           mt_alv_catalog     TYPE lvc_t_fcat,
@@ -453,7 +465,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
           m_show_empty.
 
     METHODS:
-      constructor IMPORTING i_tname TYPE any,
+      constructor IMPORTING i_tname TYPE any OPTIONAL
+                            ir_tab  TYPE REF TO data OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -480,22 +493,46 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
       handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
 ENDCLASS.
 
-CLASS lcl_text_viewer DEFINITION FINAL INHERITING FROM lcl_popup.
+CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
   PUBLIC SECTION.
-    DATA: mo_box      TYPE REF TO cl_gui_dialogbox_container,
-          mo_splitter TYPE REF TO cl_gui_splitter_container,
-          mo_parent   TYPE REF TO cl_gui_container,
-          mo_text     TYPE REF TO cl_gui_textedit.
 
-    METHODS: constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      load_text  IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      on_box_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
+    TYPES:
+      BEGIN OF ts_hier,
+        anynode   TYPE string,
+        anyparent TYPE string,
+        key       TYPE salv_de_node_key, "internal tree key
+        name      TYPE string,
+        tab_ref   TYPE REF TO data,
+      END OF ts_hier,
+      tt_hier TYPE TABLE OF ts_hier.
+
+    DATA: mt_hier    TYPE tt_hier, " Tree hierarchy
+          mo_nodes   TYPE REF TO cl_salv_nodes,
+          mo_node    TYPE REF TO cl_salv_node,
+          mo_events  TYPE REF TO cl_salv_events_tree,
+          mt_empty   TYPE tt_hier, "must be empty
+          "ms_cluster TYPE payru_result,
+          m_pernr(8) TYPE n,
+          m_seqnr(5) TYPE n.
+
+    DATA :  mo_tree  TYPE REF TO cl_salv_tree.
+    METHODS: constructor IMPORTING i_pernr TYPE any i_seqnr TYPE any,
+      show_tree.
+
+  PRIVATE SECTION.
+    METHODS: init_alv_tree,
+      create_tree,
+      create_hierarchy,
+      read_cluster,
+      hndl_double_click FOR EVENT double_click OF cl_salv_events_tree IMPORTING node_key.
 ENDCLASS.
 
-CLASS lcl_text_viewer IMPLEMENTATION.
+CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   METHOD constructor.
     super->constructor( ).
-    mo_box = create( i_width = 200 i_hight = 100 ).
+    m_pernr = i_pernr.
+    m_seqnr = i_seqnr.
+    mo_box = create( i_name = CONV #( m_pernr ) i_width = 180 i_hight = 280  ).
     CREATE OBJECT mo_splitter ##FM_SUBRC_OK
       EXPORTING
         parent  = mo_box
@@ -504,12 +541,236 @@ CLASS lcl_text_viewer IMPLEMENTATION.
       EXCEPTIONS
         OTHERS  = 1.
 
-     mo_splitter->get_container(
+    mo_splitter->get_container(
+     EXPORTING
+       row       = 1
+       column    = 1
+     RECEIVING
+       container = mo_parent ).
+
+    SET HANDLER on_box_close FOR mo_box.
+
+    read_cluster( ).
+    create_hierarchy( ).
+    show_tree( ).
+  ENDMETHOD.
+  METHOD init_alv_tree.
+    TRY.
+        CALL METHOD cl_salv_tree=>factory
+          EXPORTING
+            r_container = mo_parent
+          IMPORTING
+            r_salv_tree = mo_tree
+          CHANGING
+            t_table     = mt_empty.
+      CATCH cx_salv_error.
+    ENDTRY.
+
+    CALL METHOD mo_tree->get_event RECEIVING value = DATA(lo_event).
+    SET HANDLER me->hndl_double_click FOR lo_event.
+  ENDMETHOD.
+
+  METHOD show_tree.
+    DATA: lo_columns       TYPE REF TO cl_salv_columns,
+          lo_column        TYPE REF TO cl_salv_column,
+          lo_tree_settings TYPE REF TO cl_salv_tree_settings.
+
+    init_alv_tree( ).
+    create_tree( ).
+
+    lo_columns = mo_tree->get_columns( ).
+    lo_columns->set_optimize( abap_true ).
+
+    lo_column = lo_columns->get_column( 'KEY' ).
+    lo_column->set_visible( abap_false ).
+
+    lo_column = lo_columns->get_column( 'NAME' ).
+    lo_column->set_visible( abap_false ).
+
+    lo_column = lo_columns->get_column( 'ANYNODE' ).
+    lo_column->set_visible( abap_false ).
+
+    lo_column = lo_columns->get_column( 'ANYPARENT' ).
+    lo_column->set_visible( abap_false ).
+
+    lo_tree_settings = mo_tree->get_tree_settings( ).
+    lo_tree_settings->set_hierarchy_header( CONV #( m_seqnr ) ).
+    mo_nodes->expand_all( ).
+
+    mo_tree->display( ).
+    mo_box->set_focus( mo_box ).
+  ENDMETHOD.
+
+  METHOD hndl_double_click.
+
+    DATA: go_struct    TYPE REF TO cl_abap_structdescr,
+          go_table     TYPE REF TO cl_abap_tabledescr,
+          go_abapstr   TYPE REF TO cl_abap_typedescr,
+          l_struc_name TYPE tabname,
+          lr_tab       TYPE REF TO data.
+
+    FIELD-SYMBOLS: <table> TYPE STANDARD TABLE,
+                   <str>   TYPE any.
+
+    DATA(ls_hier) = mt_hier[ node_key ].
+    CHECK ls_hier-tab_ref IS NOT INITIAL.
+    go_abapstr = cl_abap_structdescr=>describe_by_data_ref( ls_hier-tab_ref ).
+    IF go_abapstr->type_kind = 'h'.
+      go_table  ?= cl_abap_structdescr=>describe_by_data_ref( ls_hier-tab_ref ).
+      go_struct ?= go_table->get_table_line_type( ).
+      l_struc_name = go_struct->absolute_name.
+    ELSE.
+      go_struct  ?= cl_abap_structdescr=>describe_by_data_ref( ls_hier-tab_ref ).
+      l_struc_name = go_struct->absolute_name.
+      lcl_rtti=>create_table_by_name( EXPORTING i_tname = l_struc_name CHANGING c_table = lr_tab  ).
+      ASSIGN lr_tab->* TO <table>.
+      ASSIGN ls_hier-tab_ref->* TO <str>.
+      APPEND INITIAL LINE TO <table> ASSIGNING FIELD-SYMBOL(<line>).
+      MOVE-CORRESPONDING <str> TO <line>.
+      ls_hier-tab_ref = lr_tab.
+    ENDIF.
+
+    REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_struc_name ir_tab = ls_hier-tab_ref.
+    <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+  ENDMETHOD.
+
+  METHOD read_cluster.
+*    CALL FUNCTION 'PYXX_READ_PAYROLL_RESULT'
+*      EXPORTING
+*        employeenumber               = m_pernr
+*        sequencenumber               = m_seqnr
+*      CHANGING
+*        payroll_result               = ms_cluster
+*      EXCEPTIONS
+*        illegal_isocode_or_clusterid = 1
+*        error_generating_import      = 2
+*        import_mismatch_error        = 3
+*        subpool_dir_full             = 4
+*        no_read_authority            = 5
+*        no_record_found              = 6
+*        versions_do_not_match        = 7
+*        error_reading_archive        = 8
+*        error_reading_relid          = 9
+*        OTHERS                       = 10.
+  ENDMETHOD.
+
+  METHOD create_hierarchy.
+*    DATA: lo_stru    TYPE REF TO cl_abap_structdescr,
+*          lo_element TYPE REF TO cl_abap_structdescr,
+*          ls_hier    LIKE LINE OF mt_hier,
+*          l_lines    TYPE i.
+*
+*    FIELD-SYMBOLS: <table> TYPE ANY TABLE,
+*                   <struc> TYPE any.
+*
+*    lo_stru ?= cl_abap_typedescr=>describe_by_data( ms_cluster ).
+*
+*    "top node
+*    APPEND VALUE #( anynode = 'Main' anyparent = '' name = 'Cluster' ) TO mt_hier.
+*
+*    LOOP AT lo_stru->components INTO DATA(ls_comp).
+*
+*      ls_hier-anynode = ls_comp-name.
+*      ls_hier-anyparent = 'Main'.
+*      ls_hier-name = ls_comp-name.
+**        ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO <struc>.
+**        GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
+*      APPEND ls_hier TO mt_hier.
+*
+*      ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO FIELD-SYMBOL(<element>).
+*      lo_element ?= cl_abap_typedescr=>describe_by_data( <element> ).
+*      DATA(lt_comp) = lo_element->get_components( ).
+*
+*      LOOP AT lt_comp INTO DATA(ls_el).
+*        CHECK ls_el-type->type_kind = 'u' "structure
+*           OR ls_el-type->type_kind = 'h'. "table
+*
+*        CLEAR: l_lines, ls_hier.
+*        IF ls_el-type->type_kind = 'h'.
+*          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <table>.
+*          l_lines = lines( <table> ).
+*          GET REFERENCE OF <table> INTO ls_hier-tab_ref.
+*        ELSE.
+*          ASSIGN COMPONENT ls_el-name OF STRUCTURE <element> TO <struc>.
+*          GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
+*        ENDIF.
+*        CHECK l_lines NE 0 OR ls_el-type->type_kind = 'u'.
+*
+*        ls_hier-anynode = ls_el-name.
+*        ls_hier-anyparent = ls_comp-name.
+*        ls_hier-name = ls_el-name.
+*        IF ls_el-type->type_kind = 'h'.
+*          ls_hier-name = |{ ls_hier-name } ({ l_lines })|.
+*        ENDIF.
+*        APPEND ls_hier TO mt_hier.
+*      ENDLOOP.
+*    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD create_tree.
+    DATA: lv_text TYPE lvc_value.
+
+    FIELD-SYMBOLS:
+      <fs_data1> LIKE LINE OF mt_hier,
+      <fs_data2> LIKE LINE OF mt_hier.
+    TRY.
+* 2. Add the nodes to the tree and set their relations
+        mo_nodes = mo_tree->get_nodes( ).
+        LOOP AT mt_hier ASSIGNING <fs_data1>.
+          READ TABLE mt_hier WITH KEY anynode = <fs_data1>-anyparent ASSIGNING <fs_data2>.
+          IF sy-subrc NE 0.
+* Add the node as root
+            mo_node = mo_nodes->add_node(
+            related_node = ''
+            relationship = if_salv_c_node_relation=>parent ).
+          ELSE.
+            TRY.
+                mo_node = mo_nodes->add_node(
+                related_node = <fs_data2>-key
+                relationship = if_salv_c_node_relation=>last_child ).
+            ENDTRY.
+          ENDIF.
+
+          <fs_data1>-key = mo_node->get_key( ).
+
+          mo_node->set_data_row( <fs_data1> ).
+          lv_text = <fs_data1>-name.
+          mo_node->set_text( lv_text ).
+        ENDLOOP.
+      CATCH cx_salv_error.
+    ENDTRY.
+  ENDMETHOD.
+ENDCLASS.
+
+CLASS lcl_text_viewer DEFINITION FINAL INHERITING FROM lcl_popup.
+  PUBLIC SECTION.
+    DATA: mo_text     TYPE REF TO cl_gui_textedit.
+
+    METHODS: constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
+      load_text  IMPORTING io_viewer TYPE REF TO lcl_table_viewer.
+
+ENDCLASS.
+
+CLASS lcl_text_viewer IMPLEMENTATION.
+  METHOD constructor.
+    super->constructor( ).
+    mo_box = create( i_name = 'text' i_width = 200 i_hight = 100 ).
+    CREATE OBJECT mo_splitter ##FM_SUBRC_OK
       EXPORTING
-        row       = 1
-        column    = 1
-      RECEIVING
-        container = mo_parent ).
+        parent  = mo_box
+        rows    = 1
+        columns = 1
+      EXCEPTIONS
+        OTHERS  = 1.
+
+    mo_splitter->get_container(
+     EXPORTING
+       row       = 1
+       column    = 1
+     RECEIVING
+       container = mo_parent ).
 
     SET HANDLER on_box_close FOR mo_box.
 
@@ -560,9 +821,6 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 *    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
-  METHOD on_box_close.
-    sender->free( ).
-  ENDMETHOD.
 ENDCLASS.
 
 CLASS lcl_plugins DEFINITION.
@@ -592,6 +850,7 @@ CLASS lcl_plugins DEFINITION.
       run_pp01 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_text IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_subty IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
+      run_py_cluster IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       run_dictionary_key IMPORTING i_str     TYPE any
                                    io_viewer TYPE REF TO lcl_table_viewer
                                    i_column  TYPE any,
@@ -603,6 +862,10 @@ CLASS lcl_plugins DEFINITION.
                                   io_viewer      TYPE REF TO lcl_table_viewer
                                   i_column       TYPE any
                         RETURNING VALUE(is_done) TYPE xfeld,
+      run_field_2_plugin IMPORTING i_str          TYPE any
+                                   io_viewer      TYPE REF TO lcl_table_viewer
+                                   i_column       TYPE any
+                         RETURNING VALUE(is_done) TYPE xfeld,
 
       run_hrp1001_adatanr IMPORTING i_str          TYPE any
                                     io_viewer      TYPE REF TO lcl_table_viewer
@@ -640,6 +903,8 @@ CLASS lcl_plugins IMPLEMENTATION.
 
   METHOD link.
     CHECK run_field_2_field( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+    CHECK run_field_2_plugin( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
+
     CHECK run_data_element(  EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
     CHECK run_hrp1001_adatanr( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
     run_dictionary_key( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ).
@@ -741,7 +1006,7 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_text.
-    DATA(lcl_text) = NEW lcl_text_viewer( io_viewer ).
+    NEW lcl_text_viewer( io_viewer ).
   ENDMETHOD.
 
   METHOD run_hrpy_rgdir.
@@ -772,18 +1037,42 @@ CLASS lcl_plugins IMPLEMENTATION.
   METHOD run_subty.
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
-    SELECT SINGLE stypt, namst INTO @data(l_result)   FROM t777d WHERE dbtab = @io_viewer->m_tabname.
+
+    SELECT SINGLE stypt, namst INTO @DATA(l_result)   FROM t777d WHERE dbtab = @io_viewer->m_tabname.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <str> TO FIELD-SYMBOL(<subty>).
-    data(l_infty) = io_viewer->m_tabname+2(4).
+    DATA(l_infty) = io_viewer->m_tabname+2(4).
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_result-stypt.
     <obj>-alv_viewer->mo_sel->set_value( i_field = l_result-namst i_low = <subty> ).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'SUBTY' i_low = <subty> ).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'INFTY' i_low = l_infty ).
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+  ENDMETHOD.
+
+  METHOD run_py_cluster.
+
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
+
+    ASSIGN COMPONENT 'PERNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<pernr>).
+    ASSIGN COMPONENT 'SEQNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<seqnr>).
+
+    DATA(lo_cluster) = NEW lcl_py_cluster_viewer( i_pernr = <pernr> i_seqnr = <seqnr> ).
+
+  ENDMETHOD.
+
+  METHOD run_field_2_plugin.
+    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
+      CASE ls_link-method.
+        WHEN 'RUN_PY_CLUSTER'.
+          run_py_cluster( io_viewer ).
+      ENDCASE.
+      is_done = 'X'.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD run_field_2_field.
@@ -1022,8 +1311,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       get_field_info( m_texttabname ).
     ENDIF.
     get_field_info( m_tabname ).
-
-    lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
+    IF ir_tab IS NOT BOUND.
+      lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
+      m_is_sql = abap_true.
+    ELSE.
+      mr_table = ir_tab.
+    ENDIF.
     create_alv( ).
     create_sel_alv( ).
     mo_alv->set_focus( mo_alv ).
@@ -1072,11 +1365,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_alv = NEW #( i_parent = mo_alv_parent ).
     mt_alv_catalog = create_field_cat( m_tabname ).
     ASSIGN mr_table->* TO <f_tab>.
-    read_text_table( ).
-
-    lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
-                         CHANGING cr_tab =  mr_table c_count = m_count ).
-    update_texts( ).
+    IF m_tabname IS NOT INITIAL.
+      read_text_table( ).
+      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+                           CHANGING cr_tab =  mr_table c_count = m_count ).
+      update_texts( ).
+    ENDIF.
     set_header( ).
     ls_layout-col_opt = abap_true.
     ls_layout-cwidth_opt = abap_true.
@@ -1101,6 +1395,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
                   lcl_dragdrop=>drag
                   on_menu_request
                   on_f4 FOR mo_alv.
+
 
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
@@ -1255,6 +1550,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
 
+    DATA(l_exist) = lcl_sql=>exist_table( i_tab ).
+    IF  l_exist = 1.
+      SELECT  COUNT( * ) FROM (i_tab).
+      DATA(l_count) = sy-dbcnt.
+    ENDIF.
+
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
       IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
@@ -1277,23 +1578,25 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
 
         "check empty field
-        IF ls_tf-rollname IS NOT INITIAL.
-          CREATE DATA dref TYPE (ls_tf-rollname).
-          ASSIGN dref->* TO FIELD-SYMBOL(<field>).
-          lv_clause = |{ ls_tf-fieldname } NE ''|.
-          SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-            FROM (i_tab)
-           WHERE (lv_clause).
-          IF sy-subrc NE 0.
-            ls_tf-empty = abap_true.
-          ENDIF.
-        ELSEIF ls_tf-datatype = 'RAWSTRING'.
-          lv_clause = |{ ls_tf-fieldname } NE ''|.
-          SELECT SINGLE (ls_tf-fieldname) INTO @l_x
-            FROM (i_tab)
-           WHERE (lv_clause).
-          IF sy-subrc NE 0.
-            ls_tf-empty = abap_true.
+        IF l_exist = 1 AND l_count < 10000.
+          IF ls_tf-rollname IS NOT INITIAL.
+            CREATE DATA dref TYPE (ls_tf-rollname).
+            ASSIGN dref->* TO FIELD-SYMBOL(<field>).
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
+              FROM (i_tab)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = abap_true.
+            ENDIF.
+          ELSEIF ls_tf-datatype = 'RAWSTRING'.
+            lv_clause = |{ ls_tf-fieldname } NE ''|.
+            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+              FROM (i_tab)
+             WHERE (lv_clause).
+            IF sy-subrc NE 0.
+              ls_tf-empty = abap_true.
+            ENDIF.
           ENDIF.
         ENDIF.
         INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
@@ -1305,7 +1608,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
           it_tabdescr    TYPE abap_compdescr_tab,
-          lt_field_info  TYPE TABLE OF dfies,
           l_replace      TYPE string,
           l_texttab      TYPE tabname,
           lo_str         TYPE REF TO cl_abap_structdescr.
@@ -1421,6 +1723,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
       mo_sel->raise_selection_done( ).
+      IF lcl_sql=>exist_table( m_tabname ) = 1.
+        m_is_sql = 'X'.
+      ENDIF.
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
     ELSEIF e_ucomm = 'TABLES'.
@@ -1525,8 +1830,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD refresh_table.
-    DATA: ls_row TYPE t_sel_row.
-    lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) CHANGING cr_tab =  mr_table c_count = m_count ).
+    DATA: ls_row    TYPE t_sel_row,
+          lt_filter TYPE lvc_t_filt.
+    IF m_is_sql = abap_true.
+      DATA(l_where) = get_where( ).
+      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where CHANGING cr_tab =  mr_table c_count = m_count ).
+      IF l_where IS INITIAL.
+        CLEAR m_is_sql.
+      ENDIF.
+    ELSE.
+      CLEAR lt_filter.
+    ENDIF.
     update_texts( ).
     set_header( ).
 
@@ -1535,7 +1849,21 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         MOVE-CORRESPONDING <sel> TO ls_row.
         <sel>-transmitter->emit( e_row = ls_row ).
       ENDIF.
+      IF m_is_sql = abap_false.
+        LOOP AT <sel>-range INTO DATA(l_range).
+          APPEND VALUE #( fieldname = <sel>-field_label
+                                low = l_range-low
+                               high = l_range-high
+                               sign = l_range-sign
+                             option = l_range-opti ) TO lt_filter.
+        ENDLOOP.
+      ENDIF.
     ENDLOOP.
+
+    CALL METHOD mo_alv->set_filter_criteria
+      EXPORTING
+        it_filter = lt_filter.
+
     lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
     lcl_alv_common=>refresh( mo_alv ).
     mo_sel->mo_viewer->handle_user_command( 'UPDATE' ).
