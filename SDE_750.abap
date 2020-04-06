@@ -1620,7 +1620,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       DATA(l_count) = sy-dbcnt.
     ENDIF.
 
-    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
+    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' and name NE 'CLIENT'.
       IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
         l_fname = ls-name.
@@ -1683,7 +1683,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
     l_replace = l_texttab && '_'.
 
-    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT'.
+    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name ne 'CLIENT'.
       DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       <catalog>-col_pos = l_ind.
