@@ -11,47 +11,50 @@
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
 *&---------------------------------------------------------------------*
 REPORT ys_sde.
+
+FIELD-SYMBOLS: <g_str> TYPE any.
+
 CLASS lcl_data_receiver DEFINITION DEFERRED.
 CLASS lcl_data_transmitter DEFINITION DEFERRED.
 
-TYPES:
-  BEGIN OF selection_display_s,
-    ind         TYPE i,
-    field_label TYPE lvc_fname,
-    int_type(1),
-    inherited   TYPE aqadh_type_of_icon,
-    emitter     TYPE aqadh_type_of_icon,
-    sign        TYPE tvarv_sign,
-    opti        TYPE tvarv_opti,
-    option_icon TYPE aqadh_type_of_icon,
-    low         TYPE string, "aqadh_range_value,
-    high        TYPE string, "aqadh_range_value,
-    more_icon   TYPE aqadh_type_of_icon,
-    range       TYPE aqadh_t_ranges,
-    name        TYPE reptext,
-    element     TYPE text60,
-    domain      TYPE text60,
-    datatype    TYPE string,
-    length      TYPE i,
-    transmitter TYPE REF TO lcl_data_transmitter,
-    receiver    TYPE REF TO lcl_data_receiver,
-    color       TYPE lvc_t_scol,
-    style       TYPE lvc_t_styl,
-  END OF selection_display_s,
-  BEGIN OF t_sel_row,
-    sign        TYPE tvarv_sign,
-    opti        TYPE tvarv_opti,
-    option_icon TYPE aqadh_type_of_icon,
-    low         TYPE string, "aqadh_range_value,
-    high        TYPE string, "aqadh_range_value,
-    more_icon   TYPE aqadh_type_of_icon,
-    range       TYPE aqadh_t_ranges,
-  END OF t_sel_row.
+CLASS lcl_types DEFINITION ABSTRACT.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF selection_display_s,
+        ind         TYPE i,
+        field_label TYPE lvc_fname,
+        int_type(1),
+        inherited   TYPE aqadh_type_of_icon,
+        emitter     TYPE aqadh_type_of_icon,
+        sign        TYPE tvarv_sign,
+        opti        TYPE tvarv_opti,
+        option_icon TYPE aqadh_type_of_icon,
+        low         TYPE string, "aqadh_range_value,
+        high        TYPE string, "aqadh_range_value,
+        more_icon   TYPE aqadh_type_of_icon,
+        range       TYPE aqadh_t_ranges,
+        name        TYPE reptext,
+        element     TYPE text60,
+        domain      TYPE text60,
+        datatype    TYPE string,
+        length      TYPE i,
+        transmitter TYPE REF TO lcl_data_transmitter,
+        receiver    TYPE REF TO lcl_data_receiver,
+        color       TYPE lvc_t_scol,
+        style       TYPE lvc_t_styl,
+      END OF selection_display_s,
+      BEGIN OF t_sel_row,
+        sign        TYPE tvarv_sign,
+        opti        TYPE tvarv_opti,
+        option_icon TYPE aqadh_type_of_icon,
+        low         TYPE string, "aqadh_range_value,
+        high        TYPE string, "aqadh_range_value,
+        more_icon   TYPE aqadh_type_of_icon,
+        range       TYPE aqadh_t_ranges,
+      END OF t_sel_row.
 
-DATA: gt_sel TYPE TABLE OF selection_display_s.
-FIELD-SYMBOLS: <g_str> TYPE any.
-
-PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
+    CLASS-DATA: mt_sel TYPE TABLE OF lcl_types=>selection_display_s.
+ENDCLASS.
 
 CLASS lcl_table_viewer DEFINITION DEFERRED.
 CLASS lcl_box_handler  DEFINITION DEFERRED.
@@ -153,7 +156,7 @@ CLASS lcl_sql DEFINITION.
                                i_row_count TYPE i OPTIONAL
                      CHANGING  cr_tab      TYPE REF TO data
                                c_count     TYPE i,
-      exist_table IMPORTING i_tab LIKE gv_tname RETURNING VALUE(e_subrc) LIKE sy-subrc.
+      exist_table IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc.
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
@@ -375,9 +378,9 @@ ENDCLASS.
 
 CLASS lcl_data_transmitter DEFINITION.
   PUBLIC SECTION.
-    EVENTS: data_changed EXPORTING VALUE(e_row) TYPE t_sel_row,
+    EVENTS: data_changed EXPORTING VALUE(e_row) TYPE lcl_types=>t_sel_row,
              col_changed EXPORTING VALUE(e_column) TYPE lvc_fname.
-    METHODS: emit IMPORTING e_row TYPE t_sel_row,
+    METHODS: emit IMPORTING e_row TYPE lcl_types=>t_sel_row,
       emit_col IMPORTING e_column TYPE lvc_fname.
 ENDCLASS.
 
@@ -419,7 +422,7 @@ CLASS lcl_sel_opt DEFINITION.
     DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
-          mt_sel_tab TYPE TABLE OF selection_display_s,
+          mt_sel_tab TYPE TABLE OF lcl_types=>selection_display_s,
           ms_layout  TYPE lvc_s_layo.
 
     EVENTS: selection_done.
@@ -428,7 +431,7 @@ CLASS lcl_sel_opt DEFINITION.
       raise_selection_done,
       update_sel_tab,
       set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE xfeld DEFAULT abap_true ,
-      update_sel_row CHANGING c_sel_row TYPE selection_display_s.
+      update_sel_row CHANGING c_sel_row TYPE lcl_types=>selection_display_s.
 
   PRIVATE SECTION.
     METHODS:
@@ -514,24 +517,24 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
         tab_ref   TYPE REF TO data,
       END OF ts_hier,
       tt_hier TYPE TABLE OF ts_hier,
-      BEGIN of t_children,
-        item type ref to lcl_table_viewer,
-      end of t_children.
+      BEGIN OF t_children,
+        item TYPE REF TO lcl_table_viewer,
+      END OF t_children.
 
-    DATA: mt_hier    TYPE tt_hier, " Tree hierarchy
-          mo_nodes   TYPE REF TO cl_salv_nodes,
-          mo_node    TYPE REF TO cl_salv_node,
-          mo_events  TYPE REF TO cl_salv_events_tree,
-          mt_empty   TYPE tt_hier,
-          mr_cluster TYPE REF TO data, "payru_result,
-          m_pernr(8) TYPE n,
-          m_seqnr(5) TYPE n,
-          mt_children type table of t_children.
+    DATA: mt_hier     TYPE tt_hier, " Tree hierarchy
+          mo_nodes    TYPE REF TO cl_salv_nodes,
+          mo_node     TYPE REF TO cl_salv_node,
+          mo_events   TYPE REF TO cl_salv_events_tree,
+          mt_empty    TYPE tt_hier,
+          mr_cluster  TYPE REF TO data, "payru_result,
+          m_pernr(8)  TYPE n,
+          m_seqnr(5)  TYPE n,
+          mt_children TYPE TABLE OF t_children.
 
     DATA :  mo_tree  TYPE REF TO cl_salv_tree.
     METHODS: constructor IMPORTING i_pernr TYPE any i_seqnr TYPE any,
       show_tree,
-       on_box_close  REDEFINITION .
+      on_box_close  REDEFINITION .
 
   PRIVATE SECTION.
     METHODS: init_alv_tree,
@@ -584,13 +587,15 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     SET HANDLER me->hndl_double_click FOR lo_event.
   ENDMETHOD.
 
-  method on_box_close.
-   sender->free( ).
+  METHOD on_box_close.
+    sender->free( ).
 
-   LOOP AT MT_children into data(child).
-    Read table lcl_appl=>mt_obj with key alv_viewer = child-item ASSIGNING FIELD-SYMBOL(<obj>).
-    data(l_indx) = sy-tabix.
-    child-item->mo_box->free( ).
+    LOOP AT mt_children INTO DATA(child).
+      READ TABLE lcl_appl=>mt_obj WITH KEY alv_viewer = child-item ASSIGNING FIELD-SYMBOL(<obj>).
+      CHECK sy-subrc = 0.
+      DATA(l_indx) = sy-tabix.
+
+      child-item->mo_box->free( EXCEPTIONS cntl_error = 1  ).
       FREE <obj>-alv_viewer->mr_table.
       FREE <obj>-alv_viewer->mo_alv.
 
@@ -604,7 +609,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       ENDIF.
       FREE <obj>-alv_viewer.
       DELETE lcl_appl=>mt_obj INDEX l_indx.
-   ENDLOOP.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD show_tree.
@@ -667,12 +672,12 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       ls_hier-tab_ref = lr_tab.
     ENDIF.
 
-    data(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
+    DATA(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
     REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_struc_name ir_tab = ls_hier-tab_ref i_additional_name = l_name.
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-    append value #( item = <obj>-alv_viewer  ) to mt_children.
+    APPEND VALUE #( item = <obj>-alv_viewer  ) TO mt_children.
   ENDMETHOD.
 
   METHOD read_cluster.
@@ -882,7 +887,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 *
 *    mo_text->set_text_as_r3table( <text_tab> ).
 *    CALL METHOD cl_gui_cfw=>flush.
-*    mo_text->set_focus( mo_box ).
+    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
@@ -1290,7 +1295,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
   METHOD update_col.
     DATA: l_updated,
-          lt_sel_row   TYPE t_sel_row.
+          lt_sel_row   TYPE lcl_types=>t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
 
@@ -1620,7 +1625,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       DATA(l_count) = sy-dbcnt.
     ENDIF.
 
-    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' and name NE 'CLIENT'.
+    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name NE 'CLIENT'.
       IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
         l_fname = ls-name.
@@ -1683,7 +1688,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
     l_replace = l_texttab && '_'.
 
-    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name ne 'CLIENT'.
+    LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name NE 'CLIENT'.
       DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       <catalog>-col_pos = l_ind.
@@ -1894,7 +1899,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD refresh_table.
-    DATA: ls_row    TYPE t_sel_row,
+    DATA: ls_row    TYPE lcl_types=>t_sel_row,
           lt_filter TYPE lvc_t_filt.
     IF m_is_sql = abap_true.
       DATA(l_where) = get_where( ).
@@ -2089,7 +2094,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   METHOD raise_selection_done.
     lcl_alv_common=>refresh( mo_sel_alv ).
     RAISE EVENT selection_done.
-    DATA: ls_row TYPE t_sel_row.
+    DATA: ls_row TYPE lcl_types=>t_sel_row.
     LOOP AT mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
       IF <sel>-transmitter IS NOT INITIAL.
         MOVE-CORRESPONDING <sel> TO ls_row.
@@ -2167,7 +2172,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       update_sel_row( CHANGING c_sel_row = <to> ).
     ENDIF.
     IF <to>-transmitter IS BOUND.
-      DATA: ls_row TYPE t_sel_row.
+      DATA: ls_row TYPE lcl_types=>t_sel_row.
       MOVE-CORRESPONDING <to> TO ls_row.
       <to>-transmitter->emit( EXPORTING e_row = ls_row ).
     ENDIF.
@@ -2285,7 +2290,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX es_row_no-row_id.
     DATA(l_fname) =  <sel>-field_label.
 
-    gt_sel[] = mt_sel_tab[].
+    lcl_types=>mt_sel[] = mt_sel_tab[].
     IF <sel>-element = 'HROBJID'.
       READ TABLE mt_sel_tab INTO DATA(l_sel) WITH KEY field_label = 'OTYPE'.
       l_otype = l_sel-low.
@@ -2675,7 +2680,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD drop."It should be refactored someday...
-    DATA: ls_row          TYPE t_sel_row,
+    DATA: ls_row          TYPE lcl_types=>t_sel_row,
           lv_set_receiver.
 
     LOOP AT lcl_appl=>mt_obj INTO DATA(lo).
@@ -2810,6 +2815,9 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 ENDCLASS.
 
 *------------REPORT EVENTS--------------------
+
+PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
+
 INITIALIZATION.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
@@ -2833,7 +2841,7 @@ FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
                    callcontrol LIKE ddshf4ctrl.
 
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE abap_true.
-    READ TABLE gt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel).
+    READ TABLE lcl_types=>mt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel).
     IF sy-subrc = 0.
       LOOP AT l_sel-range INTO DATA(l_range).
         APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
