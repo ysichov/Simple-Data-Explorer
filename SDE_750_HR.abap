@@ -1791,6 +1791,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         lcl_plugins=>run_pp01( me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
+      CHECK get_where( ) IS NOT INITIAL.
       mo_sel->raise_selection_done( ).
       IF lcl_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
