@@ -887,7 +887,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 *
 *    mo_text->set_text_as_r3table( <text_tab> ).
 *    CALL METHOD cl_gui_cfw=>flush.
-    mo_text->set_focus( mo_box ).
+*    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
@@ -1791,6 +1791,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         lcl_plugins=>run_pp01( me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
+      CHECK get_where( ) IS NOT INITIAL.
       mo_sel->raise_selection_done( ).
       IF lcl_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
