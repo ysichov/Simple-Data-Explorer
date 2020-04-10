@@ -1,8 +1,12 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.6.230.186
-*& GIT:       https://github.com/ysichov/SDE/blob/master/SDE%20for%207.50%20abap - here may be most actual version
+*& version: beta 0.7.230.192
+*& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
+*& AbapGit         https://github.com/ysichov/SDE_abapgit
+*& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
+*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
+
 *& Multi-windows program for viewing tables and links between them
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
@@ -729,8 +733,6 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       ls_hier-anynode = ls_comp-name.
       ls_hier-anyparent = 'Main'.
       ls_hier-name = ls_comp-name.
-*        ASSIGN COMPONENT ls_comp-name OF STRUCTURE ms_cluster TO <struc>.
-*        GET REFERENCE OF <struc> INTO ls_hier-tab_ref.
       APPEND ls_hier TO mt_hier.
 
       ASSIGN mr_cluster->* TO <cluster>.
@@ -964,6 +966,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
       ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
       ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'HRP1222'    field = 'TABNR' rtab = 'HRT1222'  rfield = 'TABNR' )
       ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'DOCNR' rtab = 'PA2001'   rfield = 'DOCNR' )
@@ -1121,7 +1124,6 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_py_cluster.
-
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
@@ -1129,9 +1131,7 @@ CLASS lcl_plugins IMPLEMENTATION.
 
     ASSIGN COMPONENT 'PERNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<pernr>).
     ASSIGN COMPONENT 'SEQNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<seqnr>).
-
     DATA(lo_cluster) = NEW lcl_py_cluster_viewer( i_pernr = <pernr> i_seqnr = <seqnr> ).
-
   ENDMETHOD.
 
   METHOD run_field_2_plugin.
@@ -1209,6 +1209,7 @@ CLASS lcl_plugins IMPLEMENTATION.
 
   METHOD run_dictionary_key.
     DATA: lt_keys TYPE TABLE OF dd05p.
+
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
     READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = io_viewer->m_tabname fieldname = i_column .
     ASSIGN COMPONENT i_column OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
@@ -1281,10 +1282,9 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD  update.
-    DATA: l_updated.
     READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
     IF <to>-range[] = e_row-range[].
-      l_updated = abap_true."so as not to have an infinite event loop
+      data(l_updated) = abap_true."so as not to have an infinite event loop
     ENDIF.
     MOVE-CORRESPONDING e_row TO <to>.
     IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
@@ -1294,8 +1294,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_col.
-    DATA: l_updated,
-          lt_sel_row   TYPE lcl_types=>t_sel_row.
+    DATA: lt_sel_row   TYPE lcl_types=>t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
 
@@ -1324,7 +1323,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
     MOVE-CORRESPONDING <to> TO lt_sel_row.
     IF <to>-range = lt_old_range.
-      l_updated = abap_true."so as not to have an infinite event loop
+      data(l_updated) = abap_true."so as not to have an infinite event loop
     ENDIF.
     IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
       <to>-transmitter->emit( EXPORTING e_row = lt_sel_row ).
@@ -1369,6 +1368,7 @@ CLASS lcl_box_handler IMPLEMENTATION.
 ENDCLASS.               "lcl_box_handler
 
 CLASS lcl_table_viewer IMPLEMENTATION.
+
   METHOD constructor.
     super->constructor( i_additional_name = i_additional_name ).
     m_lang = sy-langu.
@@ -1464,7 +1464,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
                   lcl_dragdrop=>drag
                   on_menu_request
                   on_f4 FOR mo_alv.
-
 
     CALL METHOD mo_alv->set_table_for_first_display
       EXPORTING
@@ -1720,6 +1719,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_menu_button.
+    CALL METHOD cl_gui_cfw=>flush.
     IF e_ucomm = 'LANGUAGE'.
       CALL METHOD e_object->add_function
         EXPORTING
@@ -2686,19 +2686,17 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
     LOOP AT lcl_appl=>mt_obj INTO DATA(lo).
       "to
-      IF lo-alv_viewer->mo_sel IS BOUND.
-        IF e_dragdropobj->droptargetctrl = lo-alv_viewer->mo_sel->mo_sel_alv.
-          DATA(lo_to) = lo-alv_viewer->mo_sel.
-        ENDIF.
+      IF e_dragdropobj->droptargetctrl = lo-alv_viewer->mo_sel->mo_sel_alv.
+        DATA(lo_to) = lo-alv_viewer->mo_sel.
+        DATA(to_obj) = lo.
       ENDIF.
-
       "from tab
       IF lo-alv_viewer->mo_alv = e_dragdropobj->dragsourcectrl.
         DATA(lo_from_tab) = lo-alv_viewer.
+        DATA(from_obj) = lo.
         CONTINUE.
       ENDIF.
 
-      "CHECK lo-alv_viewer->mo_sel IS BOUND.
       IF e_dragdropobj->dragsourcectrl = lo-alv_viewer->mo_sel->mo_sel_alv.
         DATA(lo_from_sel) = lo-alv_viewer->mo_sel.
         lo-alv_viewer->mo_sel->mo_sel_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_sel_rows) ).
@@ -2708,7 +2706,6 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
     IF lo_from_tab IS BOUND." tab to select
       FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE,
-                     "<f_str>   TYPE any,
                      <f_field> TYPE any.
       lo_from_tab->mo_alv->get_selected_cells( IMPORTING et_cell = lt_sel_cells  ).
       lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = DATA(lt_sel_col)  ).
@@ -2807,8 +2804,10 @@ CLASS lcl_dragdrop IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    DATA(lo_alv) = CAST cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
-    lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = abap_true ).
+    IF from_obj NE to_obj.
+      DATA(lo_alv) = CAST cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
+      lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = abap_true ).
+    ENDIF.
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
     lo_to->raise_selection_done( ).
