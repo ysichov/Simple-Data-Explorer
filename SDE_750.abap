@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.7.230.192
+*& version: beta 0.7.244.194
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
 *& AbapGit         https://github.com/ysichov/SDE_abapgit
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
@@ -519,6 +519,7 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
         key       TYPE salv_de_node_key, "internal tree key
         name      TYPE string,
         tab_ref   TYPE REF TO data,
+        type(1),
       END OF ts_hier,
       tt_hier TYPE TABLE OF ts_hier,
       BEGIN OF t_children,
@@ -639,6 +640,9 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     lo_column = lo_columns->get_column( 'ANYPARENT' ).
     lo_column->set_visible( abap_false ).
 
+    lo_column = lo_columns->get_column( 'TYPE' ).
+    lo_column->set_visible( abap_false ).
+
     lo_tree_settings = mo_tree->get_tree_settings( ).
     lo_tree_settings->set_hierarchy_header( CONV #( m_seqnr ) ).
     mo_nodes->expand_all( ).
@@ -675,7 +679,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       MOVE-CORRESPONDING <str> TO <line>.
       ls_hier-tab_ref = lr_tab.
     ENDIF.
-
+     ls_hier-type = go_abapstr->type_kind.
     DATA(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
     REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
@@ -761,13 +765,16 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
         IF ls_el-type->type_kind = 'h'.
           ls_hier-name = |{ ls_hier-name } ({ l_lines })|.
         ENDIF.
+        ls_hier-type = ls_el-type->type_kind.
         APPEND ls_hier TO mt_hier.
       ENDLOOP.
     ENDLOOP.
   ENDMETHOD.
 
   METHOD create_tree.
-    DATA: lv_text TYPE lvc_value.
+    DATA: lv_text TYPE lvc_value,
+          lv_icon type salv_de_tree_image.
+
 
     FIELD-SYMBOLS:
       <fs_data1> LIKE LINE OF mt_hier,
@@ -783,10 +790,17 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
             related_node = ''
             relationship = if_salv_c_node_relation=>parent ).
           ELSE.
+            IF <fs_data1>-type = 'h'.
+              lv_icon = icon_table_settings.
+            ELSE.
+              lv_icon = icon_structure.
+            ENDIF.
             TRY.
                 mo_node = mo_nodes->add_node(
                 related_node = <fs_data2>-key
-                relationship = if_salv_c_node_relation=>last_child ).
+                relationship = if_salv_c_node_relation=>last_child
+                collapsed_icon = lv_icon
+                expanded_icon  = lv_icon  ).
             ENDTRY.
           ENDIF.
 
