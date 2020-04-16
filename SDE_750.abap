@@ -576,6 +576,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     create_hierarchy( ).
     show_tree( ).
   ENDMETHOD.
+
   METHOD init_alv_tree.
     TRY.
         CALL METHOD cl_salv_tree=>factory
@@ -618,35 +619,22 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD show_tree.
-    DATA: lo_columns       TYPE REF TO cl_salv_columns,
-          lo_column        TYPE REF TO cl_salv_column,
-          lo_tree_settings TYPE REF TO cl_salv_tree_settings.
-
     init_alv_tree( ).
     create_tree( ).
 
-    lo_columns = mo_tree->get_columns( ).
+    data(lo_columns) = mo_tree->get_columns( ).
     lo_columns->set_optimize( abap_true ).
 
-    lo_column = lo_columns->get_column( 'KEY' ).
-    lo_column->set_visible( abap_false ).
+    lo_columns->get_column( 'KEY' )->set_visible( abap_false ).
+    lo_columns->get_column( 'NAME' )->set_visible( abap_false ).
+    lo_columns->get_column( 'ANYNODE' )->set_visible( abap_false ).
+    lo_columns->get_column( 'ANYPARENT' )->set_visible( abap_false ).
+    lo_columns->get_column( 'TYPE' )->set_visible( abap_false ).
 
-    lo_column = lo_columns->get_column( 'NAME' ).
-    lo_column->set_visible( abap_false ).
-
-    lo_column = lo_columns->get_column( 'ANYNODE' ).
-    lo_column->set_visible( abap_false ).
-
-    lo_column = lo_columns->get_column( 'ANYPARENT' ).
-    lo_column->set_visible( abap_false ).
-
-    lo_column = lo_columns->get_column( 'TYPE' ).
-    lo_column->set_visible( abap_false ).
-
-    lo_tree_settings = mo_tree->get_tree_settings( ).
+    data(lo_tree_settings) = mo_tree->get_tree_settings( ).
     lo_tree_settings->set_hierarchy_header( CONV #( m_seqnr ) ).
     mo_nodes->expand_all( ).
-
+    mo_tree->get_functions( )->set_all( ).
     mo_tree->display( ).
     mo_box->set_focus( mo_box ).
   ENDMETHOD.
@@ -679,7 +667,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
       MOVE-CORRESPONDING <str> TO <line>.
       ls_hier-tab_ref = lr_tab.
     ENDIF.
-     ls_hier-type = go_abapstr->type_kind.
+    ls_hier-type = go_abapstr->type_kind.
     DATA(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
     REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
@@ -773,41 +761,33 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
 
   METHOD create_tree.
     DATA: lv_text TYPE lvc_value,
-          lv_icon type salv_de_tree_image.
+          lv_icon TYPE salv_de_tree_image.
 
-
-    FIELD-SYMBOLS:
-      <fs_data1> LIKE LINE OF mt_hier,
-      <fs_data2> LIKE LINE OF mt_hier.
     TRY.
-* 2. Add the nodes to the tree and set their relations
         mo_nodes = mo_tree->get_nodes( ).
-        LOOP AT mt_hier ASSIGNING <fs_data1>.
-          READ TABLE mt_hier WITH KEY anynode = <fs_data1>-anyparent ASSIGNING <fs_data2>.
-          IF sy-subrc NE 0.
-* Add the node as root
+        LOOP AT mt_hier ASSIGNING FIELD-SYMBOL(<hier>).
+          READ TABLE mt_hier WITH KEY anynode = <hier>-anyparent ASSIGNING FIELD-SYMBOL(<hier_up>).
+          IF sy-subrc NE 0."root node
+
             mo_node = mo_nodes->add_node(
             related_node = ''
             relationship = if_salv_c_node_relation=>parent ).
           ELSE.
-            IF <fs_data1>-type = 'h'.
+            IF <hier>-type = 'h'.
               lv_icon = icon_table_settings.
             ELSE.
               lv_icon = icon_structure.
             ENDIF.
-            TRY.
                 mo_node = mo_nodes->add_node(
-                related_node = <fs_data2>-key
+                related_node = <hier_up>-key
                 relationship = if_salv_c_node_relation=>last_child
                 collapsed_icon = lv_icon
                 expanded_icon  = lv_icon  ).
-            ENDTRY.
           ENDIF.
 
-          <fs_data1>-key = mo_node->get_key( ).
-
-          mo_node->set_data_row( <fs_data1> ).
-          lv_text = <fs_data1>-name.
+          <hier>-key = mo_node->get_key( ).
+          mo_node->set_data_row( <hier> ).
+          lv_text = <hier>-name.
           mo_node->set_text( lv_text ).
         ENDLOOP.
       CATCH cx_salv_error.
@@ -1298,7 +1278,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   METHOD  update.
     READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
     IF <to>-range[] = e_row-range[].
-      data(l_updated) = abap_true."so as not to have an infinite event loop
+      DATA(l_updated) = abap_true."so as not to have an infinite event loop
     ENDIF.
     MOVE-CORRESPONDING e_row TO <to>.
     IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
@@ -1337,7 +1317,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
 
     MOVE-CORRESPONDING <to> TO lt_sel_row.
     IF <to>-range = lt_old_range.
-      data(l_updated) = abap_true."so as not to have an infinite event loop
+      DATA(l_updated) = abap_true."so as not to have an infinite event loop
     ENDIF.
     IF <to>-transmitter IS BOUND AND l_updated IS INITIAL.
       <to>-transmitter->emit( EXPORTING e_row = lt_sel_row ).
@@ -2845,6 +2825,7 @@ AT SELECTION-SCREEN ON EXIT-COMMAND.
   lcl_appl=>exit( ).
 
 AT SELECTION-SCREEN .
+  CHECK sy-ucomm IS INITIAL.
   CONDENSE gv_tname.
   CHECK lcl_sql=>exist_table( gv_tname ) = 1.
   APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
