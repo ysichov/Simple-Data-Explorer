@@ -462,6 +462,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
 
     DATA: m_lang             TYPE ddlanguage,
           m_is_sql           TYPE xfeld,
+          m_is_view          TYPE xfeld,
           m_tabname          TYPE tabname,
           m_texttabname      TYPE tabname,
           m_count            TYPE i,
@@ -482,7 +483,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
     METHODS:
       constructor IMPORTING i_tname           TYPE any OPTIONAL
                             ir_tab            TYPE REF TO data OPTIONAL
-                            i_additional_name TYPE string OPTIONAL,
+                            i_additional_name TYPE string OPTIONAL
+                            i_is_view         TYPE xfeld OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -622,7 +624,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     init_alv_tree( ).
     create_tree( ).
 
-    data(lo_columns) = mo_tree->get_columns( ).
+    DATA(lo_columns) = mo_tree->get_columns( ).
     lo_columns->set_optimize( abap_true ).
 
     lo_columns->get_column( 'KEY' )->set_visible( abap_false ).
@@ -631,7 +633,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     lo_columns->get_column( 'ANYPARENT' )->set_visible( abap_false ).
     lo_columns->get_column( 'TYPE' )->set_visible( abap_false ).
 
-    data(lo_tree_settings) = mo_tree->get_tree_settings( ).
+    DATA(lo_tree_settings) = mo_tree->get_tree_settings( ).
     lo_tree_settings->set_hierarchy_header( CONV #( m_seqnr ) ).
     mo_nodes->expand_all( ).
     mo_tree->get_functions( )->set_all( ).
@@ -778,11 +780,11 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
             ELSE.
               lv_icon = icon_structure.
             ENDIF.
-                mo_node = mo_nodes->add_node(
-                related_node = <hier_up>-key
-                relationship = if_salv_c_node_relation=>last_child
-                collapsed_icon = lv_icon
-                expanded_icon  = lv_icon  ).
+            mo_node = mo_nodes->add_node(
+            related_node = <hier_up>-key
+            relationship = if_salv_c_node_relation=>last_child
+            collapsed_icon = lv_icon
+            expanded_icon  = lv_icon  ).
           ENDIF.
 
           <hier>-key = mo_node->get_key( ).
@@ -1369,6 +1371,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_sel_width = 0.
     m_tabname = i_tname.
     create_popup( ).
+
+    IF i_is_view = abap_true.
+      m_is_view = 'X'.
+    ENDIF.
+
     lcl_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
     IF m_texttabname IS NOT INITIAL.
       get_field_info( m_texttabname ).
@@ -1376,7 +1383,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     get_field_info( m_tabname ).
     IF ir_tab IS NOT BOUND.
       lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
-      m_is_sql = abap_true.
+      IF m_is_view IS INITIAL.
+        m_is_sql = abap_true.
+      ENDIF.
     ELSE.
       mr_table = ir_tab.
     ENDIF.
@@ -1423,16 +1432,24 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: ls_layout TYPE lvc_s_layo,
           effect    TYPE i,
           lt_f4     TYPE lvc_t_f4.
-    FIELD-SYMBOLS: <f_tab>   TYPE ANY TABLE.
+    FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
     mt_alv_catalog = create_field_cat( m_tabname ).
     ASSIGN mr_table->* TO <f_tab>.
     IF m_tabname IS NOT INITIAL.
-      read_text_table( ).
-      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
-                           CHANGING cr_tab =  mr_table c_count = m_count ).
-      update_texts( ).
+      IF m_is_view IS INITIAL.
+        read_text_table( ).
+        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+                             CHANGING cr_tab =  mr_table c_count = m_count ).
+        update_texts( ).
+      ELSE.
+        CALL FUNCTION 'VIEW_GET_DATA'
+          EXPORTING
+            view_name = m_tabname
+          TABLES
+            data      = <f_tab>.
+      ENDIF.
     ENDIF.
     set_header( ).
     ls_layout-col_opt = abap_true.
@@ -2660,7 +2677,7 @@ CLASS lcl_appl IMPLEMENTATION.
       IF l_answer = '1'.
         LEAVE PROGRAM.
       ELSE.
-        CALL SCREEN 101.
+        CALL screen 101.
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -2809,28 +2826,70 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 ENDCLASS.
 
 *------------REPORT EVENTS--------------------
-
-PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view.
-
+TABLES sscrfields.
+DATA: g_mode TYPE i VALUE 1.
+selection-screen begin of screen 101.
+SELECTION-SCREEN: FUNCTION KEY 1.
+SELECTION-SCREEN: FUNCTION KEY 2.
+PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
+PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
+selection-screen end of screen 101.
 INITIALIZATION.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
+  sscrfields-functxt_01 = 'Tables'.
+  sscrfields-functxt_02 = 'Views'.
+  call screen 101.
 
 AT SELECTION-SCREEN OUTPUT.
   %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
+  %_gv_vname_%_app_%-text = 'Enter view name and hit Enter'.
   lcl_appl=>suppress_run_button( ).
+
+  LOOP AT SCREEN.
+    IF screen-group1 = 'TAB'.
+      IF g_mode = 1.
+        screen-invisible = '0'.
+      ELSE.
+        screen-invisible = '1'.
+      ENDIF.
+    ENDIF.
+    IF screen-group1 = 'VIE'.
+      IF g_mode = 2.
+        screen-invisible = '0'.
+      ELSE.
+        screen-invisible = '1'.
+      ENDIF.
+    ENDIF.
+    MODIFY SCREEN.
+  ENDLOOP.
 
 AT SELECTION-SCREEN ON EXIT-COMMAND.
   lcl_appl=>exit( ).
 
 AT SELECTION-SCREEN .
+  CASE sy-ucomm.
+    WHEN 'FC01'.
+      g_mode = 1.
+    WHEN 'FC02'.
+      g_mode = 2.
+  ENDCASE.
   CHECK sy-ucomm IS INITIAL.
-  CONDENSE gv_tname.
-  CHECK lcl_sql=>exist_table( gv_tname ) = 1.
-  APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-  CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
 
+  IF g_mode = 1.
+    CONDENSE gv_tname.
+    CHECK lcl_sql=>exist_table( gv_tname ) = 1.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
+  ENDIF.
+
+  IF g_mode = 2.
+    CONDENSE gv_vname.
+    "CHECK lcl_sql=>exist_table( gv_tname ) = 1.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
+  ENDIF.
 FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
                    callcontrol LIKE ddshf4ctrl.
