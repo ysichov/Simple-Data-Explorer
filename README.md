@@ -1,7 +1,7 @@
 # SDE
 Simple Data Explorer
 
- Multi-windows program for viewing tables and links between them
+ Multi-windows program for viewing SQL tables and links between them
 
 Basic capabilities: 
 - multiple windows;
@@ -10,6 +10,7 @@ Basic capabilities:
 - linking tables;
 - links by keys;
 - hr plugins.
++ views from SM30 added
 
 https://github.com/ysichov/SDE/wiki  - detailed description in English
 
