@@ -847,45 +847,45 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-    DATA: lr_pskey  TYPE REF TO data,
-          lr_text   TYPE REF TO data,
-
-          lo_handle TYPE REF TO cl_abap_complexdescr.
-
-    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
-                   <pskey>    TYPE any.
-    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'HRPAD_TEXT_TAB' ).
-    CREATE DATA lr_text TYPE HANDLE lo_handle.
-    ASSIGN lr_text->* TO <text_tab>.
-
-    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'PSKEY' ).
-    CREATE DATA lr_pskey TYPE HANDLE lo_handle.
-    ASSIGN lr_pskey->* TO <pskey>.
-
-
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-    MOVE-CORRESPONDING <row> TO <pskey>.
-    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
-    <field> = io_viewer->m_tabname+2(4).
-
-    TRY.
-        CALL METHOD cl_hrpa_text_cluster=>read
-          EXPORTING
-            tclas         = 'A'
-            pskey         = <pskey>
-            no_auth_check = abap_true
-          IMPORTING
-            text_tab      = <text_tab>.
-      CATCH cx_hrpa_missing_authorization .
-      CATCH cx_hrpa_violated_assertion .
-    ENDTRY.
-
-    mo_text->set_text_as_r3table( <text_tab> ).
-    CALL METHOD cl_gui_cfw=>flush.
-    mo_text->set_focus( mo_box ).
+*    DATA: lr_pskey  TYPE REF TO data,
+*          lr_text   TYPE REF TO data,
+*
+*          lo_handle TYPE REF TO cl_abap_complexdescr.
+*
+*    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+*                   <pskey>    TYPE any.
+*    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'HRPAD_TEXT_TAB' ).
+*    CREATE DATA lr_text TYPE HANDLE lo_handle.
+*    ASSIGN lr_text->* TO <text_tab>.
+*
+*    lo_handle ?= cl_abap_tabledescr=>describe_by_name( 'PSKEY' ).
+*    CREATE DATA lr_pskey TYPE HANDLE lo_handle.
+*    ASSIGN lr_pskey->* TO <pskey>.
+*
+*
+*    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+*    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+*    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
+*    MOVE-CORRESPONDING <row> TO <pskey>.
+*    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+*    <field> = io_viewer->m_tabname+2(4).
+*
+*    TRY.
+*        CALL METHOD cl_hrpa_text_cluster=>read
+*          EXPORTING
+*            tclas         = 'A'
+*            pskey         = <pskey>
+*            no_auth_check = abap_true
+*          IMPORTING
+*            text_tab      = <text_tab>.
+*      CATCH cx_hrpa_missing_authorization .
+*      CATCH cx_hrpa_violated_assertion .
+*    ENDTRY.
+*
+*    mo_text->set_text_as_r3table( <text_tab> ).
+*    CALL METHOD cl_gui_cfw=>flush.
+*    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
