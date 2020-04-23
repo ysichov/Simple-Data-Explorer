@@ -2898,7 +2898,7 @@ AT SELECTION-SCREEN .
 
   IF g_mode = 2.
     CONDENSE gv_vname.
-    CHECK lcl_sql=>exist_view( gv_tname ) = 1.
+    CHECK lcl_sql=>exist_view( gv_vname ) = 1.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
   ENDIF.
