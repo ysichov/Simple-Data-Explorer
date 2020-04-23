@@ -198,7 +198,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_view.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND tabclass = 'VIEW' .
+       AND tabclass = 'VIEW'.
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
@@ -2685,7 +2685,7 @@ CLASS lcl_appl IMPLEMENTATION.
       IF l_answer = '1'.
         LEAVE PROGRAM.
       ELSE.
-        CALL screen 101.
+        "CALL screen 101.
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -2836,23 +2836,29 @@ ENDCLASS.
 *------------REPORT EVENTS--------------------
 TABLES sscrfields.
 DATA: g_mode TYPE i VALUE 1.
-selection-screen begin of screen 101.
-SELECTION-SCREEN: FUNCTION KEY 1.
-SELECTION-SCREEN: FUNCTION KEY 2.
+"selection-screen begin of screen 101.
+SELECTION-SCREEN: FUNCTION KEY 1."Tables
+SELECTION-SCREEN: FUNCTION KEY 2."Views
+SELECTION-SCREEN: FUNCTION KEY 3."CDS
+
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
 PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
-selection-screen end of screen 101.
+PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT SADL_GW_CDS_VIEW MODIF ID cds.
+"selection-screen end of screen 101.
+
 INITIALIZATION.
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
   sscrfields-functxt_01 = 'Tables'.
   sscrfields-functxt_02 = 'Views'.
-  call screen 101.
+  sscrfields-functxt_03 = 'CDS'.
+  " call screen 101.
 
 AT SELECTION-SCREEN OUTPUT.
-  %_gv_tname_%_app_%-text = 'Enter table name and hit Enter'.
-  %_gv_vname_%_app_%-text = 'Enter view name and hit Enter'.
+  %_gv_tname_%_app_%-text = 'Enter Table name and hit Enter'.
+  %_gv_vname_%_app_%-text = 'Enter View name and hit Enter'.
+  %_gv_cds_%_app_%-text = 'Enter CDS name and hit Enter'.
   lcl_appl=>suppress_run_button( ).
 
   LOOP AT SCREEN.
@@ -2865,8 +2871,19 @@ AT SELECTION-SCREEN OUTPUT.
         screen-invisible = '1'.
       ENDIF.
     ENDIF.
+
     IF screen-group1 = 'VIE'.
       IF g_mode = 2.
+        screen-active = '1'.
+        screen-invisible = '0'.
+      ELSE.
+        screen-active = '0'.
+        screen-invisible = '1'.
+      ENDIF.
+    ENDIF.
+
+    IF screen-group1 = 'CDS'.
+      IF g_mode = 3.
         screen-active = '1'.
         screen-invisible = '0'.
       ELSE.
@@ -2886,6 +2903,9 @@ AT SELECTION-SCREEN .
       g_mode = 1.
     WHEN 'FC02'.
       g_mode = 2.
+    WHEN 'FC03'.
+      g_mode = 3.
+
   ENDCASE.
   CHECK sy-ucomm IS INITIAL.
 
@@ -2902,6 +2922,14 @@ AT SELECTION-SCREEN .
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
   ENDIF.
+
+ IF g_mode = 3.
+    CONDENSE gv_tname.
+    "CHECK lcl_sql=>exist_table( gv_tname ) = 1.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds.
+  ENDIF.
+
 FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
                    callcontrol LIKE ddshf4ctrl.
