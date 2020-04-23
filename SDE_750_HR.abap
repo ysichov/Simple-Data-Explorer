@@ -191,7 +191,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
+       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' OR tabclass = 'VIEW').
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 
@@ -471,6 +471,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
     DATA: m_lang             TYPE ddlanguage,
           m_is_sql           TYPE xfeld,
           m_is_view          TYPE xfeld,
+          m_is_cds           TYPE xfeld,
           m_tabname          TYPE tabname,
           m_texttabname      TYPE tabname,
           m_count            TYPE i,
@@ -492,7 +493,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
       constructor IMPORTING i_tname           TYPE any OPTIONAL
                             ir_tab            TYPE REF TO data OPTIONAL
                             i_additional_name TYPE string OPTIONAL
-                            i_is_view         TYPE xfeld OPTIONAL,
+                            i_is_view         TYPE xfeld OPTIONAL
+                            i_is_cds          TYPE xfeld OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -1384,6 +1386,10 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       m_is_view = 'X'.
     ENDIF.
 
+    IF i_is_cds = abap_true.
+      m_is_cds = 'X'.
+    ENDIF.
+
     lcl_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
     IF m_texttabname IS NOT INITIAL.
       get_field_info( m_texttabname ).
@@ -1446,17 +1452,18 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mt_alv_catalog = create_field_cat( m_tabname ).
     ASSIGN mr_table->* TO <f_tab>.
     IF m_tabname IS NOT INITIAL.
-      IF m_is_view IS INITIAL.
-        read_text_table( ).
-        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
-                             CHANGING cr_tab =  mr_table c_count = m_count ).
-        update_texts( ).
-      ELSE.
+      IF m_is_view  = abap_true.
         CALL FUNCTION 'VIEW_GET_DATA'
           EXPORTING
             view_name = m_tabname
           TABLES
             data      = <f_tab>.
+      ELSE.
+        read_text_table( ).
+        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+                             CHANGING cr_tab =  mr_table c_count = m_count ).
+        update_texts( ).
+
       ENDIF.
     ENDIF.
     set_header( ).
@@ -2843,7 +2850,7 @@ SELECTION-SCREEN: FUNCTION KEY 3."CDS
 
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
 PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
-PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT SADL_GW_CDS_VIEW MODIF ID cds.
+PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT sadl_gw_cds_view MODIF ID cds.
 "selection-screen end of screen 101.
 
 INITIALIZATION.
@@ -2923,11 +2930,11 @@ AT SELECTION-SCREEN .
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
   ENDIF.
 
- IF g_mode = 3.
+  IF g_mode = 3.
     CONDENSE gv_tname.
     "CHECK lcl_sql=>exist_table( gv_tname ) = 1.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
-    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds.
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds i_is_cds = abap_true.
   ENDIF.
 
 FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
