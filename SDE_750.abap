@@ -160,7 +160,8 @@ CLASS lcl_sql DEFINITION.
                                i_row_count TYPE i OPTIONAL
                      CHANGING  cr_tab      TYPE REF TO data
                                c_count     TYPE i,
-      exist_table IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc.
+      exist_table IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc,
+      exist_view IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc.
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
@@ -191,6 +192,13 @@ CLASS lcl_sql IMPLEMENTATION.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
        AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
+    e_subrc = sy-dbcnt.
+  ENDMETHOD.
+
+  METHOD exist_view.
+    SELECT COUNT( * ) FROM dd02l
+     WHERE tabname = i_tab
+       AND tabclass = 'VIEW' .
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
@@ -2850,15 +2858,19 @@ AT SELECTION-SCREEN OUTPUT.
   LOOP AT SCREEN.
     IF screen-group1 = 'TAB'.
       IF g_mode = 1.
+        screen-active = '1'.
         screen-invisible = '0'.
       ELSE.
+        screen-active = '0'.
         screen-invisible = '1'.
       ENDIF.
     ENDIF.
     IF screen-group1 = 'VIE'.
       IF g_mode = 2.
+        screen-active = '1'.
         screen-invisible = '0'.
       ELSE.
+        screen-active = '0'.
         screen-invisible = '1'.
       ENDIF.
     ENDIF.
@@ -2886,7 +2898,7 @@ AT SELECTION-SCREEN .
 
   IF g_mode = 2.
     CONDENSE gv_vname.
-    "CHECK lcl_sql=>exist_table( gv_tname ) = 1.
+    CHECK lcl_sql=>exist_view( gv_tname ) = 1.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
   ENDIF.
