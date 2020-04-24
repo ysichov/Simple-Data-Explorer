@@ -161,7 +161,8 @@ CLASS lcl_sql DEFINITION.
                      CHANGING  cr_tab      TYPE REF TO data
                                c_count     TYPE i,
       exist_table IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc,
-      exist_view IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc.
+      exist_view  IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc,
+      exist_cds   IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc  .
 ENDCLASS.
 
 CLASS lcl_sql IMPLEMENTATION.
@@ -199,6 +200,14 @@ CLASS lcl_sql IMPLEMENTATION.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
        AND tabclass = 'VIEW'.
+    e_subrc = sy-dbcnt.
+  ENDMETHOD.
+
+  METHOD exist_cds.
+    SELECT COUNT( * ) FROM dd02l
+     WHERE tabname = i_tab
+       AND tabclass = 'VIEW'
+       AND applclass = 'SDGV'.
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 ENDCLASS.
@@ -2850,7 +2859,7 @@ SELECTION-SCREEN: FUNCTION KEY 3."CDS
 
 PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
 PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
-PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT sadl_gw_cds_view MODIF ID cds.
+PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
 "selection-screen end of screen 101.
 
 INITIALIZATION.
@@ -2904,6 +2913,10 @@ AT SELECTION-SCREEN OUTPUT.
 AT SELECTION-SCREEN ON EXIT-COMMAND.
   lcl_appl=>exit( ).
 
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_cds.
+ PERFORM search_cds.
+
 AT SELECTION-SCREEN .
   CASE sy-ucomm.
     WHEN 'FC01'.
@@ -2912,8 +2925,8 @@ AT SELECTION-SCREEN .
       g_mode = 2.
     WHEN 'FC03'.
       g_mode = 3.
-
   ENDCASE.
+
   CHECK sy-ucomm IS INITIAL.
 
   IF g_mode = 1.
@@ -2931,11 +2944,61 @@ AT SELECTION-SCREEN .
   ENDIF.
 
   IF g_mode = 3.
-    CONDENSE gv_tname.
-    "CHECK lcl_sql=>exist_table( gv_tname ) = 1.
+    CONDENSE gv_cds.
+    "CHECK lcl_sql=>exist_cds( gv_cds ) = 1.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds i_is_cds = abap_true.
   ENDIF.
+
+FORM search_cds.
+  TYPES: BEGIN OF t_cds,
+           tabname TYPE tabname,
+         END OF t_cds.
+
+  DATA: lt_cds   TYPE TABLE OF t_cds,
+        l_search TYPE string,
+        lt_dynpfields TYPE TABLE OF dynpread.
+
+CALL FUNCTION 'DYNP_VALUES_READ'
+    EXPORTING
+      dyname               = sy-repid
+      dynumb               = sy-dynnr
+      request              = 'A'
+    TABLES
+      dynpfields           = lt_dynpfields
+    EXCEPTIONS
+      invalid_abapworkarea = 1
+      invalid_dynprofield  = 2
+      invalid_dynproname   = 3
+      invalid_dynpronummer = 4
+      invalid_request      = 5
+      no_fielddescription  = 6
+      invalid_parameter    = 7
+      undefind_error       = 8
+      double_conversion    = 9
+      stepl_not_found      = 10
+      OTHERS               = 11.
+
+  l_search = lt_dynpfields[ fieldname = 'GV_CDS' ]-fieldvalue && '%'.
+
+  SELECT tabname INTO CORRESPONDING FIELDS OF TABLE lt_cds
+    FROM dd02l
+    UP TO 500 ROWS
+    WHERE tabclass = 'VIEW'
+      AND applclass = 'SDGV'
+      AND tabname LIKE l_search.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield    = 'TABNAME'
+      dynpprog    = sy-repid
+      dynpnr      = sy-dynnr
+      dynprofield = 'GV_CDS'
+      value_org   = 'S'
+    TABLES
+      value_tab   = lt_cds.
+
+ENDFORM.
 
 FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
