@@ -1,13 +1,13 @@
 *&---------------------------------------------------------------------*
 *& Report YS_SDE - Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.7.244.194
+*& version: beta 0.7.250.198
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
 *& AbapGit         https://github.com/ysichov/SDE_abapgit
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
 *& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
 
-*& Multi-windows program for viewing tables and links between them
+*& Multi-windows program for viewing tables, views, salary clusters, CDS and some links between them
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
@@ -33,8 +33,8 @@ CLASS lcl_types DEFINITION ABSTRACT.
         sign        TYPE tvarv_sign,
         opti        TYPE tvarv_opti,
         option_icon TYPE aqadh_type_of_icon,
-        low         TYPE string, "aqadh_range_value,
-        high        TYPE string, "aqadh_range_value,
+        low         TYPE string,
+        high        TYPE string,
         more_icon   TYPE aqadh_type_of_icon,
         range       TYPE aqadh_t_ranges,
         name        TYPE reptext,
@@ -2945,7 +2945,7 @@ AT SELECTION-SCREEN .
 
   IF g_mode = 3.
     CONDENSE gv_cds.
-    "CHECK lcl_sql=>exist_cds( gv_cds ) = 1.
+    CHECK lcl_sql=>exist_cds( gv_cds ) = 1.
     APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds i_is_cds = abap_true.
   ENDIF.
