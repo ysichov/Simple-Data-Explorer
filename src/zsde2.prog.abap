@@ -2,17 +2,18 @@
 *& Simple Data Explorer
 *&---------------------------------------------------------------------*
 *& version: beta 0.7.252.202
-*& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
-*& AbapGit         https://github.com/ysichov/SDE_abapgit
-*& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
-*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
-
 *& Multi-windows program for viewing tables, views, salary clusters, CDS and some links between them
+*& AbapGit         https://github.com/ysichov/SDE
+*& one file        https://github.com/ysichov/SDE/blob/master/SDE_750.abap
+*&---------------------------------------------------------------------*
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
 *& blog:     https://ysychov.wordpress.com/blog/
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
+*&---------------------------------------------------------------------*
+*& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
+*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
 *&---------------------------------------------------------------------*
 *& External resources
 *& https://github.com/bizhuka/eui - ALV listboxes
