@@ -956,10 +956,10 @@ CLASS lcl_rtti IMPLEMENTATION.
 
   METHOD create_type_descr. "copied from https://github.com/bizhuka/eui
     DATA:
-      lo_line       TYPE REF TO cl_abap_datadescr,
-      lo_type       TYPE REF TO cl_abap_typedescr,
-      lv_sys_type    TYPE abap_typekind,
-      lv_message    TYPE string.
+      lo_line     TYPE REF TO cl_abap_datadescr,
+      lo_type     TYPE REF TO cl_abap_typedescr,
+      lv_sys_type TYPE abap_typekind,
+      lv_message  TYPE string.
 
     " No type
     CLEAR ro_type.
@@ -1566,37 +1566,37 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-*    DATA: lr_pskey TYPE REF TO data,
-*          lr_text  TYPE REF TO data.
-*
-*    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
-*                   <pskey>    TYPE any.
-*    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
-*    ASSIGN lr_text->* TO <text_tab>.
-*
+    DATA: lr_pskey TYPE REF TO data,
+          lr_text  TYPE REF TO data.
+
+    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+                   <pskey>    TYPE any.
+*   CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
+*   ASSIGN lr_text->* TO <text_tab>.
+
 *    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
 *    ASSIGN lr_pskey->* TO <pskey>.
-*
+
 *    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-*    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
-*    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-*    MOVE-CORRESPONDING <row> TO <pskey>.
-*    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
-*    <field> = io_viewer->m_tabname+2(4).
-*
-*    TRY.
-*        CALL METHOD cl_hrpa_text_cluster=>read
+*   DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+*   ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+*   READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
+*   MOVE-CORRESPONDING <row> TO <pskey>.
+*   ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+*   <field> = io_viewer->m_tabname+2(4).
+
+*   TRY.
+*       CALL METHOD cl_hrpa_text_cluster=>read
 *          EXPORTING
-*            tclas         = 'A'
-*            pskey         = <pskey>
-*            no_auth_check = abap_true
-*          IMPORTING
-*            text_tab      = <text_tab>.
-*      CATCH cx_hrpa_missing_authorization .
+*           tclas         = 'A'
+*           pskey         = <pskey>
+*           no_auth_check = abap_true
+*         IMPORTING
+*           text_tab      = <text_tab>.
+*     CATCH cx_hrpa_missing_authorization .
 *      CATCH cx_hrpa_violated_assertion .
-*    ENDTRY.
-*
+*   ENDTRY.
+
 *    mo_text->set_text_as_r3table( <text_tab> ).
 *    CALL METHOD cl_gui_cfw=>flush.
 *    mo_text->set_focus( mo_box ).
@@ -1676,6 +1676,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
       ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
       ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'HRP1035'    field = 'TABNR' rtab = 'HRT1035'  rfield = 'TABNR' )
       ( tab = 'HRP1222'    field = 'TABNR' rtab = 'HRT1222'  rfield = 'TABNR' )
       ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
@@ -2518,7 +2519,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         lcl_plugins=>run_pp01( me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
-      CHECK get_where( ) IS NOT INITIAL.
+      "CHECK get_where( ) IS NOT INITIAL.
       mo_sel->raise_selection_done( ).
       IF lcl_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
@@ -2993,13 +2994,14 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       IF c_sel_row-opti NE 'BT' AND c_sel_row-opti NE 'NB' .
         CLEAR c_sel_row-high.
       ENDIF.
-      IF c_sel_row-int_type = 'D'.
+      IF c_sel_row-int_type = 'D' OR c_sel_row-int_type = 'T' .
         DO 2 TIMES.
           ASSIGN COMPONENT  COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO FIELD-SYMBOL(<field>).
           IF <field> IS INITIAL.
             CONTINUE.
           ENDIF.
 
+          IF c_sel_row-int_type = 'D'.
           CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL' ##FM_SUBRC_OK
             EXPORTING
               date_external            = <field>
@@ -3008,6 +3010,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             EXCEPTIONS
               date_external_is_invalid = 1
               OTHERS                   = 2.
+          ELSE.
+        REPLACE ALL OCCURRENCES OF ':' IN <field> WITH ''.
+        ENDIF.
         ENDDO.
       ENDIF.
     ENDIF.
@@ -3571,6 +3576,8 @@ PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
 "selection-screen end of screen 101.
 
 INITIALIZATION.
+
+
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
