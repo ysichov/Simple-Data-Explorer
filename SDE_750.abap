@@ -1571,35 +1571,35 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 
     FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
                    <pskey>    TYPE any.
-    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
-    ASSIGN lr_text->* TO <text_tab>.
+*    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
+*    ASSIGN lr_text->* TO <text_tab>.
 
-    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
-    ASSIGN lr_pskey->* TO <pskey>.
+*    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
+*    ASSIGN lr_pskey->* TO <pskey>.
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
-    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-    MOVE-CORRESPONDING <row> TO <pskey>.
-    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
-    <field> = io_viewer->m_tabname+2(4).
+*    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+*    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+*    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
+*    MOVE-CORRESPONDING <row> TO <pskey>.
+*    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+*    <field> = io_viewer->m_tabname+2(4).
 
-    TRY.
-        CALL METHOD cl_hrpa_text_cluster=>read
-          EXPORTING
-            tclas         = 'A'
-            pskey         = <pskey>
-            no_auth_check = abap_true
-          IMPORTING
-            text_tab      = <text_tab>.
-      CATCH cx_hrpa_missing_authorization .
-      CATCH cx_hrpa_violated_assertion .
-    ENDTRY.
+*    TRY.
+*        CALL METHOD cl_hrpa_text_cluster=>read
+*          EXPORTING
+*            tclas         = 'A'
+*            pskey         = <pskey>
+*            no_auth_check = abap_true
+*          IMPORTING
+*            text_tab      = <text_tab>.
+*      CATCH cx_hrpa_missing_authorization .
+*      CATCH cx_hrpa_violated_assertion .
+*    ENDTRY.
 
-    mo_text->set_text_as_r3table( <text_tab> ).
-    CALL METHOD cl_gui_cfw=>flush.
-    mo_text->set_focus( mo_box ).
+*    mo_text->set_text_as_r3table( <text_tab> ).
+*    CALL METHOD cl_gui_cfw=>flush.
+*    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
