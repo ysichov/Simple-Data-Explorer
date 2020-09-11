@@ -1,7 +1,4 @@
-# SDE
-Simple Data Explorer
-
- Multi-windows program for viewing SQL tables and links between them
+Multi-windows program for viewing SQL tables and links between them
 
 Basic capabilities: 
 - multiple windows;
