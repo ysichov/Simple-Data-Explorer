@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
 *& Simple Data Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.7.252.202
+*& version: beta 0.7.207.260
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
 *& AbapGit         https://github.com/ysichov/SDE_abapgit
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
