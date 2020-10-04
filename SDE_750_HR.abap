@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Simple Data Explorer
+*& Simple SQL Explorer
 *&---------------------------------------------------------------------*
 *& version: beta 0.7.252.202
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
@@ -177,7 +177,8 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY
+           .
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
         CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
@@ -195,7 +196,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' OR tabclass = 'VIEW').
+       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 
