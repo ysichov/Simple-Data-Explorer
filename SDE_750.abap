@@ -1,7 +1,7 @@
 *&---------------------------------------------------------------------*
-*& Simple Data Explorer
+*& Simple SQL Explorer
 *&---------------------------------------------------------------------*
-*& version: beta 0.7.207.260
+*& version: beta 0.7.252.202
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
 *& AbapGit         https://github.com/ysichov/SDE_abapgit
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
@@ -177,7 +177,8 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY
+           .
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
         CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
@@ -195,7 +196,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' OR tabclass = 'VIEW').
+       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 
@@ -1566,40 +1567,40 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-    DATA: lr_pskey TYPE REF TO data,
-          lr_text  TYPE REF TO data.
+"    DATA: lr_pskey TYPE REF TO data,
+"          lr_text  TYPE REF TO data.
 
-    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
-                   <pskey>    TYPE any.
-*    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
-*    ASSIGN lr_text->* TO <text_tab>.
+"    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+"                  <pskey>    TYPE any.
+"    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
+"    ASSIGN lr_text->* TO <text_tab>.
 
-*    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
-*    ASSIGN lr_pskey->* TO <pskey>.
+"    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
+"    ASSIGN lr_pskey->* TO <pskey>.
 
-*    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-*    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
-*    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-*    MOVE-CORRESPONDING <row> TO <pskey>.
-*    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
-*    <field> = io_viewer->m_tabname+2(4).
+"    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+"    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+"    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+"    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
+"    MOVE-CORRESPONDING <row> TO <pskey>.
+"    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+"    <field> = io_viewer->m_tabname+2(4).
 
-*    TRY.
-*        CALL METHOD cl_hrpa_text_cluster=>read
-*          EXPORTING
-*            tclas         = 'A'
-*            pskey         = <pskey>
-*            no_auth_check = abap_true
-*          IMPORTING
-*            text_tab      = <text_tab>.
-*      CATCH cx_hrpa_missing_authorization .
-*      CATCH cx_hrpa_violated_assertion .
-*    ENDTRY.
+"    TRY.
+"        CALL METHOD cl_hrpa_text_cluster=>read
+"          EXPORTING
+"            tclas         = 'A'
+"            pskey         = <pskey>
+"            no_auth_check = abap_true
+"          IMPORTING
+"            text_tab      = <text_tab>.
+"      CATCH cx_hrpa_missing_authorization .
+"      CATCH cx_hrpa_violated_assertion .
+"    ENDTRY.
 
-*    mo_text->set_text_as_r3table( <text_tab> ).
-*    CALL METHOD cl_gui_cfw=>flush.
-*    mo_text->set_focus( mo_box ).
+"    mo_text->set_text_as_r3table( <text_tab> ).
+"    CALL METHOD cl_gui_cfw=>flush.
+"    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
@@ -3744,3 +3745,4 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
     ENDIF.
   ENDLOOP.
 ENDFORM.
+
