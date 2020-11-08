@@ -14,6 +14,9 @@
     <item>/.gitlab-ci.yml</item>
     <item>/abaplint.json</item>
     <item>/azure-pipelines.yml</item>
+    <item>/SDE_702.abap</item>
+    <item>/SDE_750.abap</item>
+    <item>/SDE_750_HR.abap</item>
    </IGNORE>
   </DATA>
  </asx:values>
