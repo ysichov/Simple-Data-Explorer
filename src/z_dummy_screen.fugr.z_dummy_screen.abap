@@ -18,6 +18,4 @@ FUNCTION z_dummy_screen.
     CALL SCREEN 333.
   ENDIF.
 
-
-
 ENDFUNCTION.

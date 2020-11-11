@@ -14,6 +14,6 @@
 * INCLUDE LZ_DUMMY_SCREENP...                " Local class implement.
 * INCLUDE LZ_DUMMY_SCREENT99.                " ABAP Unit tests
 
-INCLUDE lz_dummy_screeni01.
+*INCLUDE lz_dummy_screeni01.
 
-INCLUDE lz_dummy_screeno01.
+*INCLUDE lz_dummy_screeno01.

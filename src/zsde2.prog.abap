@@ -1,19 +1,18 @@
 *&---------------------------------------------------------------------*
-*& Simple Data Explorer
+*& Simple SQL Explorer
 *&---------------------------------------------------------------------*
 *& version: beta 0.7.252.202
+*& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
+*& AbapGit         https://github.com/ysichov/SDE_abapgit
+*& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
+*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
+
 *& Multi-windows program for viewing tables, views, salary clusters, CDS and some links between them
-*& AbapGit         https://github.com/ysichov/SDE
-*& one file        https://github.com/ysichov/SDE/blob/master/SDE_750.abap
-*&---------------------------------------------------------------------*
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
 *& skype:    ysichov
 *& blog:     https://ysychov.wordpress.com/blog/
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
-*&---------------------------------------------------------------------*
-*& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
-*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
 *&---------------------------------------------------------------------*
 *& External resources
 *& https://github.com/bizhuka/eui - ALV listboxes
@@ -178,7 +177,8 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY.
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY
+           .
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
         CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
@@ -196,7 +196,7 @@ CLASS lcl_sql IMPLEMENTATION.
   METHOD exist_table.
     SELECT COUNT( * ) FROM dd02l
      WHERE tabname = i_tab
-       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' OR tabclass = 'VIEW').
+       AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
     e_subrc = sy-dbcnt.
   ENDMETHOD.
 
@@ -628,8 +628,10 @@ CLASS lcl_rtti IMPLEMENTATION.
 
           " Integer, byte, short
         WHEN cl_abap_typedescr=>typekind_int OR cl_abap_typedescr=>typekind_int1  OR cl_abap_typedescr=>typekind_int2.
-          REPLACE ALL OCCURRENCES OF '.' IN ls_shlp_return->fieldval WITH ''.
-          <lv_value> = ls_shlp_return->fieldval.
+          RETURN.
+*          REPLACE ALL OCCURRENCES OF '.' IN ls_shlp_return->fieldval WITH ''.
+*          CONDENSE ls_shlp_return->fieldval NO-GAPS.
+*          <lv_value> = ls_shlp_return->fieldval.
 
         WHEN OTHERS.
           <lv_value> = ls_shlp_return->fieldval.
@@ -957,10 +959,10 @@ CLASS lcl_rtti IMPLEMENTATION.
 
   METHOD create_type_descr. "copied from https://github.com/bizhuka/eui
     DATA:
-      lo_line       TYPE REF TO cl_abap_datadescr,
-      lo_type       TYPE REF TO cl_abap_typedescr,
-      lv_sys_type    TYPE abap_typekind,
-      lv_message    TYPE string.
+      lo_line     TYPE REF TO cl_abap_datadescr,
+      lo_type     TYPE REF TO cl_abap_typedescr,
+      lv_sys_type TYPE abap_typekind,
+      lv_message  TYPE string.
 
     " No type
     CLEAR ro_type.
@@ -1677,6 +1679,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       ( tab = 'HRP1001'    field = 'SCLAS' rfield = 'OTYPE' )
       ( tab = 'HRP1001'    field = 'SOBID' rfield = 'OBJID' )
       ( tab = 'HRP1002'    field = 'TABNR' rtab = 'HRT1002'  rfield = 'TABNR' )
+      ( tab = 'HRP1035'    field = 'TABNR' rtab = 'HRT1035'  rfield = 'TABNR' )
       ( tab = 'HRP1222'    field = 'TABNR' rtab = 'HRT1222'  rfield = 'TABNR' )
       ( tab = 'PA2006'     field = 'QUONR' rtab = 'PTQUODED' rfield = 'QUONR' )
       ( tab = 'PTQUODED'   field = 'QUONR' rtab = 'PA2006'   rfield = 'QUONR' )
@@ -2519,7 +2522,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         lcl_plugins=>run_pp01( me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
-      CHECK get_where( ) IS NOT INITIAL.
+      "CHECK get_where( ) IS NOT INITIAL.
       mo_sel->raise_selection_done( ).
       IF lcl_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
@@ -2876,6 +2879,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
               lv_drop     TYPE i.
         l_catalog-ref_table = mo_viewer->m_tabname.
         l_catalog-ref_field = l_catalog-fieldname.
+
         lcl_rtti=>find_drop_down(
          EXPORTING
           io_grid      = mo_sel_alv
@@ -2994,21 +2998,25 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       IF c_sel_row-opti NE 'BT' AND c_sel_row-opti NE 'NB' .
         CLEAR c_sel_row-high.
       ENDIF.
-      IF c_sel_row-int_type = 'D'.
+      IF c_sel_row-int_type = 'D' OR c_sel_row-int_type = 'T' .
         DO 2 TIMES.
           ASSIGN COMPONENT  COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO FIELD-SYMBOL(<field>).
           IF <field> IS INITIAL.
             CONTINUE.
           ENDIF.
 
-          CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL' ##FM_SUBRC_OK
-            EXPORTING
-              date_external            = <field>
-            IMPORTING
-              date_internal            = <field>
-            EXCEPTIONS
-              date_external_is_invalid = 1
-              OTHERS                   = 2.
+          IF c_sel_row-int_type = 'D'.
+            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL' ##FM_SUBRC_OK
+              EXPORTING
+                date_external            = <field>
+              IMPORTING
+                date_internal            = <field>
+              EXCEPTIONS
+                date_external_is_invalid = 1
+                OTHERS                   = 2.
+          ELSE.
+            REPLACE ALL OCCURRENCES OF ':' IN <field> WITH ''.
+          ENDIF.
         ENDDO.
       ENDIF.
     ENDIF.
@@ -3572,6 +3580,8 @@ PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
 "selection-screen end of screen 101.
 
 INITIALIZATION.
+
+
   lcl_appl=>init_lang( ).
   lcl_appl=>init_icons_table( ).
   lcl_plugins=>init( ).
