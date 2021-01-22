@@ -1098,6 +1098,9 @@ CLASS lcl_appl DEFINITION.
       init_icons_table,
       init_lang,
       suppress_run_button,
+       open_int_table IMPORTING it_tab  TYPE ANY TABLE OPTIONAL
+                               it_ref  TYPE REF TO data OPTIONAL
+                               iv_name TYPE string,
       exit.
 ENDCLASS.
 
@@ -2475,11 +2478,26 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
+    DATA: lo_table_descr TYPE REF TO cl_tpda_script_tabledescr,
+          table_clone    TYPE REF TO data.
+
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
+
+      ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
+    IF sy-subrc = 0.
+      lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
+    ELSE.
+      TRY.
+          lo_table_descr ?= cl_tpda_script_data_descr=>factory( |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| ).
+          table_clone = lo_table_descr->elem_clone( ).
+          lcl_appl=>open_int_table( EXPORTING iv_name = |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| it_ref = table_clone ).
+        CATCH cx_sy_move_cast_error.
+      ENDTRY.
+    ENDIF.
   ENDMETHOD.
 
   METHOD before_user_command.
@@ -3400,6 +3418,20 @@ CLASS lcl_appl IMPLEMENTATION.
         p_status  = sy-pfkey
       TABLES
         p_exclude = itab.
+  ENDMETHOD.
+
+  METHOD open_int_table.
+
+    DATA r_tab TYPE REF TO data.
+    IF it_ref IS BOUND.
+      r_tab = it_ref.
+    ELSE.
+      GET REFERENCE OF it_tab INTO r_tab.
+    ENDIF.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    <obj>-alv_viewer = NEW #(  i_additional_name = iv_name ir_tab = r_tab ).
+    <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+
   ENDMETHOD.
 
   METHOD exit.
