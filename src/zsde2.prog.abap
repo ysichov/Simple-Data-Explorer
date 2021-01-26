@@ -2087,6 +2087,27 @@ ENDCLASS.               "lcl_box_handler
 CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD constructor.
+
+    DATA: ls_comp         TYPE abap_componentdescr,
+          lt_comp_notab   TYPE abap_component_tab,
+          lt_comp_tab2str TYPE abap_component_tab,
+          lt_comp_str     TYPE abap_component_tab,
+          lv_s            TYPE string,
+          lv_data         TYPE REF TO data.
+
+    DATA: l_notab   TYPE REF TO data,
+          l_tab2str TYPE REF TO data.
+
+    DATA: handle_notab   TYPE REF TO cl_abap_structdescr,
+          handle_tab2str TYPE REF TO cl_abap_structdescr,
+          lo_new_tab     TYPE REF TO cl_abap_tabledescr.
+
+    FIELD-SYMBOLS: <notab>   TYPE STANDARD TABLE,
+                   <tab2str> TYPE STANDARD TABLE,
+                   <any_tab> TYPE ANY TABLE,
+                   <temptab> TYPE ANY TABLE.
+
+
     super->constructor( i_additional_name = i_additional_name ).
     m_lang = sy-langu.
     mo_sel_width = 0.
@@ -2112,7 +2133,99 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         m_is_sql = abap_true.
       ENDIF.
     ELSE.
-      mr_table = ir_tab.
+
+      FIELD-SYMBOLS:<any> TYPE any.
+      ASSIGN ir_tab->* TO <any>.
+      DATA lo_tabl  TYPE REF TO cl_abap_tabledescr.
+      DATA lo_struc TYPE REF TO cl_abap_structdescr.
+      lo_tabl ?= cl_abap_typedescr=>describe_by_data( <any> ).
+      TRY.
+          lo_struc ?= lo_tabl->get_table_line_type( ).
+          ASSIGN ir_tab->* TO <any_tab>.
+          TRY.
+
+              LOOP AT lo_struc->components INTO DATA(comp) where type_kind ne 'l' and type_kind ne 'r'. "no ref
+
+                IF comp-type_kind NE 'h'.
+                  ls_comp-name = comp-name.
+                  ls_comp-type ?= lo_struc->get_component_type( comp-name ).
+                  APPEND ls_comp TO lt_comp_notab.
+                  APPEND ls_comp TO lt_comp_tab2str.
+                ELSE.
+                  ls_comp-name = comp-name.
+                  ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_s ).
+                  APPEND ls_comp TO lt_comp_tab2str.
+                  APPEND ls_comp TO lt_comp_str.
+
+                  ls_comp-name = comp-name && '_REF'.
+                  ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_data ).
+                  APPEND ls_comp TO lt_comp_tab2str.
+                ENDIF.
+              ENDLOOP.
+            CATCH cx_sy_move_cast_error.
+          ENDTRY.
+
+          TRY.
+              handle_notab  = cl_abap_structdescr=>create( lt_comp_notab ).
+              handle_tab2str  = cl_abap_structdescr=>create( lt_comp_tab2str ).
+
+              lo_new_tab = cl_abap_tabledescr=>create(
+                              p_line_type  = handle_notab
+                              p_table_kind = cl_abap_tabledescr=>tablekind_std
+                              p_unique     = abap_false ).
+
+              CREATE DATA l_notab TYPE HANDLE lo_new_tab.
+
+              lo_new_tab = cl_abap_tabledescr=>create(
+                              p_line_type  = handle_tab2str
+                              p_table_kind = cl_abap_tabledescr=>tablekind_std
+                              p_unique     = abap_false ).
+
+              CREATE DATA l_tab2str TYPE HANDLE lo_new_tab.
+
+              ASSIGN l_notab->* TO <notab>.
+              MOVE-CORRESPONDING <any_tab> TO <notab>.
+              ASSIGN l_tab2str->* TO <tab2str>.
+              MOVE-CORRESPONDING <notab> TO <tab2str>.
+
+              LOOP AT <any_tab> ASSIGNING FIELD-SYMBOL(<old_struc>).
+                READ TABLE <tab2str> ASSIGNING FIELD-SYMBOL(<new_struc>) INDEX sy-tabix.
+                LOOP AT lt_comp_str INTO ls_comp.
+                  ASSIGN COMPONENT ls_comp-name OF STRUCTURE <new_struc> TO FIELD-SYMBOL(<field>).
+                  ASSIGN COMPONENT ls_comp-name OF STRUCTURE <old_struc> TO <temptab>.
+                  <field> = | { icon_view_table } [{ lines( <temptab> ) }] |.
+                  ASSIGN COMPONENT ls_comp-name  OF STRUCTURE <old_struc> TO <field>.
+                  ASSIGN COMPONENT |{ ls_comp-name }_REF| OF STRUCTURE <new_struc> TO FIELD-SYMBOL(<ref>).
+                  GET REFERENCE OF <field> INTO <ref>.
+                ENDLOOP.
+              ENDLOOP.
+
+              GET REFERENCE OF <tab2str> INTO mr_table.
+            CATCH cx_root.
+              mr_table = ir_tab.
+          ENDTRY.
+        CATCH cx_sy_move_cast_error.  "no structure
+          ls_comp-name = 'FIELD'.
+          ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_s ).
+          APPEND ls_comp TO lt_comp_tab2str.
+
+          handle_tab2str  = cl_abap_structdescr=>create( lt_comp_tab2str ).
+          lo_new_tab = cl_abap_tabledescr=>create(
+                               p_line_type  = handle_tab2str
+                               p_table_kind = cl_abap_tabledescr=>tablekind_std
+                               p_unique     = abap_false ).
+
+          CREATE DATA l_tab2str TYPE HANDLE lo_new_tab.
+          ASSIGN l_tab2str->* TO <tab2str>.
+          ASSIGN ir_tab->* TO <any_tab>.
+
+          LOOP AT <any_tab> ASSIGNING <old_struc>.
+            APPEND INITIAL LINE TO <tab2str> ASSIGNING <new_struc>.
+            ASSIGN COMPONENT 'FIELD' OF STRUCTURE <new_struc> TO <field>.
+            <field> = <old_struc>.
+          ENDLOOP.
+          GET REFERENCE OF <tab2str> INTO mr_table.
+      ENDTRY.
     ENDIF.
     create_alv( ).
     create_sel_alv( ).
