@@ -2604,12 +2604,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     IF sy-subrc = 0.
       lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
     ELSE.
-      TRY.
-          lo_table_descr ?= cl_tpda_script_data_descr=>factory( |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| ).
-          table_clone = lo_table_descr->elem_clone( ).
-          lcl_appl=>open_int_table( EXPORTING iv_name = |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| it_ref = table_clone ).
-        CATCH cx_sy_move_cast_error.
-      ENDTRY.
+*      TRY.
+*          lo_table_descr ?= cl_tpda_script_data_descr=>factory( |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| ).
+*          table_clone = lo_table_descr->elem_clone( ).
+*          lcl_appl=>open_int_table( EXPORTING iv_name = |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| it_ref = table_clone ).
+*        CATCH cx_sy_move_cast_error.
+*      ENDTRY.
     ENDIF.
   ENDMETHOD.
 
