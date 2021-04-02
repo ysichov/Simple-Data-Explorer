@@ -28,28 +28,28 @@ CLASS lcl_types DEFINITION ABSTRACT.
   PUBLIC SECTION.
     TYPES:
       BEGIN OF selection_display_s,
-        ind         TYPE i,
-        field_label TYPE lvc_fname,
+        ind         TYPE        i,
+        field_label TYPE        lvc_fname,
         int_type(1),
-        inherited   TYPE aqadh_type_of_icon,
-        emitter     TYPE aqadh_type_of_icon,
-        sign        TYPE tvarv_sign,
-        opti        TYPE tvarv_opti,
-        option_icon TYPE aqadh_type_of_icon,
-        low         TYPE string,
-        high        TYPE string,
-        more_icon   TYPE aqadh_type_of_icon,
-        range       TYPE aqadh_t_ranges,
-        name        TYPE reptext,
-        element     TYPE text60,
-        domain      TYPE text60,
-        datatype    TYPE string,
-        length      TYPE i,
+        inherited   TYPE        aqadh_type_of_icon,
+        emitter     TYPE        aqadh_type_of_icon,
+        sign        TYPE        tvarv_sign,
+        opti        TYPE        tvarv_opti,
+        option_icon TYPE        aqadh_type_of_icon,
+        low         TYPE        string,
+        high        TYPE        string,
+        more_icon   TYPE        aqadh_type_of_icon,
+        range       TYPE        aqadh_t_ranges,
+        name        TYPE        reptext,
+        element     TYPE        text60,
+        domain      TYPE        text60,
+        datatype    TYPE        string,
+        length      TYPE        i,
         transmitter TYPE REF TO lcl_data_transmitter,
         receiver    TYPE REF TO lcl_data_receiver,
-        color       TYPE lvc_t_scol,
-        style       TYPE lvc_t_styl,
-        drop_down   TYPE int4,
+        color       TYPE        lvc_t_scol,
+        style       TYPE        lvc_t_styl,
+        drop_down   TYPE        int4,
       END OF selection_display_s,
       BEGIN OF t_sel_row,
         sign        TYPE tvarv_sign,
@@ -75,7 +75,7 @@ CLASS lcl_popup DEFINITION.
     DATA: mo_box            TYPE REF TO cl_gui_dialogbox_container,
           mo_splitter       TYPE REF TO cl_gui_splitter_container,
           mo_parent         TYPE REF TO cl_gui_container,
-          m_additional_name TYPE string.
+          m_additional_name TYPE        string.
 
     METHODS: constructor IMPORTING i_additional_name TYPE string OPTIONAL,
       create IMPORTING i_width       TYPE i
@@ -177,7 +177,7 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> up to 100 rows WHERE (i_where) ORDER BY PRIMARY KEY
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> UP TO 100 ROWS WHERE (i_where) ORDER BY PRIMARY KEY
            .
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
@@ -185,7 +185,7 @@ CLASS lcl_sql IMPLEMENTATION.
       ENDTRY.
     ELSE.
       IF i_row_count IS NOT SUPPLIED.
-        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> up to 100 rows ORDER BY PRIMARY KEY.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO 100 ROWS ORDER BY PRIMARY KEY.
       ELSE.
         SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO i_row_count ROWS ORDER BY PRIMARY KEY..
       ENDIF.
@@ -194,25 +194,45 @@ CLASS lcl_sql IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD exist_table.
-    SELECT COUNT( * ) FROM dd02l
+    DATA lv_tabname TYPE dd02l-tabname.
+    SELECT SINGLE tabname
+       FROM dd02l
+      INTO lv_tabname
      WHERE tabname = i_tab
        AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
-    e_subrc = sy-dbcnt.
+    IF sy-subrc = 0.
+      e_subrc = 1.
+    ENDIF.
   ENDMETHOD.
 
   METHOD exist_view.
-    SELECT COUNT( * ) FROM dd02l
+
+    DATA lv_tabname TYPE dd02l-tabname.
+    SELECT SINGLE tabname
+       FROM dd02l
+      INTO lv_tabname
      WHERE tabname = i_tab
        AND tabclass = 'VIEW'.
-    e_subrc = sy-dbcnt.
+    IF sy-subrc = 0.
+      e_subrc = 1.
+    ENDIF.
+
   ENDMETHOD.
 
   METHOD exist_cds.
-    SELECT COUNT( * ) FROM dd02l
+
+    DATA lv_tabname TYPE dd02l-tabname.
+    SELECT SINGLE tabname
+       FROM dd02l
+      INTO lv_tabname
      WHERE tabname = i_tab
        AND tabclass = 'VIEW'
        AND applclass = 'SDGV'.
-    e_subrc = sy-dbcnt.
+.
+    IF sy-subrc = 0.
+      e_subrc = 1.
+    ENDIF.
+
   ENDMETHOD.
 ENDCLASS.
 
@@ -226,9 +246,9 @@ CLASS lcl_alv_common DEFINITION.
 
 
     TYPES: BEGIN OF t_tabfields.
-             INCLUDE TYPE   dfies.
-             TYPES: empty   TYPE xfeld,
-             is_text TYPE xfeld,
+            INCLUDE TYPE   dfies.
+    TYPES: empty   TYPE xfeld,
+           is_text TYPE xfeld,
            END OF t_tabfields.
 
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
@@ -362,11 +382,11 @@ CLASS lcl_rtti DEFINITION.
           cv_label       TYPE csequence OPTIONAL,
 
       get_field_desc
-       IMPORTING
-        iv_field_name TYPE csequence OPTIONAL
-        iv_data TYPE any OPTIONAL
-        is_sh_field TYPE dfies OPTIONAL
-        ir_unique_type TYPE REF TO tt_unique_type OPTIONAL
+        IMPORTING
+                  iv_field_name        TYPE csequence OPTIONAL
+                  iv_data              TYPE any OPTIONAL
+                  is_sh_field          TYPE dfies OPTIONAL
+                  ir_unique_type       TYPE REF TO tt_unique_type OPTIONAL
         RETURNING VALUE(rs_field_desc) TYPE ts_field_desc,
 
       create_type_descr IMPORTING iv_rollname    TYPE csequence OPTIONAL
@@ -375,18 +395,18 @@ CLASS lcl_rtti DEFINITION.
                         RETURNING
                                   VALUE(ro_type) TYPE REF TO cl_abap_datadescr,
 
-      find_drop_down IMPORTING io_grid TYPE REF TO cl_gui_alv_grid
-                      CHANGING cs_fieldcat TYPE lvc_s_fcat cv_drdn_hndl TYPE i,
+      find_drop_down IMPORTING io_grid      TYPE REF TO cl_gui_alv_grid
+                     CHANGING  cs_fieldcat  TYPE lvc_s_fcat cv_drdn_hndl TYPE i,
 
-      is_list_box IMPORTING iv_tabname TYPE dfies-tabname iv_fieldname  TYPE dfies-fieldname
-                  EXPORTING ev_list_box	TYPE abap_bool es_sh_desc	TYPE shlp_descr.
+      is_list_box IMPORTING iv_tabname   TYPE dfies-tabname iv_fieldname  TYPE dfies-fieldname
+                  EXPORTING ev_list_box  TYPE abap_bool es_sh_desc  TYPE shlp_descr.
 ENDCLASS.
 
 CLASS lcl_rtti IMPLEMENTATION.
 
   METHOD create_struc_handle.
-    DATA: ls_comp       TYPE abap_componentdescr,
-          lt_components TYPE abap_component_tab,
+    DATA: ls_comp       TYPE          abap_componentdescr,
+          lt_components TYPE          abap_component_tab,
           lt_field_info TYPE TABLE OF dfies.
 
     lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = DATA(l_texttab) ).
@@ -469,31 +489,31 @@ CLASS lcl_rtti IMPLEMENTATION.
 
   METHOD find_drop_down. "copied from https://github.com/bizhuka/eui
     DATA:
-      ls_sh_desc        TYPE shlp_descr,
-      lv_list_box       TYPE abap_bool,
-      lt_fielddescr     TYPE ddfields,
-      ls_field          TYPE REF TO dfies,
-      lt_field_desc     TYPE tt_field_desc,
-      ls_field_desc     TYPE ts_field_desc,
-      lo_struc          TYPE REF TO cl_abap_structdescr,
-      lo_table          TYPE REF TO cl_abap_tabledescr,
-      lr_table          TYPE REF TO data,
+      ls_sh_desc        TYPE                   shlp_descr,
+      lv_list_box       TYPE                   abap_bool,
+      lt_fielddescr     TYPE                   ddfields,
+      ls_field          TYPE REF TO            dfies,
+      lt_field_desc     TYPE                   tt_field_desc,
+      ls_field_desc     TYPE                   ts_field_desc,
+      lo_struc          TYPE REF TO            cl_abap_structdescr,
+      lo_table          TYPE REF TO            cl_abap_tabledescr,
+      lr_table          TYPE REF TO            data,
       lt_shlp_return    TYPE STANDARD TABLE OF ddshretval,
-      ls_shlp_return    TYPE REF TO ddshretval,
-      lv_prev_pos       TYPE i,
-      ls_call_control   TYPE ddshf4ctrl,
-      ls_fld_prop       TYPE REF TO ddshfprop,
-      lt_shlp_descr_tab TYPE shlp_desct,
+      ls_shlp_return    TYPE REF TO            ddshretval,
+      lv_prev_pos       TYPE                   i,
+      ls_call_control   TYPE                   ddshf4ctrl,
+      ls_fld_prop       TYPE REF TO            ddshfprop,
+      lt_shlp_descr_tab TYPE                   shlp_desct,
       lt_shlp_record    TYPE STANDARD TABLE OF seahlpres,
-      lt_dropdown       TYPE lvc_t_dral,
-      ls_dropdown       TYPE lvc_s_dral.
+      lt_dropdown       TYPE                   lvc_t_dral,
+      ls_dropdown       TYPE                   lvc_s_dral.
 
     FIELD-SYMBOLS:
       <lt_table> TYPE STANDARD TABLE,
-      <ls_row>   TYPE any,
-      <lv_value> TYPE any,
-      <lv_low>   TYPE any,
-      <lv_txt>   TYPE csequence.
+      <ls_row>   TYPE                 any,
+      <lv_value> TYPE                 any,
+      <lv_low>   TYPE                 any,
+      <lv_txt>   TYPE                 csequence.
 
     " No need
     IF cs_fieldcat-ref_table = abap_undefined AND cs_fieldcat-ref_field = abap_undefined.
@@ -665,14 +685,14 @@ CLASS lcl_rtti IMPLEMENTATION.
 
   METHOD get_field_desc.
     DATA:
-      ls_header       TYPE x030l,
+      ls_header       TYPE        x030l,
       lr_table_descr  TYPE REF TO cl_abap_tabledescr,
       lr_struct_descr TYPE REF TO cl_abap_structdescr,
-      lv_cnt          TYPE i,
+      lv_cnt          TYPE        i,
       lr_row          TYPE REF TO data,
       lo_type         TYPE REF TO cl_abap_typedescr,
-      lt_sub_fdesc    TYPE tt_field_desc,
-      ls_subfield     TYPE ts_field_desc.
+      lt_sub_fdesc    TYPE        tt_field_desc,
+      ls_subfield     TYPE        ts_field_desc.
     FIELD-SYMBOLS:
       <ls_comp_tab> TYPE abap_compdescr,
       <ls_row>      TYPE any,
@@ -842,12 +862,12 @@ CLASS lcl_rtti IMPLEMENTATION.
       END OF ts_dd03l.
 
     DATA:
-      lv_rollname TYPE rollname,
+      lv_rollname TYPE                   rollname,
       lt_dd03l    TYPE STANDARD TABLE OF ts_dd03l,
-      ls_dd03l    TYPE REF TO ts_dd03l,
-      lv_tabfld   TYPE string,
-      ls_dd04t    TYPE dd04t,
-      lo_type     TYPE REF TO cl_abap_datadescr.
+      ls_dd03l    TYPE REF TO            ts_dd03l,
+      lv_tabfld   TYPE                   string,
+      ls_dd04t    TYPE                   dd04t,
+      lo_type     TYPE REF TO            cl_abap_datadescr.
     FIELD-SYMBOLS:
       <lt_unique_type> TYPE tt_unique_type.
 
@@ -924,8 +944,8 @@ CLASS lcl_rtti IMPLEMENTATION.
       lt_sub_fdesc TYPE tt_field_desc.
 
     FIELD-SYMBOLS:
-      <ls_field_desc> TYPE ts_field_desc,
-      <ls_subfield>   TYPE ts_field_desc,
+      <ls_field_desc> TYPE         ts_field_desc,
+      <ls_subfield>   TYPE         ts_field_desc,
       <ls_comp>       LIKE LINE OF lt_comp.
 
     " №2 For select-options
@@ -961,8 +981,8 @@ CLASS lcl_rtti IMPLEMENTATION.
     DATA:
       lo_line     TYPE REF TO cl_abap_datadescr,
       lo_type     TYPE REF TO cl_abap_typedescr,
-      lv_sys_type TYPE abap_typekind,
-      lv_message  TYPE string.
+      lv_sys_type TYPE        abap_typekind,
+      lv_message  TYPE        string.
 
     " No type
     CLEAR ro_type.
@@ -1091,14 +1111,14 @@ CLASS lcl_appl DEFINITION.
     CLASS-DATA: m_option_icons     TYPE TABLE OF sign_option_icon_s,
                 mt_lang            TYPE TABLE OF t_lang,
                 mt_obj             TYPE TABLE OF t_obj, "main object table
-                m_ctrl_box_handler TYPE REF TO lcl_box_handler,
-                c_dragdropalv      TYPE REF TO cl_dragdrop.
+                m_ctrl_box_handler TYPE REF TO   lcl_box_handler,
+                c_dragdropalv      TYPE REF TO   cl_dragdrop.
 
     CLASS-METHODS:
       init_icons_table,
       init_lang,
       suppress_run_button,
-       open_int_table IMPORTING it_tab  TYPE ANY TABLE OPTIONAL
+      open_int_table IMPORTING it_tab  TYPE ANY TABLE OPTIONAL
                                it_ref  TYPE REF TO data OPTIONAL
                                iv_name TYPE string,
       exit.
@@ -1127,8 +1147,8 @@ CLASS lcl_data_receiver DEFINITION.
     DATA: mo_transmitter TYPE REF TO lcl_data_transmitter,
           lo_tab_from    TYPE REF TO lcl_table_viewer,
           lo_sel_to      TYPE REF TO lcl_sel_opt,
-          m_from_field   TYPE lvc_fname,
-          m_to_field     TYPE lvc_fname.
+          m_from_field   TYPE        lvc_fname,
+          m_to_field     TYPE        lvc_fname.
     METHODS: constructor
       IMPORTING io_transmitter TYPE REF TO lcl_data_transmitter OPTIONAL
                 io_tab_from    TYPE REF TO lcl_table_viewer OPTIONAL
@@ -1139,19 +1159,19 @@ CLASS lcl_data_receiver DEFINITION.
       update FOR EVENT data_changed OF lcl_data_transmitter IMPORTING e_row,
       update_col FOR EVENT col_changed OF lcl_data_transmitter IMPORTING e_column,
       on_grid_button_click
-          FOR EVENT button_click OF cl_gui_alv_grid
+            FOR EVENT button_click OF cl_gui_alv_grid
         IMPORTING
-          es_col_id
-          es_row_no.
+            es_col_id
+            es_row_no.
 ENDCLASS.
 
 CLASS lcl_sel_opt DEFINITION.
   PUBLIC SECTION.
-    DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
-          mo_sel_alv TYPE REF TO cl_gui_alv_grid,
-          mt_fcat    TYPE lvc_t_fcat,
+    DATA: mo_viewer  TYPE REF TO   lcl_table_viewer,
+          mo_sel_alv TYPE REF TO   cl_gui_alv_grid,
+          mt_fcat    TYPE          lvc_t_fcat,
           mt_sel_tab TYPE TABLE OF lcl_types=>selection_display_s,
-          ms_layout  TYPE lvc_s_layo.
+          ms_layout  TYPE          lvc_s_layo.
 
     EVENTS: selection_done.
     METHODS:
@@ -1168,8 +1188,8 @@ CLASS lcl_sel_opt DEFINITION.
       on_f4 FOR EVENT onf4 OF cl_gui_alv_grid IMPORTING e_fieldname es_row_no er_event_data,
       on_grid_button_click FOR EVENT button_click OF cl_gui_alv_grid
         IMPORTING
-          es_col_id
-          es_row_no,
+            es_col_id
+            es_row_no,
       on_data_changed FOR EVENT data_changed OF cl_gui_alv_grid IMPORTING  er_data_changed,
       on_data_changed_finished FOR EVENT data_changed_finished OF cl_gui_alv_grid IMPORTING e_modified,
       handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
@@ -1180,29 +1200,29 @@ ENDCLASS.
 CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_column_emitter,
-             column  TYPE lvc_fname,
+             column  TYPE        lvc_fname,
              emitter TYPE REF TO lcl_data_transmitter,
            END OF t_column_emitter.
 
-    DATA: m_lang             TYPE ddlanguage,
-          m_is_sql           TYPE xfeld,
-          m_is_view          TYPE xfeld,
-          m_is_cds           TYPE xfeld,
-          m_tabname          TYPE tabname,
-          m_texttabname      TYPE tabname,
-          m_count            TYPE i,
-          mo_alv             TYPE REF TO cl_gui_alv_grid,
-          mo_sel             TYPE REF TO lcl_sel_opt,
-          mr_table           TYPE REF TO data,
-          mr_text_table      TYPE REF TO data,
-          mo_sel_parent      TYPE REF TO cl_gui_container,
-          mo_alv_parent      TYPE REF TO cl_gui_container,
-          mt_alv_catalog     TYPE lvc_t_fcat,
-          mt_text_components TYPE abap_component_tab,
+    DATA: m_lang             TYPE          ddlanguage,
+          m_is_sql           TYPE          xfeld,
+          m_is_view          TYPE          xfeld,
+          m_is_cds           TYPE          xfeld,
+          m_tabname          TYPE          tabname,
+          m_texttabname      TYPE          tabname,
+          m_count            TYPE          i,
+          mo_alv             TYPE REF TO   cl_gui_alv_grid,
+          mo_sel             TYPE REF TO   lcl_sel_opt,
+          mr_table           TYPE REF TO   data,
+          mr_text_table      TYPE REF TO   data,
+          mo_sel_parent      TYPE REF TO   cl_gui_container,
+          mo_alv_parent      TYPE REF TO   cl_gui_container,
+          mt_alv_catalog     TYPE          lvc_t_fcat,
+          mt_text_components TYPE          abap_component_tab,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
-          mo_sel_width       TYPE i,
+          mo_sel_width       TYPE          i,
           m_visible,
-          m_std_tbar         TYPE x,
+          m_std_tbar         TYPE          x,
           m_show_empty.
 
     METHODS:
@@ -1227,8 +1247,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
                        RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
       on_f4 FOR EVENT onf4 OF cl_gui_alv_grid
         IMPORTING e_fieldname
-                  es_row_no
-                  er_event_data,
+                    es_row_no
+                    er_event_data,
       on_menu_request FOR EVENT context_menu_request OF cl_gui_alv_grid IMPORTING e_object,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       handle_menu_button  FOR EVENT menu_button OF cl_gui_alv_grid IMPORTING e_object e_ucomm,
@@ -1242,10 +1262,10 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
 
     TYPES:
       BEGIN OF ts_hier,
-        anynode   TYPE string,
-        anyparent TYPE string,
-        key       TYPE salv_de_node_key, "internal tree key
-        name      TYPE string,
+        anynode   TYPE        string,
+        anyparent TYPE        string,
+        key       TYPE        salv_de_node_key, "internal tree key
+        name      TYPE        string,
         tab_ref   TYPE REF TO data,
         type(1),
       END OF ts_hier,
@@ -1254,17 +1274,17 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
         item TYPE REF TO lcl_table_viewer,
       END OF t_children.
 
-    DATA: mt_hier     TYPE tt_hier, " Tree hierarchy
-          mo_nodes    TYPE REF TO cl_salv_nodes,
-          mo_node     TYPE REF TO cl_salv_node,
-          mo_events   TYPE REF TO cl_salv_events_tree,
-          mt_empty    TYPE tt_hier,
-          mr_cluster  TYPE REF TO data, "payru_result,
-          m_pernr(8)  TYPE n,
-          m_seqnr(5)  TYPE n,
+    DATA: mt_hier     TYPE          tt_hier, " Tree hierarchy
+          mo_nodes    TYPE REF TO   cl_salv_nodes,
+          mo_node     TYPE REF TO   cl_salv_node,
+          mo_events   TYPE REF TO   cl_salv_events_tree,
+          mt_empty    TYPE          tt_hier,
+          mr_cluster  TYPE REF TO   data, "payru_result,
+          m_pernr(8)  TYPE          n,
+          m_seqnr(5)  TYPE          n,
           mt_children TYPE TABLE OF t_children.
 
-    DATA :  mo_tree  TYPE REF TO cl_salv_tree.
+    DATA :  mo_tree TYPE REF TO cl_salv_tree.
     METHODS: constructor IMPORTING i_pernr TYPE any i_seqnr TYPE any,
       show_tree,
       on_box_close  REDEFINITION .
@@ -1372,11 +1392,11 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     DATA: go_struct    TYPE REF TO cl_abap_structdescr,
           go_table     TYPE REF TO cl_abap_tabledescr,
           go_abapstr   TYPE REF TO cl_abap_typedescr,
-          l_struc_name TYPE tabname,
+          l_struc_name TYPE        tabname,
           lr_tab       TYPE REF TO data.
 
     FIELD-SYMBOLS: <table> TYPE STANDARD TABLE,
-                   <str>   TYPE any.
+                   <str>   TYPE                 any.
 
     DATA(ls_hier) = mt_hier[ node_key ].
     CHECK ls_hier-tab_ref IS NOT INITIAL.
@@ -1405,7 +1425,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD read_cluster.
-    DATA: lo_handle  TYPE REF TO cl_abap_complexdescr.
+    DATA: lo_handle TYPE REF TO cl_abap_complexdescr.
 
     FIELD-SYMBOLS: <cluster> TYPE any.
 
@@ -1433,14 +1453,14 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD create_hierarchy.
-    DATA: lo_stru    TYPE REF TO cl_abap_structdescr,
-          lo_element TYPE REF TO cl_abap_structdescr,
+    DATA: lo_stru    TYPE REF TO  cl_abap_structdescr,
+          lo_element TYPE REF TO  cl_abap_structdescr,
           ls_hier    LIKE LINE OF mt_hier,
-          l_lines    TYPE i.
+          l_lines    TYPE         i.
 
     FIELD-SYMBOLS: <table>   TYPE ANY TABLE,
-                   <struc>   TYPE any,
-                   <cluster> TYPE any.
+                   <struc>   TYPE            any,
+                   <cluster> TYPE            any.
 
     lo_stru ?= cl_abap_typedescr=>describe_by_name( 'PAYRU_RESULT' ).
 
@@ -1524,7 +1544,7 @@ ENDCLASS.
 
 CLASS lcl_text_viewer DEFINITION FINAL INHERITING FROM lcl_popup.
   PUBLIC SECTION.
-    DATA: mo_text     TYPE REF TO cl_gui_textedit.
+    DATA: mo_text TYPE REF TO cl_gui_textedit.
 
     METHODS: constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
       load_text  IMPORTING io_viewer TYPE REF TO lcl_table_viewer.
@@ -1627,8 +1647,8 @@ CLASS lcl_plugins DEFINITION.
              plugin  TYPE tcode,
            END OF t_el_links.
 
-    CLASS-DATA: mt_field_links TYPE  TABLE OF t_field_links,
-                mt_el_links    TYPE  TABLE OF t_el_links.
+    CLASS-DATA: mt_field_links TYPE TABLE OF t_field_links,
+                mt_el_links    TYPE TABLE OF t_el_links.
     CLASS-METHODS: init,
       link IMPORTING i_str     TYPE any
                      io_viewer TYPE REF TO lcl_table_viewer
@@ -1711,7 +1731,7 @@ CLASS lcl_plugins IMPLEMENTATION.
     DATA: l_infty    TYPE infty,
           l_temp(10) TYPE c.
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
 
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
@@ -1736,7 +1756,7 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_pp01.
-    DATA: it_bdcdata    TYPE TABLE OF  bdcdata,
+    DATA: it_bdcdata    TYPE TABLE OF bdcdata,
           save_plvar(2),
           save_otype(2),
           save_objid(8),
@@ -1744,7 +1764,7 @@ CLASS lcl_plugins IMPLEMENTATION.
           l_subty(4),
           l_temp(10).
 
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
 
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
@@ -1811,8 +1831,8 @@ CLASS lcl_plugins IMPLEMENTATION.
       ASSIGN COMPONENT 'ADATANR' OF STRUCTURE i_str TO FIELD-SYMBOL(<datanr>).
       ASSIGN COMPONENT 'RELAT' OF STRUCTURE i_str TO FIELD-SYMBOL(<relat>).
 
-      data: lv_struc type t77ar,
-            lv_dbtab type t77ad.
+      DATA: lv_struc TYPE t77ar,
+            lv_dbtab TYPE t77ad.
       SELECT SINGLE pasub INTO lv_struc FROM t77ar WHERE relat = <relat>.
       SELECT SINGLE dbtab INTO lv_dbtab FROM t77ad WHERE pasub = lv_struc.
 
@@ -1827,12 +1847,12 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_subty.
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
 
-    data l_result type t777d.
+    DATA l_result TYPE t777d.
 
     SELECT SINGLE stypt, namst INTO @l_result   FROM t777d WHERE dbtab = @io_viewer->m_tabname.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <str> TO FIELD-SYMBOL(<subty>).
@@ -1846,7 +1866,7 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_py_cluster.
-    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
     DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
@@ -1992,7 +2012,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_grid_button_click.
-    FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
 
     CHECK m_from_field = es_col_id-fieldname.
     ASSIGN lo_tab_from->mr_table->* TO <f_tab>.
@@ -2016,9 +2036,9 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_col.
-    DATA: lt_sel_row   TYPE lcl_types=>t_sel_row.
+    DATA: lt_sel_row TYPE lcl_types=>t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
-                   <field> TYPE any.
+                   <field> TYPE                 any.
 
     CHECK lo_sel_to IS NOT INITIAL.
     READ TABLE lo_sel_to->mt_sel_tab ASSIGNING FIELD-SYMBOL(<to>) WITH KEY field_label = m_to_field.
@@ -2093,11 +2113,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD constructor.
 
-    DATA: ls_comp         TYPE abap_componentdescr,
-          lt_comp_notab   TYPE abap_component_tab,
-          lt_comp_tab2str TYPE abap_component_tab,
-          lt_comp_str     TYPE abap_component_tab,
-          lv_s            TYPE string,
+    DATA: ls_comp         TYPE        abap_componentdescr,
+          lt_comp_notab   TYPE        abap_component_tab,
+          lt_comp_tab2str TYPE        abap_component_tab,
+          lt_comp_str     TYPE        abap_component_tab,
+          lv_s            TYPE        string,
           lv_data         TYPE REF TO data.
 
     DATA: l_notab   TYPE REF TO data,
@@ -2141,7 +2161,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
       FIELD-SYMBOLS:<any> TYPE any.
       ASSIGN ir_tab->* TO <any>.
-      DATA lo_tabl  TYPE REF TO cl_abap_tabledescr.
+      DATA lo_tabl TYPE REF TO cl_abap_tabledescr.
       DATA lo_struc TYPE REF TO cl_abap_structdescr.
       lo_tabl ?= cl_abap_typedescr=>describe_by_data( <any> ).
       TRY.
@@ -2149,7 +2169,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           ASSIGN ir_tab->* TO <any_tab>.
           TRY.
 
-              LOOP AT lo_struc->components INTO DATA(comp) where type_kind ne 'l' and type_kind ne 'r'. "no ref
+              LOOP AT lo_struc->components INTO DATA(comp) WHERE type_kind NE 'l' AND type_kind NE 'r'. "no ref
 
                 IF comp-type_kind NE 'h'.
                   ls_comp-name = comp-name.
@@ -2275,7 +2295,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: ls_layout TYPE lvc_s_layo,
           effect    TYPE i,
           lt_f4     TYPE lvc_t_f4.
-    FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
     mt_alv_catalog = create_field_cat( m_tabname ).
@@ -2407,7 +2427,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     e_object->add_separator( ).
     CREATE OBJECT l_smenu.
 
-    data l_dbtab type t777d.
+    DATA l_dbtab TYPE t777d.
     SELECT SINGLE dbtab INTO @l_dbtab
       FROM t777d
       WHERE dbtab = @m_tabname.
@@ -2434,68 +2454,68 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD handle_tab_toolbar.
 
-    if m_visible is initial.
-      data: lt_toolbar type ttb_button,
-            ls_toolbar type stb_button.
+    IF m_visible IS INITIAL.
+      DATA: lt_toolbar TYPE ttb_button,
+            ls_toolbar TYPE stb_button.
       ls_toolbar-function = 'SEL_ON'.
       ls_toolbar-icon = icon_arrow_left.
       ls_toolbar-quickinfo = 'Select-Options'.
       ls_toolbar-butn_type = 0.
-      append ls_toolbar to lt_toolbar.
+      APPEND ls_toolbar TO lt_toolbar.
 
-      clear ls_toolbar.
+      CLEAR ls_toolbar.
       ls_toolbar-butn_type = 3.
-      append ls_toolbar to lt_toolbar.
-    endif.
+      APPEND ls_toolbar TO lt_toolbar.
+    ENDIF.
 
     ls_toolbar-function = 'REFRESH'.
     ls_toolbar-icon = icon_refresh.
     ls_toolbar-quickinfo = 'Refresh'.
     ls_toolbar-butn_type = 0.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
 
     ls_toolbar-function = 'LANGUAGE'.
     ls_toolbar-icon = icon_foreign_trade.
     ls_toolbar-quickinfo = 'Languages'.
     ls_toolbar-butn_type = 2.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
     ls_toolbar-function = 'OPTIONS'.
     ls_toolbar-icon  = icon_list.
     ls_toolbar-quickinfo = 'Empty columns options'.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
     ls_toolbar-function = 'TABLES'.
     ls_toolbar-icon  = icon_net_graphic.
     ls_toolbar-quickinfo = 'Table links'.
     ls_toolbar-butn_type = 0.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
-    clear ls_toolbar.
+    CLEAR ls_toolbar.
     ls_toolbar-butn_type = 3.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
-    clear ls_toolbar.
+    CLEAR ls_toolbar.
     ls_toolbar-function = 'TBAR'.
     ls_toolbar-butn_type = 0.
 
     IF m_std_tbar IS INITIAL.
-         ls_toolbar-icon  = icon_column_right.
-    ls_toolbar-quickinfo = 'Show standard ALV function'.
+      ls_toolbar-icon  = icon_column_right.
+      ls_toolbar-quickinfo = 'Show standard ALV function'.
 
     ELSE.
-         ls_toolbar-icon  = icon_column_left.
-    ls_toolbar-quickinfo = 'Hide standard ALV functio'.
+      ls_toolbar-icon  = icon_column_left.
+      ls_toolbar-quickinfo = 'Hide standard ALV functio'.
 
     ENDIF.
-    append ls_toolbar to lt_toolbar.
+    APPEND ls_toolbar TO lt_toolbar.
 
 
     IF m_std_tbar IS INITIAL.
       e_object->mt_toolbar =  lt_toolbar.
     ELSE.
-    append lines of e_object->mt_toolbar to lt_toolbar.
+      APPEND LINES OF e_object->mt_toolbar TO lt_toolbar.
     ENDIF.
 
     e_object->mt_toolbar = lt_toolbar.
@@ -2503,26 +2523,26 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD get_field_info.
-    DATA: lv_clause      TYPE string,
-          lr_struc       TYPE REF TO data,
-          lr_table_descr TYPE REF TO cl_abap_structdescr,
-          it_tabdescr    TYPE abap_compdescr_tab,
+    DATA: lv_clause      TYPE          string,
+          lr_struc       TYPE REF TO   data,
+          lr_table_descr TYPE REF TO   cl_abap_structdescr,
+          it_tabdescr    TYPE          abap_compdescr_tab,
           lt_field_info  TYPE TABLE OF dfies,
-          l_fname        TYPE fieldname,
-          l_tname        TYPE tabname,
-          ls_tf          LIKE LINE OF lcl_alv_common=>mt_tabfields,
-          dref           TYPE REF TO data,
-          l_x            TYPE xstring.
+          l_fname        TYPE          fieldname,
+          l_tname        TYPE          tabname,
+          ls_tf          LIKE LINE OF  lcl_alv_common=>mt_tabfields,
+          dref           TYPE REF TO   data,
+          l_x            TYPE          xstring.
 
     CREATE DATA lr_struc TYPE (i_tab).
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
 
-    DATA(l_exist) = lcl_sql=>exist_table( i_tab ).
-    IF  l_exist = 1.
-      SELECT  COUNT( * ) FROM (i_tab).
-      DATA(l_count) = sy-dbcnt.
-    ENDIF.
+*    DATA(l_exist) = lcl_sql=>exist_table( i_tab ).
+*    IF  l_exist = 1.
+*      SELECT  COUNT( * ) FROM (i_tab).
+*      DATA(l_count) = sy-dbcnt.
+*    ENDIF.
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name NE 'CLIENT'.
       IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
@@ -2546,27 +2566,27 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
 
         "check empty field
-        IF l_exist = 1 AND l_count < 10000.
-          IF ls_tf-rollname IS NOT INITIAL.
-            CREATE DATA dref TYPE (ls_tf-rollname).
-            ASSIGN dref->* TO FIELD-SYMBOL(<field>).
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-              FROM (i_tab)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = abap_true.
-            ENDIF.
-          ELSEIF ls_tf-datatype = 'RAWSTRING'.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
-              FROM (i_tab)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = abap_true.
-            ENDIF.
-          ENDIF.
-        ENDIF.
+*        IF l_exist = 1 AND l_count < 10000.
+*          IF ls_tf-rollname IS NOT INITIAL.
+*            CREATE DATA dref TYPE (ls_tf-rollname).
+*            ASSIGN dref->* TO FIELD-SYMBOL(<field>).
+*            lv_clause = |{ ls_tf-fieldname } NE ''|.
+*            SELECT SINGLE (ls_tf-fieldname) INTO @<field>
+*              FROM (i_tab)
+*             WHERE (lv_clause).
+*            IF sy-subrc NE 0.
+*              ls_tf-empty = abap_true.
+*            ENDIF.
+*          ELSEIF ls_tf-datatype = 'RAWSTRING'.
+*            lv_clause = |{ ls_tf-fieldname } NE ''|.
+*            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
+*              FROM (i_tab)
+*             WHERE (lv_clause).
+*            IF sy-subrc NE 0.
+*              ls_tf-empty = abap_true.
+*            ENDIF.
+*          ENDIF.
+*        ENDIF.
         INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
       ENDIF.
     ENDLOOP.
@@ -2575,9 +2595,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   METHOD create_field_cat.
     DATA: lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
-          it_tabdescr    TYPE abap_compdescr_tab,
-          l_replace      TYPE string,
-          l_texttab      TYPE tabname,
+          it_tabdescr    TYPE        abap_compdescr_tab,
+          l_replace      TYPE        string,
+          l_texttab      TYPE        tabname,
           lo_str         TYPE REF TO cl_abap_structdescr.
 
     lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components e_handle = lo_str ).
@@ -2647,13 +2667,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: lo_table_descr TYPE REF TO cl_tpda_script_tabledescr,
           table_clone    TYPE REF TO data.
 
-    FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
 
-      ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
+    ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
     IF sy-subrc = 0.
       lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
     ELSE.
@@ -2680,7 +2700,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       lv_clause(45),
       lv_sel_width  TYPE i.
 
-    FIELD-SYMBOLS: <f_tab>  TYPE STANDARD  TABLE.
+    FIELD-SYMBOLS: <f_tab> TYPE STANDARD TABLE.
 
     ASSIGN mr_table->* TO <f_tab>.
     mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = it_fields[] ).
@@ -2738,8 +2758,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
               ENDIF.
             ENDIF.
           WHEN 'SHOW'.
-            m_show_empty = abap_true.
-            <fields>-no_out = ' '.
+            IF m_show_empty = abap_false.
+              <fields>-no_out = ' '.
+            ELSE.
+              lv_clause = |{ <fields>-fieldname } IS NOT INITIAL|.
+              LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
+                EXIT.
+              ENDLOOP.
+              IF sy-subrc NE 0.
+                <fields>-no_out = abap_true.
+              ENDIF.
+            ENDIF.
           WHEN 'UPDATE'.
             lv_clause = |{ <fields>-fieldname } IS NOT INITIAL|.
             LOOP AT <f_tab> ASSIGNING <f_line>  WHERE (lv_clause).
@@ -2777,7 +2806,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CALL METHOD mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = it_fields[].
 
     IF e_ucomm = 'TBAR'.
-      Return.
+      RETURN.
     ENDIF.
 
     lcl_alv_common=>refresh( mo_alv ).
@@ -2868,8 +2897,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           lv_clause    TYPE string.
 
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
-    FIELD-SYMBOLS: <text_tab> TYPE  STANDARD TABLE,
-                   <check>    TYPE any.
+    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+                   <check>    TYPE                 any.
 
     CHECK m_texttabname IS NOT INITIAL.
 
@@ -3117,7 +3146,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
-    DATA: it_bdcdata TYPE TABLE OF  bdcdata.
+    DATA: it_bdcdata TYPE TABLE OF bdcdata.
     CHECK es_row_no-row_id IS NOT INITIAL.
 
     READ TABLE mt_sel_tab INDEX es_row_no-row_id INTO DATA(l_sel).
@@ -3218,12 +3247,12 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
   METHOD on_f4.
     DATA: return_tab TYPE STANDARD TABLE OF ddshretval,
-          lt_objec   TYPE TABLE OF objec,
-          ls_objec   TYPE objec,
-          l_otype    TYPE otype,
-          l_plvar    TYPE plvar,
-          l_multiple TYPE xfeld,
-          l_clear    TYPE xfeld.
+          lt_objec   TYPE TABLE OF          objec,
+          ls_objec   TYPE                   objec,
+          l_otype    TYPE                   otype,
+          l_plvar    TYPE                   plvar,
+          l_multiple TYPE                   xfeld,
+          l_clear    TYPE                   xfeld.
 
     IF e_fieldname = 'LOW'.
       l_multiple = abap_true.
@@ -3661,7 +3690,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
     IF lo_from_tab IS BOUND." tab to select
       FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE,
-                     <f_field> TYPE any.
+                     <f_field> TYPE                 any.
       lo_from_tab->mo_alv->get_selected_cells( IMPORTING et_cell = lt_sel_cells  ).
       lo_from_tab->mo_alv->get_selected_columns( IMPORTING et_index_columns = DATA(lt_sel_col)  ).
 
@@ -3878,7 +3907,7 @@ FORM search_cds.
          END OF t_cds.
 
   DATA: lt_cds        TYPE TABLE OF t_cds,
-        l_search      TYPE string,
+        l_search      TYPE          string,
         lt_dynpfields TYPE TABLE OF dynpread.
 
   CALL FUNCTION 'DYNP_VALUES_READ'
