@@ -628,8 +628,10 @@ CLASS lcl_rtti IMPLEMENTATION.
 
           " Integer, byte, short
         WHEN cl_abap_typedescr=>typekind_int OR cl_abap_typedescr=>typekind_int1  OR cl_abap_typedescr=>typekind_int2.
-          REPLACE ALL OCCURRENCES OF '.' IN ls_shlp_return->fieldval WITH ''.
-          <lv_value> = ls_shlp_return->fieldval.
+          RETURN.
+*          REPLACE ALL OCCURRENCES OF '.' IN ls_shlp_return->fieldval WITH ''.
+*          CONDENSE ls_shlp_return->fieldval NO-GAPS.
+*          <lv_value> = ls_shlp_return->fieldval.
 
         WHEN OTHERS.
           <lv_value> = ls_shlp_return->fieldval.
@@ -1096,6 +1098,9 @@ CLASS lcl_appl DEFINITION.
       init_icons_table,
       init_lang,
       suppress_run_button,
+       open_int_table IMPORTING it_tab  TYPE ANY TABLE OPTIONAL
+                               it_ref  TYPE REF TO data OPTIONAL
+                               iv_name TYPE string,
       exit.
 ENDCLASS.
 
@@ -1567,40 +1572,40 @@ CLASS lcl_text_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD load_text."only for HR systems
-"    DATA: lr_pskey TYPE REF TO data,
-"          lr_text  TYPE REF TO data.
-
-"    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
-"                  <pskey>    TYPE any.
-"    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
-"    ASSIGN lr_text->* TO <text_tab>.
-
-"    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
-"    ASSIGN lr_pskey->* TO <pskey>.
-
-"    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-"    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
-"    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
-"    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
-"    MOVE-CORRESPONDING <row> TO <pskey>.
-"    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
-"    <field> = io_viewer->m_tabname+2(4).
-
-"    TRY.
-"        CALL METHOD cl_hrpa_text_cluster=>read
-"          EXPORTING
-"            tclas         = 'A'
-"            pskey         = <pskey>
-"            no_auth_check = abap_true
-"          IMPORTING
-"            text_tab      = <text_tab>.
-"      CATCH cx_hrpa_missing_authorization .
-"      CATCH cx_hrpa_violated_assertion .
-"    ENDTRY.
-
-"    mo_text->set_text_as_r3table( <text_tab> ).
-"    CALL METHOD cl_gui_cfw=>flush.
-"    mo_text->set_focus( mo_box ).
+*    DATA: lr_pskey TYPE REF TO data,
+*          lr_text  TYPE REF TO data.
+*
+*    FIELD-SYMBOLS: <text_tab> TYPE STANDARD TABLE,
+*                   <pskey>    TYPE any.
+*    CREATE DATA lr_text TYPE ('HRPAD_TEXT_TAB'). "HANDLE lo_handle.
+*    ASSIGN lr_text->* TO <text_tab>.
+*
+*    CREATE DATA lr_pskey TYPE ('PSKEY'). "HANDLE lo_handle.
+*    ASSIGN lr_pskey->* TO <pskey>.
+*
+*    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
+*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+*    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
+*    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
+*    MOVE-CORRESPONDING <row> TO <pskey>.
+*    ASSIGN COMPONENT 'INFTY' OF STRUCTURE <pskey> TO FIELD-SYMBOL(<field>).
+*    <field> = io_viewer->m_tabname+2(4).
+*
+*    TRY.
+*        CALL METHOD cl_hrpa_text_cluster=>read
+*          EXPORTING
+*            tclas         = 'A'
+*            pskey         = <pskey>
+*            no_auth_check = abap_true
+*          IMPORTING
+*            text_tab      = <text_tab>.
+*      CATCH cx_hrpa_missing_authorization .
+*      CATCH cx_hrpa_violated_assertion .
+*    ENDTRY.
+*
+*    mo_text->set_text_as_r3table( <text_tab> ).
+*    CALL METHOD cl_gui_cfw=>flush.
+*    mo_text->set_focus( mo_box ).
   ENDMETHOD.
 
 ENDCLASS.
@@ -2082,6 +2087,27 @@ ENDCLASS.               "lcl_box_handler
 CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD constructor.
+
+    DATA: ls_comp         TYPE abap_componentdescr,
+          lt_comp_notab   TYPE abap_component_tab,
+          lt_comp_tab2str TYPE abap_component_tab,
+          lt_comp_str     TYPE abap_component_tab,
+          lv_s            TYPE string,
+          lv_data         TYPE REF TO data.
+
+    DATA: l_notab   TYPE REF TO data,
+          l_tab2str TYPE REF TO data.
+
+    DATA: handle_notab   TYPE REF TO cl_abap_structdescr,
+          handle_tab2str TYPE REF TO cl_abap_structdescr,
+          lo_new_tab     TYPE REF TO cl_abap_tabledescr.
+
+    FIELD-SYMBOLS: <notab>   TYPE STANDARD TABLE,
+                   <tab2str> TYPE STANDARD TABLE,
+                   <any_tab> TYPE ANY TABLE,
+                   <temptab> TYPE ANY TABLE.
+
+
     super->constructor( i_additional_name = i_additional_name ).
     m_lang = sy-langu.
     mo_sel_width = 0.
@@ -2107,7 +2133,99 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         m_is_sql = abap_true.
       ENDIF.
     ELSE.
-      mr_table = ir_tab.
+
+      FIELD-SYMBOLS:<any> TYPE any.
+      ASSIGN ir_tab->* TO <any>.
+      DATA lo_tabl  TYPE REF TO cl_abap_tabledescr.
+      DATA lo_struc TYPE REF TO cl_abap_structdescr.
+      lo_tabl ?= cl_abap_typedescr=>describe_by_data( <any> ).
+      TRY.
+          lo_struc ?= lo_tabl->get_table_line_type( ).
+          ASSIGN ir_tab->* TO <any_tab>.
+          TRY.
+
+              LOOP AT lo_struc->components INTO DATA(comp) where type_kind ne 'l' and type_kind ne 'r'. "no ref
+
+                IF comp-type_kind NE 'h'.
+                  ls_comp-name = comp-name.
+                  ls_comp-type ?= lo_struc->get_component_type( comp-name ).
+                  APPEND ls_comp TO lt_comp_notab.
+                  APPEND ls_comp TO lt_comp_tab2str.
+                ELSE.
+                  ls_comp-name = comp-name.
+                  ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_s ).
+                  APPEND ls_comp TO lt_comp_tab2str.
+                  APPEND ls_comp TO lt_comp_str.
+
+                  ls_comp-name = comp-name && '_REF'.
+                  ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_data ).
+                  APPEND ls_comp TO lt_comp_tab2str.
+                ENDIF.
+              ENDLOOP.
+            CATCH cx_sy_move_cast_error.
+          ENDTRY.
+
+          TRY.
+              handle_notab  = cl_abap_structdescr=>create( lt_comp_notab ).
+              handle_tab2str  = cl_abap_structdescr=>create( lt_comp_tab2str ).
+
+              lo_new_tab = cl_abap_tabledescr=>create(
+                              p_line_type  = handle_notab
+                              p_table_kind = cl_abap_tabledescr=>tablekind_std
+                              p_unique     = abap_false ).
+
+              CREATE DATA l_notab TYPE HANDLE lo_new_tab.
+
+              lo_new_tab = cl_abap_tabledescr=>create(
+                              p_line_type  = handle_tab2str
+                              p_table_kind = cl_abap_tabledescr=>tablekind_std
+                              p_unique     = abap_false ).
+
+              CREATE DATA l_tab2str TYPE HANDLE lo_new_tab.
+
+              ASSIGN l_notab->* TO <notab>.
+              MOVE-CORRESPONDING <any_tab> TO <notab>.
+              ASSIGN l_tab2str->* TO <tab2str>.
+              MOVE-CORRESPONDING <notab> TO <tab2str>.
+
+              LOOP AT <any_tab> ASSIGNING FIELD-SYMBOL(<old_struc>).
+                READ TABLE <tab2str> ASSIGNING FIELD-SYMBOL(<new_struc>) INDEX sy-tabix.
+                LOOP AT lt_comp_str INTO ls_comp.
+                  ASSIGN COMPONENT ls_comp-name OF STRUCTURE <new_struc> TO FIELD-SYMBOL(<field>).
+                  ASSIGN COMPONENT ls_comp-name OF STRUCTURE <old_struc> TO <temptab>.
+                  <field> = | { icon_view_table } [{ lines( <temptab> ) }] |.
+                  ASSIGN COMPONENT ls_comp-name  OF STRUCTURE <old_struc> TO <field>.
+                  ASSIGN COMPONENT |{ ls_comp-name }_REF| OF STRUCTURE <new_struc> TO FIELD-SYMBOL(<ref>).
+                  GET REFERENCE OF <field> INTO <ref>.
+                ENDLOOP.
+              ENDLOOP.
+
+              GET REFERENCE OF <tab2str> INTO mr_table.
+            CATCH cx_root.
+              mr_table = ir_tab.
+          ENDTRY.
+        CATCH cx_sy_move_cast_error.  "no structure
+          ls_comp-name = 'FIELD'.
+          ls_comp-type ?= cl_abap_typedescr=>describe_by_data( lv_s ).
+          APPEND ls_comp TO lt_comp_tab2str.
+
+          handle_tab2str  = cl_abap_structdescr=>create( lt_comp_tab2str ).
+          lo_new_tab = cl_abap_tabledescr=>create(
+                               p_line_type  = handle_tab2str
+                               p_table_kind = cl_abap_tabledescr=>tablekind_std
+                               p_unique     = abap_false ).
+
+          CREATE DATA l_tab2str TYPE HANDLE lo_new_tab.
+          ASSIGN l_tab2str->* TO <tab2str>.
+          ASSIGN ir_tab->* TO <any_tab>.
+
+          LOOP AT <any_tab> ASSIGNING <old_struc>.
+            APPEND INITIAL LINE TO <tab2str> ASSIGNING <new_struc>.
+            ASSIGN COMPONENT 'FIELD' OF STRUCTURE <new_struc> TO <field>.
+            <field> = <old_struc>.
+          ENDLOOP.
+          GET REFERENCE OF <tab2str> INTO mr_table.
+      ENDTRY.
     ENDIF.
     create_alv( ).
     create_sel_alv( ).
@@ -2473,11 +2591,26 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD handle_doubleclick.
+    DATA: lo_table_descr TYPE REF TO cl_tpda_script_tabledescr,
+          table_clone    TYPE REF TO data.
+
     FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
     lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
+
+      ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
+    IF sy-subrc = 0.
+      lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
+    ELSE.
+*      TRY.
+*          lo_table_descr ?= cl_tpda_script_data_descr=>factory( |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| ).
+*          table_clone = lo_table_descr->elem_clone( ).
+*          lcl_appl=>open_int_table( EXPORTING iv_name = |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| it_ref = table_clone ).
+*        CATCH cx_sy_move_cast_error.
+*      ENDTRY.
+    ENDIF.
   ENDMETHOD.
 
   METHOD before_user_command.
@@ -2877,6 +3010,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
               lv_drop     TYPE i.
         l_catalog-ref_table = mo_viewer->m_tabname.
         l_catalog-ref_field = l_catalog-fieldname.
+
         lcl_rtti=>find_drop_down(
          EXPORTING
           io_grid      = mo_sel_alv
@@ -3003,17 +3137,17 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           ENDIF.
 
           IF c_sel_row-int_type = 'D'.
-          CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL' ##FM_SUBRC_OK
-            EXPORTING
-              date_external            = <field>
-            IMPORTING
-              date_internal            = <field>
-            EXCEPTIONS
-              date_external_is_invalid = 1
-              OTHERS                   = 2.
+            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL' ##FM_SUBRC_OK
+              EXPORTING
+                date_external            = <field>
+              IMPORTING
+                date_internal            = <field>
+              EXCEPTIONS
+                date_external_is_invalid = 1
+                OTHERS                   = 2.
           ELSE.
-        REPLACE ALL OCCURRENCES OF ':' IN <field> WITH ''.
-        ENDIF.
+            REPLACE ALL OCCURRENCES OF ':' IN <field> WITH ''.
+          ENDIF.
         ENDDO.
       ENDIF.
     ENDIF.
@@ -3399,6 +3533,20 @@ CLASS lcl_appl IMPLEMENTATION.
         p_exclude = itab.
   ENDMETHOD.
 
+  METHOD open_int_table.
+
+    DATA r_tab TYPE REF TO data.
+    IF it_ref IS BOUND.
+      r_tab = it_ref.
+    ELSE.
+      GET REFERENCE OF it_tab INTO r_tab.
+    ENDIF.
+    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    <obj>-alv_viewer = NEW #(  i_additional_name = iv_name ir_tab = r_tab ).
+    <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+
+  ENDMETHOD.
+
   METHOD exit.
     DATA: l_answer.
     DESCRIBE TABLE lcl_appl=>mt_obj.
@@ -3745,4 +3893,3 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
     ENDIF.
   ENDLOOP.
 ENDFORM.
-
