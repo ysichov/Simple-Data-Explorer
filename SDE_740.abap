@@ -177,7 +177,7 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> up to 100 rows WHERE (i_where) ORDER BY PRIMARY KEY
            .
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
@@ -185,7 +185,7 @@ CLASS lcl_sql IMPLEMENTATION.
       ENDTRY.
     ELSE.
       IF i_row_count IS NOT SUPPLIED.
-        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> ORDER BY PRIMARY KEY.
+        SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> up to 100 rows ORDER BY PRIMARY KEY.
       ELSE.
         SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab> UP TO i_row_count ROWS ORDER BY PRIMARY KEY..
       ENDIF.
@@ -2775,6 +2775,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
 
     CALL METHOD mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = it_fields[].
+
+    IF e_ucomm = 'TBAR'.
+      Return.
+    ENDIF.
+
     lcl_alv_common=>refresh( mo_alv ).
     IF mo_sel IS BOUND.
       IF  e_ucomm = 'HIDE' OR e_ucomm = 'SHOW' OR e_ucomm = 'UPDATE' .
