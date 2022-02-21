@@ -194,11 +194,10 @@ CLASS lcl_sql IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD exist_table.
-    DATA lv_tabname TYPE dd02l-tabname.
     SELECT SINGLE tabname
        FROM dd02l
-      INTO lv_tabname
-     WHERE tabname = i_tab
+      INTO @data(lv_tabname)
+     WHERE tabname = @i_tab
        AND ( tabclass = 'TRANSP' OR tabclass = 'CLUSTER' ).
     IF sy-subrc = 0.
       e_subrc = 1.
@@ -207,11 +206,10 @@ CLASS lcl_sql IMPLEMENTATION.
 
   METHOD exist_view.
 
-    DATA lv_tabname TYPE dd02l-tabname.
     SELECT SINGLE tabname
        FROM dd02l
-      INTO lv_tabname
-     WHERE tabname = i_tab
+      INTO @data(lv_tabname)
+     WHERE tabname = @i_tab
        AND tabclass = 'VIEW'.
     IF sy-subrc = 0.
       e_subrc = 1.
@@ -221,11 +219,10 @@ CLASS lcl_sql IMPLEMENTATION.
 
   METHOD exist_cds.
 
-    DATA lv_tabname TYPE dd02l-tabname.
     SELECT SINGLE tabname
        FROM dd02l
-      INTO lv_tabname
-     WHERE tabname = i_tab
+      INTO @data(lv_tabname)
+     WHERE tabname = @i_tab
        AND tabclass = 'VIEW'
        AND applclass = 'SDGV'.
 .
@@ -262,8 +259,8 @@ ENDCLASS.
 
 CLASS lcl_alv_common IMPLEMENTATION.
   METHOD refresh.
-    DATA l_stable TYPE lvc_s_stbl.
-    l_stable = 'XX'.
+    DATA l_stable TYPE lvc_s_stbl VALUE 'XX'.
+
     IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
@@ -458,11 +455,8 @@ CLASS lcl_rtti IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD create_table_by_name.
-    DATA: lo_new_tab  TYPE REF TO cl_abap_tabledescr,
-          lo_new_type TYPE REF TO cl_abap_structdescr.
-
-    create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_handle = lo_new_type ).
-    lo_new_tab = cl_abap_tabledescr=>create(
+    create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_handle = data(lo_new_type) ).
+    data(lo_new_tab) = cl_abap_tabledescr=>create(
                     p_line_type  = lo_new_type
                     p_table_kind = cl_abap_tabledescr=>tablekind_std
                     p_unique     = abap_false ).
@@ -2081,13 +2075,12 @@ ENDCLASS.
 
 CLASS lcl_box_handler IMPLEMENTATION.
   METHOD on_box_close.
-    DATA: lv_tabix LIKE sy-tabix.
     sender->free( ).
 
     "Free Memory
     LOOP AT lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
       IF <obj>-alv_viewer->mo_box = sender.
-        lv_tabix = sy-tabix.
+        data(lv_tabix) = sy-tabix.
         EXIT.
       ENDIF.
     ENDLOOP.
@@ -2510,7 +2503,6 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     ENDIF.
     APPEND ls_toolbar TO lt_toolbar.
-
 
     IF m_std_tbar IS INITIAL.
       e_object->mt_toolbar =  lt_toolbar.
