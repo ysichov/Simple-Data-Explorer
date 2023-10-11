@@ -2799,6 +2799,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
     lcl_alv_common=>refresh( mo_alv ).
     mo_sel->mo_viewer->handle_user_command( 'UPDATE' ).
+    mo_sel->mo_viewer->handle_user_command( 'HIDE' ).
     LOOP AT mo_column_emitters INTO DATA(l_emit).
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
