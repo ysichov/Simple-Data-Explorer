@@ -10,7 +10,6 @@
 *& Multi-windows program for viewing tables, views, salary clusters, CDS and some links between them
 *& Written by Yurii Sychov
 *& e-mail:   ysichov@gmail.com
-*& skype:    ysichov
 *& blog:     https://ysychov.wordpress.com/blog/
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
 *&---------------------------------------------------------------------*
