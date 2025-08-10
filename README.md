@@ -1,4 +1,5 @@
-<img width="556" height="420" alt="image" src="https://github.com/user-attachments/assets/da55d412-a02d-46ea-af36-286d1ff4f6f3" />
+<img width="645" height="500" alt="image" src="https://github.com/user-attachments/assets/c2b222bf-f200-4979-8516-9f2ebee84cf6" />
+
 
 
 Multi-windows program for viewing SQL tables and links between them
