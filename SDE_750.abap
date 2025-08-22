@@ -3108,7 +3108,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       CLEAR: c_sel_row-low, c_sel_row-low.
     ENDIF.
 
-    IF c_sel_row-low CA  '*%+&'.
+    IF c_sel_row-low CA  '*%+&' AND c_sel_row-opti <> 'NP'.
       c_sel_row-sign = 'I'.
       c_sel_row-opti = 'CP'.
     ENDIF.
@@ -3895,3 +3895,4 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
     ENDIF.
   ENDLOOP.
 ENDFORM.
+
