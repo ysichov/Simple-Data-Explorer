@@ -23,6 +23,12 @@
      <ENTRY>Simple Data Explorer</ENTRY>
      <LENGTH>20</LENGTH>
     </item>
+    <item>
+     <ID>S</ID>
+     <KEY>GV_ROWS</KEY>
+     <ENTRY>Max rows</ENTRY>
+     <LENGTH>16</LENGTH>
+    </item>
    </TPOOL>
   </asx:values>
  </asx:abap>

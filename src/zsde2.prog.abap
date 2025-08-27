@@ -12,11 +12,26 @@
 *& e-mail:   ysichov@gmail.com
 *& blog:     https://ysychov.wordpress.com/blog/
 *& LinkedIn: https://www.linkedin.com/in/ysychov/
+
 *&---------------------------------------------------------------------*
 *& External resources
 *& https://github.com/bizhuka/eui - ALV listboxes
 
 REPORT z_sde.
+
+*------------REPORT EVENTS--------------------
+TABLES sscrfields.
+DATA: g_mode TYPE i VALUE 1.
+"selection-screen begin of screen 101.
+SELECTION-SCREEN: FUNCTION KEY 1."Tables
+SELECTION-SCREEN: FUNCTION KEY 2."Views
+SELECTION-SCREEN: FUNCTION KEY 3."CDS
+
+PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
+PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
+PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
+PARAMETERS: gv_rows  TYPE i DEFAULT 500.
+"selection-screen end of screen 101.
 
 FIELD-SYMBOLS: <g_str> TYPE any.
 
@@ -176,8 +191,8 @@ CLASS lcl_sql IMPLEMENTATION.
     CHECK lcl_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
-          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF  TABLE <f_tab> WHERE (i_where) ORDER BY PRIMARY KEY
-           .
+          SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab>  UP TO i_row_count ROWS  WHERE (i_where)  ORDER BY PRIMARY KEY.
+
         CATCH cx_sy_dynamic_osql_semantics.             "#EC NO_HANDLER
         CATCH cx_sy_dynamic_osql_syntax.                "#EC NO_HANDLER
         CATCH cx_sy_conversion_no_number.               "#EC NO_HANDLER
@@ -2283,7 +2298,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             data      = <f_tab>.
       ELSE.
         read_text_table( ).
-        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = 100
+        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = gv_rows
                              CHANGING cr_tab =  mr_table c_count = m_count ).
         update_texts( ).
 
@@ -2766,7 +2781,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           lt_filter TYPE lvc_t_filt.
     IF m_is_sql = abap_true.
       DATA(l_where) = get_where( ).
-      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where CHANGING cr_tab =  mr_table c_count = m_count ).
+      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = gv_rows CHANGING cr_tab =  mr_table c_count = gv_rows ).
       IF l_where IS INITIAL.
         CLEAR m_is_sql.
       ENDIF.
@@ -3712,18 +3727,6 @@ CLASS lcl_dragdrop IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-*------------REPORT EVENTS--------------------
-TABLES sscrfields.
-DATA: g_mode TYPE i VALUE 1.
-"selection-screen begin of screen 101.
-SELECTION-SCREEN: FUNCTION KEY 1."Tables
-SELECTION-SCREEN: FUNCTION KEY 2."Views
-SELECTION-SCREEN: FUNCTION KEY 3."CDS
-
-PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_for_view MODIF ID tab.
-PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
-PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
-"selection-screen end of screen 101.
 
 INITIALIZATION.
 
