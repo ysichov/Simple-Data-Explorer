@@ -1,15 +1,13 @@
 REPORT z_itable_explorer.
-INCLUDE z_itable_explorer_cls.
 
 START-OF-SELECTION.
   PERFORM test.
-
 
 FORM test.
 
   TYPES: BEGIN OF t_header.
            INCLUDE STRUCTURE spfli.
-           TYPES: sflight_tab TYPE flighttab,
+  TYPES:   sflight_tab TYPE flighttab,
          END OF t_header.
 
   DATA: lt_spfli  TYPE TABLE OF t_header,
@@ -24,7 +22,7 @@ FORM test.
      WHERE  carrid = <spfli>-carrid.
   ENDLOOP.
 
-  lcl_appl=>open_int_table( EXPORTING it_tab = lt_flight iv_name = 'SFLIGHT' iv_dummy = 'X'  ).
-  lcl_appl=>open_int_table( EXPORTING it_tab = lt_spfli iv_name = 'SPFLI header with Sflight body tables' iv_dummy = 'X' iv_show = 'X'   ).
+  zcl_data_explorer=>open_table( EXPORTING it_tab = lt_flight iv_name = 'SFLIGHT'  ).
+  zcl_data_explorer=>open_table( EXPORTING it_tab = lt_spfli iv_name = 'SPFLI header with Sflight body tables' iv_show = 'X' ).
 
 ENDFORM.

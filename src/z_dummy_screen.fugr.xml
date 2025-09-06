@@ -55,13 +55,22 @@
       <DESCRIPT>dummy screen</DESCRIPT>
       <TYPE>N</TYPE>
       <NEXTSCREEN>0333</NEXTSCREEN>
-      <LINES>027</LINES>
-      <COLUMNS>120</COLUMNS>
+      <LINES>029</LINES>
+      <COLUMNS>181</COLUMNS>
      </HEADER>
      <CONTAINERS>
       <RPY_DYCATT>
        <TYPE>SCREEN</TYPE>
        <NAME>SCREEN</NAME>
+      </RPY_DYCATT>
+      <RPY_DYCATT>
+       <TYPE>CUST_CTRL</TYPE>
+       <NAME>C_TREE</NAME>
+       <ELEMENT_OF>SCREEN</ELEMENT_OF>
+       <LINE>001</LINE>
+       <COLUMN>001</COLUMN>
+       <LENGTH>180</LENGTH>
+       <HEIGHT>029</HEIGHT>
       </RPY_DYCATT>
      </CONTAINERS>
      <FIELDS>
@@ -138,6 +147,12 @@
       <INT_NOTE>z_dummy</INT_NOTE>
      </RSMPE_ATRT>
     </DOC>
+    <TIT>
+     <RSMPE_TITT>
+      <CODE>Z_SIMPLE</CODE>
+      <TEXT>Simple Data Explorer</TEXT>
+     </RSMPE_TITT>
+    </TIT>
    </CUA>
   </asx:values>
  </asx:abap>
