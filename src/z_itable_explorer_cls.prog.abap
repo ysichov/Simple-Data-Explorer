@@ -1361,7 +1361,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
           mo_window          TYPE REF TO lcl_window.
 
     METHODS:
-      constructor IMPORTING i_tname           TYPE any OPTIONAL
+        constructor IMPORTING i_tname           TYPE any OPTIONAL
                             i_additional_name TYPE string OPTIONAL
                             ir_tab            TYPE REF TO data OPTIONAL
                             io_window         TYPE REF TO lcl_window,
@@ -1378,7 +1378,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
       translate_field IMPORTING i_lang TYPE ddlanguage CHANGING c_fld TYPE lvc_s_fcat,
       handle_tab_toolbar  FOR EVENT toolbar OF cl_gui_alv_grid  IMPORTING e_object,
       before_user_command FOR EVENT before_user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
-      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm.
+      handle_user_command FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
+      handle_doubleclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING e_column es_row_no.
 
 ENDCLASS.
 
@@ -1790,7 +1791,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     SET HANDLER   before_user_command
                   handle_user_command
                   handle_tab_toolbar
-
+                  handle_doubleclick
                   lcl_dragdrop=>drag
                   FOR mo_alv.
 
@@ -1985,6 +1986,36 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   ENDMETHOD.
 
+  METHOD handle_doubleclick.
+    DATA: lo_table_descr TYPE REF TO cl_tpda_script_tabledescr,
+          table_clone    TYPE REF TO data.
+    FIELD-SYMBOLS: <f_tab>  TYPE STANDARD TABLE.
+
+    CHECK es_row_no-row_id IS NOT INITIAL.
+    ASSIGN mr_table->* TO  <f_tab>.
+    READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
+
+    ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
+    IF sy-subrc = 0.
+      lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> io_window = mo_window ).
+      RETURN.
+    ELSE.
+*      TRY.
+*          lo_table_descr ?= cl_tpda_script_data_descr=>factory( |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| ).
+*          table_clone = lo_table_descr->elem_clone( ).
+*          lcl_appl=>open_int_table( EXPORTING iv_name = |{ m_additional_name }[ 1 ]-{ e_column-fieldname }| it_ref = table_clone ).
+*          return.
+*        CATCH cx_sy_move_cast_error.
+*      ENDTRY.
+    ENDIF.
+
+
+*    ASSIGN mr_table->* TO  <f_tab>.
+*    READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING <tab>.
+*    lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
+
+  ENDMETHOD.
+
   METHOD handle_user_command.
 
     DATA: it_fields     TYPE lvc_t_fcat,
@@ -2076,6 +2107,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
 
   ENDMETHOD.                           "handle_user_command
+
+
 
   METHOD refresh_table.
 
@@ -3127,8 +3160,6 @@ CLASS lcl_rtti_tree IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
 
-    IF mo_debugger->m_debug IS NOT INITIAL. BREAK-POINT. ENDIF.
-
     IF l_node IS NOT INITIAL.
       READ TABLE mt_vars WITH KEY name = is_var-name INTO DATA(l_var).
       IF sy-subrc = 0.
@@ -3212,7 +3243,7 @@ CLASS lcl_rtti_tree IMPLEMENTATION.
           l_rel   TYPE salv_de_node_relation.
 
     READ TABLE mt_vars WITH KEY name = is_var-name INTO DATA(l_var).
-    IF mo_debugger->m_debug IS NOT INITIAL.BREAK-POINT.ENDIF.
+
     IF sy-subrc = 0.
       DATA(lo_nodes) = tree->get_nodes( ).
       DATA(l_node) =  lo_nodes->get_node( l_var-key ).
@@ -3315,7 +3346,7 @@ CLASS lcl_rtti_tree IMPLEMENTATION.
 
     l_rel = iv_rel.
     ASSIGN ir_up->* TO FIELD-SYMBOL(<new_value>).
-    IF mo_debugger->m_debug IS NOT INITIAL. BREAK-POINT. ENDIF.
+
 
     READ TABLE mt_vars WITH KEY name = is_var-name INTO DATA(l_var).
     DATA(lt_nodes) = tree->get_nodes( )->get_all_nodes( ).
@@ -3604,7 +3635,6 @@ CLASS lcl_rtti_tree IMPLEMENTATION.
 
   METHOD del_variable.
 
-    IF mo_debugger->m_debug IS NOT INITIAL. BREAK-POINT. ENDIF.
     DATA(lt_hist) = mo_debugger->mt_vars_hist.
     SORT lt_hist BY step DESCENDING.
     LOOP AT lt_hist INTO DATA(ls_hist) WHERE name = iv_full_name.
