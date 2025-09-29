@@ -175,8 +175,10 @@ CLASS lcl_sql DEFINITION.
       read_any_table IMPORTING i_tabname   TYPE tabname
                                i_where     TYPE string
                                i_row_count TYPE i OPTIONAL
+
                      CHANGING  cr_tab      TYPE REF TO data
                                c_count     TYPE i,
+
       exist_table IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc,
       exist_view  IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc,
       exist_cds   IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc  .
@@ -241,7 +243,7 @@ CLASS lcl_alv_common DEFINITION.
 
     TYPES: BEGIN OF t_tabfields.
              INCLUDE TYPE   dfies.
-    TYPES: empty   TYPE xfeld,
+    TYPES:   empty   TYPE xfeld,
              is_text TYPE xfeld,
            END OF t_tabfields.
 
@@ -2781,7 +2783,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           lt_filter TYPE lvc_t_filt.
     IF m_is_sql = abap_true.
       DATA(l_where) = get_where( ).
-      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = gv_rows CHANGING cr_tab =  mr_table c_count = gv_rows ).
+      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = gv_rows CHANGING cr_tab =  mr_table c_count = m_count ).
       IF l_where IS INITIAL.
         CLEAR m_is_sql.
       ENDIF.
