@@ -2353,7 +2353,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mt_alv_catalog ).
     me->handle_user_command( EXPORTING e_ucomm = 'HIDE' ).
-    me->handle_user_command( EXPORTING e_ucomm = 'TECH' ).
+    "me->handle_user_command( EXPORTING e_ucomm = 'TECH' ).
     mo_alv->set_toolbar_interactive( ).
   ENDMETHOD.
 
