@@ -2298,6 +2298,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             view_name = m_tabname
           TABLES
             data      = <f_tab>.
+        m_count = lines( <f_tab> ).
       ELSE.
         read_text_table( ).
         lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = gv_rows
@@ -2381,10 +2382,17 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     DATA: lv_text       TYPE as4text,
           lv_header(80) TYPE c.
 
-    SELECT SINGLE ddtext INTO lv_text
-      FROM dd02t
-     WHERE tabname = m_tabname
-       AND ddlanguage = m_lang.
+    IF gv_vname IS INITIAL.
+      SELECT SINGLE ddtext INTO lv_text
+        FROM dd02t
+       WHERE tabname = m_tabname
+         AND ddlanguage = m_lang.
+    ELSE.
+      SELECT SINGLE ddtext INTO lv_text
+         FROM dd25t
+        WHERE viewname = m_tabname
+          AND ddlanguage = m_lang.
+    ENDIF.
 
     lv_header = |{ m_tabname } - { lv_text } ({ m_count }) { m_additional_name }|.
     mo_box->set_caption( lv_header ).
