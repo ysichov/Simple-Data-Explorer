@@ -1946,6 +1946,7 @@ CLASS lcl_plugins IMPLEMENTATION.
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
     READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = io_viewer->m_tabname fieldname = i_column .
     ASSIGN COMPONENT i_column OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
+    CHECK sy-subrc = 0.
     CHECK <field> IS NOT INITIAL.
     CALL FUNCTION 'DD_FORKEY_GET'
       EXPORTING
@@ -3176,6 +3177,37 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           ENDIF.
         ENDDO.
       ENDIF.
+
+      " Get and execute domain conversion routine - by https://github.com/Koch013
+      IF c_sel_row-domain IS NOT INITIAL.
+        DATA ls_dd01v TYPE dd01v.
+
+        CALL FUNCTION 'DDIF_DOMA_GET'
+          EXPORTING
+            name          = CONV ddobjname( c_sel_row-domain )
+          IMPORTING
+            dd01v_wa      = ls_dd01v
+          EXCEPTIONS
+            illegal_input = 1
+            OTHERS        = 2.
+
+        IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL.
+          DATA(lv_conv_exit_name) = |CONVERSION_EXIT_{ ls_dd01v-convexit }_INPUT|.
+          DO 2 TIMES.
+            ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
+            IF <field> IS INITIAL.
+              CONTINUE.
+            ENDIF.
+
+            CALL FUNCTION lv_conv_exit_name
+              EXPORTING
+                input  = <field>
+              IMPORTING
+                output = <field>.
+          ENDDO.
+        ENDIF.
+      ENDIF." c_sel_row-domain IS NOT INITIAL.
+
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
 
@@ -3183,35 +3215,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       c_sel_row-inherited = icon_businav_value_chain.
     ENDIF.
 
-    " Get and execute domain conversion routine - by https://github.com/Koch013
-    IF c_sel_row-domain IS NOT INITIAL.
-      DATA ls_dd01v TYPE dd01v.
 
-      CALL FUNCTION 'DDIF_DOMA_GET'
-        EXPORTING
-          name          = CONV ddobjname( c_sel_row-domain )
-        IMPORTING
-          dd01v_wa      = ls_dd01v
-        EXCEPTIONS
-          illegal_input = 1
-          OTHERS        = 2.
-
-      IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL.
-        DATA(lv_conv_exit_name) = |CONVERSION_EXIT_{ ls_dd01v-convexit }_INPUT|.
-        DO 2 TIMES.
-          ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
-          IF <field> IS INITIAL.
-            CONTINUE.
-          ENDIF.
-
-          CALL FUNCTION lv_conv_exit_name
-            EXPORTING
-              input  = <field>
-            IMPORTING
-              output = <field>.
-        ENDDO.
-      ENDIF.
-    ENDIF." c_sel_row-domain IS NOT INITIAL.
   ENDMETHOD.
 
   METHOD on_f4.
