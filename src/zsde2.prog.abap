@@ -202,8 +202,8 @@ CLASS lcl_alv_common DEFINITION.
 
     TYPES: BEGIN OF t_tabfields.
              INCLUDE TYPE   dfies.
-    TYPES:   empty   TYPE xfeld,
-             is_text TYPE xfeld,
+    TYPES:   empty   TYPE boolean,
+             is_text TYPE boolean,
            END OF t_tabfields.
 
     CLASS-DATA: mt_tabfields TYPE HASHED TABLE OF t_tabfields WITH UNIQUE KEY tabname fieldname.
@@ -1171,7 +1171,7 @@ CLASS lcl_sel_opt DEFINITION.
       constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
-      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE xfeld DEFAULT abap_true ,
+      set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE boolean DEFAULT abap_true ,
       update_sel_row CHANGING c_sel_row TYPE lcl_appl=>selection_display_s.
 
   PRIVATE SECTION.
@@ -1198,9 +1198,9 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
            END OF t_column_emitter.
 
     DATA: m_lang             TYPE ddlanguage,
-          m_is_sql           TYPE xfeld,
-          m_is_view          TYPE xfeld,
-          m_is_cds           TYPE xfeld,
+          m_is_sql           TYPE boolean,
+          m_is_view          TYPE boolean,
+          m_is_cds           TYPE boolean,
           m_tabname          TYPE tabname,
           m_texttabname      TYPE tabname,
           m_count            TYPE i,
@@ -1222,8 +1222,8 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
       constructor IMPORTING i_tname           TYPE any OPTIONAL
                             ir_tab            TYPE REF TO data OPTIONAL
                             i_additional_name TYPE string OPTIONAL
-                            i_is_view         TYPE xfeld OPTIONAL
-                            i_is_cds          TYPE xfeld OPTIONAL,
+                            i_is_view         TYPE boolean OPTIONAL
+                            i_is_cds          TYPE boolean OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
       refresh_table FOR EVENT selection_done OF lcl_sel_opt.
 
@@ -1658,20 +1658,20 @@ CLASS lcl_plugins DEFINITION.
       run_data_element IMPORTING i_str          TYPE any
                                  io_viewer      TYPE REF TO lcl_table_viewer
                                  i_column       TYPE any
-                       RETURNING VALUE(is_done) TYPE xfeld,
+                       RETURNING VALUE(is_done) TYPE boolean,
       run_field_2_field IMPORTING i_str          TYPE any
                                   io_viewer      TYPE REF TO lcl_table_viewer
                                   i_column       TYPE any
-                        RETURNING VALUE(is_done) TYPE xfeld,
+                        RETURNING VALUE(is_done) TYPE boolean,
       run_field_2_plugin IMPORTING "i_str          TYPE any
                                    io_viewer      TYPE REF TO lcl_table_viewer
                                    i_column       TYPE any
-                         RETURNING VALUE(is_done) TYPE xfeld,
+                         RETURNING VALUE(is_done) TYPE boolean,
 
       run_hrp1001_adatanr IMPORTING i_str          TYPE any
                                     io_viewer      TYPE REF TO lcl_table_viewer
                                     i_column       TYPE any
-                          RETURNING VALUE(is_done) TYPE xfeld,
+                          RETURNING VALUE(is_done) TYPE boolean,
       run_hrpy_rgdir IMPORTING i_str          TYPE any.
 ENDCLASS.
 
@@ -3205,8 +3205,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
           ls_objec   TYPE objec,
           l_otype    TYPE otype,
           l_plvar    TYPE plvar,
-          l_multiple TYPE xfeld,
-          l_clear    TYPE xfeld.
+          l_multiple TYPE boolean,
+          l_clear    TYPE boolean.
 
     IF e_fieldname = 'LOW'.
       l_multiple = abap_true.
@@ -3375,11 +3375,11 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         ENDIF.
       ENDIF.
 
-      IF l_cat-convexit = 'ALPHA' AND NOT  <ls_cells>-value CA '+*'.
-        <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
-        l_start = 128 - l_cat-dd_outlen.
-        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-dd_outlen).
-      ENDIF.
+*      IF l_cat-convexit = 'ALPHA' AND NOT  <ls_cells>-value CA '+*'.
+*        <ls_cells>-value = |{ <ls_cells>-value ALPHA = IN }|.
+*        l_start = 128 - l_cat-dd_outlen.
+*        <ls_cells>-value = <ls_cells>-value+l_start(l_cat-dd_outlen).
+*      ENDIF.
 
       IF <ls_cells>-value IS NOT INITIAL.
         IF <tab>-int_type = 'D'.
