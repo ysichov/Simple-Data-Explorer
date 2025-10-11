@@ -3160,34 +3160,35 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       ENDIF.
 
       " Get and execute domain conversion routine - by https://github.com/Koch013
-      IF c_sel_row-domain IS NOT INITIAL.
-        DATA ls_dd01v TYPE dd01v.
-
-        CALL FUNCTION 'DDIF_DOMA_GET'
-          EXPORTING
-            name          = CONV ddobjname( c_sel_row-domain )
-          IMPORTING
-            dd01v_wa      = ls_dd01v
-          EXCEPTIONS
-            illegal_input = 1
-            OTHERS        = 2.
-
-        IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL AND ls_dd01v-convexit <> 'ALPHA'.
-          DATA(lv_conv_exit_name) = |CONVERSION_EXIT_{ ls_dd01v-convexit }_INPUT|.
-          DO 2 TIMES.
-            ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
-            IF <field> IS INITIAL.
-              CONTINUE.
-            ENDIF.
-
-            CALL FUNCTION lv_conv_exit_name
-              EXPORTING
-                input  = <field>
-              IMPORTING
-                output = <field>.
-          ENDDO.
-        ENDIF.
-      ENDIF." c_sel_row-domain IS NOT INITIAL.
+      "getting some bugs here with all zero in the field. This is because of different field length
+**      IF c_sel_row-domain IS NOT INITIAL.
+**        DATA ls_dd01v TYPE dd01v.
+**
+**        CALL FUNCTION 'DDIF_DOMA_GET'
+**          EXPORTING
+**            name          = CONV ddobjname( c_sel_row-domain )
+**          IMPORTING
+**            dd01v_wa      = ls_dd01v
+**          EXCEPTIONS
+**            illegal_input = 1
+**            OTHERS        = 2.
+**
+**        IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL AND ls_dd01v-convexit <> 'ALPHA'.
+**          DATA(lv_conv_exit_name) = |CONVERSION_EXIT_{ ls_dd01v-convexit }_INPUT|.
+**          DO 2 TIMES.
+**            ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
+**            IF <field> IS INITIAL.
+**              CONTINUE.
+**            ENDIF.
+**
+**            CALL FUNCTION lv_conv_exit_name
+**              EXPORTING
+**                input  = <field>
+**              IMPORTING
+**                output = <field>.
+**          ENDDO.
+**        ENDIF.
+**      ENDIF." c_sel_row-domain IS NOT INITIAL.
 
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
