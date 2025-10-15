@@ -3173,18 +3173,13 @@ CLASS lcl_sel_opt IMPLEMENTATION.
             OTHERS        = 2.
 
         IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL AND ls_dd01v-convexit <> 'ALPHA'.
-          DATA(lv_conv_exit_name) = |CONVERSION_EXIT_{ ls_dd01v-convexit }_INPUT|.
           DO 2 TIMES.
             ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
             IF <field> IS INITIAL.
               CONTINUE.
             ENDIF.
 
-            CALL FUNCTION lv_conv_exit_name
-              EXPORTING
-                input  = <field>
-              IMPORTING
-                output = <field>.
+            <field> =  |{ <field> ALPHA = IN }|.
 
             DATA(length) = strlen( <field> ).
             IF length > ls_dd01v-leng.
