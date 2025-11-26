@@ -3160,36 +3160,36 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       ENDIF.
 
       " Get and execute domain conversion routine - by https://github.com/Koch013
-      IF c_sel_row-domain IS NOT INITIAL.
-        DATA ls_dd01v TYPE dd01v.
-
-        CALL FUNCTION 'DDIF_DOMA_GET'
-          EXPORTING
-            name          = CONV ddobjname( c_sel_row-domain )
-          IMPORTING
-            dd01v_wa      = ls_dd01v
-          EXCEPTIONS
-            illegal_input = 1
-            OTHERS        = 2.
-
-        IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL AND ls_dd01v-convexit <> 'ALPHA'.
-          DO 2 TIMES.
-            ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
-            IF <field> IS INITIAL.
-              CONTINUE.
-            ENDIF.
-
-            <field> =  |{ <field> ALPHA = IN }|.
-
-            DATA(length) = strlen( <field> ).
-            IF length > ls_dd01v-leng.
-              DATA(shift) = length - ls_dd01v-leng.
-              <field> = <field>+shift(ls_dd01v-leng).
-            ENDIF.
-
-          ENDDO.
-        ENDIF.
-      ENDIF." c_sel_row-domain IS NOT INITIAL.
+*      IF c_sel_row-domain IS NOT INITIAL.
+*        DATA ls_dd01v TYPE dd01v.
+*
+*        CALL FUNCTION 'DDIF_DOMA_GET'
+*          EXPORTING
+*            name          = CONV ddobjname( c_sel_row-domain )
+*          IMPORTING
+*            dd01v_wa      = ls_dd01v
+*          EXCEPTIONS
+*            illegal_input = 1
+*            OTHERS        = 2.
+*
+*        IF sy-subrc = 0 AND ls_dd01v-convexit IS NOT INITIAL. "AND ls_dd01v-convexit <> 'ALPHA'.
+*          DO 2 TIMES.
+*            ASSIGN COMPONENT COND string( WHEN sy-index = 1 THEN 'LOW' ELSE 'HIGH'  ) OF STRUCTURE <range> TO <field>.
+*            IF <field> IS INITIAL.
+*              CONTINUE.
+*            ENDIF.
+*
+*            <field> =  |{ <field> ALPHA = IN }|.
+*
+*            DATA(length) = strlen( <field> ).
+*            IF length > ls_dd01v-leng.
+*              DATA(shift) = length - ls_dd01v-leng.
+*              <field> = <field>+shift(ls_dd01v-leng).
+*            ENDIF.
+*
+*          ENDDO.
+*        ENDIF.
+*      ENDIF." c_sel_row-domain IS NOT INITIAL.
 
     ENDIF.
     c_sel_row-more_icon = COND #( WHEN c_sel_row-range IS INITIAL THEN icon_enter_more    ELSE icon_display_more  ).
