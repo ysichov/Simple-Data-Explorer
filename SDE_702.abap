@@ -147,7 +147,6 @@ class lcl_ddic implementation.
 endclass.                    "lcl_ddic IMPLEMENTATION
 
 class lcl_table_viewer definition deferred.
-class lcl_box_handler  definition deferred.
 class lcl_popup        definition deferred.
 class lcl_sel_opt definition deferred.
 
@@ -447,7 +446,6 @@ class lcl_appl definition.
     class-data: m_option_icons     type table of sign_option_icon_s,
                 mt_lang            type table of t_lang,
                 mt_obj             type table of t_obj, "main object table
-                m_ctrl_box_handler type ref to lcl_box_handler,
                 c_dragdropalv      type ref to cl_dragdrop.
 
     class-methods:
@@ -602,6 +600,7 @@ class lcl_table_viewer definition inheriting from lcl_popup.
 
     methods:
       constructor importing i_tname type tabname,
+      on_box_close redefinition,
       get_where returning value(c_where) type string,
       refresh_table for event selection_done of lcl_sel_opt.
 
@@ -768,56 +767,6 @@ class lcl_data_receiver implementation.
 endclass.                    "lcl_data_receiver IMPLEMENTATION
 
 *----------------------------------------------------------------------*
-*       CLASS LCL_BOX_HANDLER DEFINITION
-*----------------------------------------------------------------------*
-*
-*----------------------------------------------------------------------*
-class lcl_box_handler definition."for memory clearing
-  public section.
-    methods: on_box_close for event close of cl_gui_dialogbox_container importing sender.
-endclass.                    "lcl_box_handler DEFINITION
-
-*----------------------------------------------------------------------*
-*       CLASS LCL_BOX_HANDLER IMPLEMENTATION
-*----------------------------------------------------------------------*
-*
-*----------------------------------------------------------------------*
-class lcl_box_handler implementation.
-
-  method on_box_close.
-
-    data: lv_tabix like sy-tabix.
-    sender->free( ).
-
-    "Free Memory
-    field-symbols <obj> type lcl_appl=>t_obj.
-    loop at lcl_appl=>mt_obj assigning <obj>.
-      if <obj>-alv_viewer->mo_box = sender.
-        lv_tabix = sy-tabix.
-        exit.
-      endif.
-    endloop.
-    if sy-subrc = 0.
-      free <obj>-alv_viewer->mr_table.
-      free <obj>-alv_viewer->mo_alv.
-
-      "shutdown receivers.
-      if <obj>-alv_viewer->mo_sel is not initial.
-        data l_sel type selection_display_s.
-        loop at <obj>-alv_viewer->mo_sel->mt_sel_tab into l_sel.
-          if l_sel-receiver is bound.
-            l_sel-receiver->shut_down( ).
-          endif.
-        endloop.
-      endif.
-      free <obj>-alv_viewer.
-
-      delete lcl_appl=>mt_obj index lv_tabix.
-    endif.
-  endmethod.                    "ON_BOX_CLOSE
-endclass.               "lcl_box_handler
-
-*----------------------------------------------------------------------*
 *       CLASS LCL_TABLE_VIEWER IMPLEMENTATION
 *----------------------------------------------------------------------*
 *
@@ -835,6 +784,37 @@ class lcl_table_viewer implementation.
     create_sel_alv( ).
     mo_alv->set_focus( mo_alv ).
   endmethod.                    "constructor
+
+  method on_box_close.
+    data: lv_tabix like sy-tabix.
+    sender->free( ).
+
+    "Free Memory and remove from object list
+    field-symbols <obj> type lcl_appl=>t_obj.
+    loop at lcl_appl=>mt_obj assigning <obj>.
+      if <obj>-alv_viewer->mo_box = sender.
+        lv_tabix = sy-tabix.
+        exit.
+      endif.
+    endloop.
+    check sy-subrc = 0.
+
+    free <obj>-alv_viewer->mr_table.
+    free <obj>-alv_viewer->mo_alv.
+
+    "Shutdown all receivers
+    if <obj>-alv_viewer->mo_sel is not initial.
+      data l_sel type selection_display_s.
+      loop at <obj>-alv_viewer->mo_sel->mt_sel_tab into l_sel.
+        if l_sel-receiver is bound.
+          l_sel-receiver->shut_down( ).
+        endif.
+      endloop.
+    endif.
+    free <obj>-alv_viewer.
+
+    delete lcl_appl=>mt_obj index lv_tabix.
+  endmethod.                    "on_box_close
 
   method create_popup.
     data: l_name type text100.
