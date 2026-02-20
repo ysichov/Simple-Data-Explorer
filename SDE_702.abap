@@ -148,7 +148,70 @@ endclass.                    "lcl_ddic IMPLEMENTATION
 
 class lcl_table_viewer definition deferred.
 class lcl_box_handler  definition deferred.
+class lcl_popup        definition deferred.
 class lcl_sel_opt definition deferred.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_popup DEFINITION
+*----------------------------------------------------------------------*
+class lcl_popup definition.
+  public section.
+    class-data: m_counter type i.
+
+    data: mo_box      type ref to cl_gui_dialogbox_container,
+          mo_splitter type ref to cl_gui_splitter_container,
+          mo_parent   type ref to cl_gui_container,
+          m_additional_name type string.
+
+    methods:
+      constructor importing i_additional_name type string optional,
+      create importing  i_width       type i
+                        i_hight       type i
+                        i_name        type text100 optional
+               returning value(ro_box) type ref to cl_gui_dialogbox_container,
+      on_box_close for event close of cl_gui_dialogbox_container importing sender.
+endclass.
+
+*----------------------------------------------------------------------*
+*       CLASS lcl_popup IMPLEMENTATION
+*----------------------------------------------------------------------*
+class lcl_popup implementation.
+
+  method constructor.
+    m_additional_name = i_additional_name.
+  endmethod.
+
+  method create.
+    data: l_top  type i,
+          l_left type i.
+
+    add 1 to m_counter.
+    l_top  = 10 + 10 * ( m_counter div 5 ) + ( m_counter mod 5 ) * 50.
+    l_left = l_top.
+
+    create object ro_box
+      exporting
+        width                       = i_width
+        height                      = i_hight
+        top                         = l_top
+        left                        = l_left
+        caption                     = i_name
+      exceptions
+        cntl_error                  = 1
+        cntl_system_error           = 2
+        create_error                = 3
+        lifetime_error              = 4
+        lifetime_dynpro_dynpro_link = 5
+        event_already_registered    = 6
+        error_regist_event          = 7
+        others                      = 8.
+  endmethod.
+
+  method on_box_close.
+    sender->free( ).
+  endmethod.
+
+endclass.
 
 *----------------------------------------------------------------------*
 *       CLASS LCL_DD_DATA DEFINITION
@@ -510,7 +573,7 @@ endclass.                    "lcl_sel_opt DEFINITION
 *----------------------------------------------------------------------*
 *
 *----------------------------------------------------------------------*
-class lcl_table_viewer definition.
+class lcl_table_viewer definition inheriting from lcl_popup.
 
   public section.
 
@@ -524,10 +587,8 @@ class lcl_table_viewer definition.
           m_count            type i,
           mo_alv             type ref to cl_gui_alv_grid,
           mo_sel             type ref to lcl_sel_opt,
-          mo_box             type ref to cl_gui_dialogbox_container,
           mr_table           type ref to data,
           mr_text_table      type ref to data,
-          mo_splitter        type ref to cl_gui_splitter_container,
           mo_sel_parent      type ref to cl_gui_container,
           mo_alv_parent      type ref to cl_gui_container,
           mt_alv_catalog     type lvc_t_fcat,
@@ -764,6 +825,7 @@ endclass.               "lcl_box_handler
 class lcl_table_viewer implementation.
 
   method constructor.
+    super->constructor( ).
     m_lang = sy-langu.
     mo_sel_width = 0.
     m_tabname = i_tname.
@@ -775,31 +837,10 @@ class lcl_table_viewer implementation.
   endmethod.                    "constructor
 
   method create_popup.
-    data: l_top  type i,
-          l_left type i.
-
-    data l_lines type i.
-    l_lines = lines( lcl_appl=>mt_obj ) - 1.
-    l_top  = 20 + 30 * ( l_lines div 5 ) +  ( l_lines mod 5 ) * 50.
-    l_left = 350 + 300 * ( l_lines div 5 )  +  ( l_lines mod 5 ) * 50.
-
-    create object mo_box
-      exporting
-        width                       = '800'
-        height                      = '150'
-        top                         = l_top
-        left                        = l_left
-        caption                     = m_tabname
-      exceptions
-        cntl_error                  = 1
-        cntl_system_error           = 2
-        create_error                = 3
-        lifetime_error              = 4
-        lifetime_dynpro_dynpro_link = 5
-        event_already_registered    = 6
-        error_regist_event          = 7
-        others                      = 8.
-    if sy-subrc <> 0.
+    data: l_name type text100.
+    l_name = m_tabname.
+    mo_box = create( i_width = 800 i_hight = 150 i_name = l_name ).
+    if mo_box is initial.
       return.
     endif.
 
@@ -828,10 +869,7 @@ class lcl_table_viewer implementation.
        receiving
         container = mo_alv_parent.
 
-    if lcl_appl=>m_ctrl_box_handler is initial.
-      create object lcl_appl=>m_ctrl_box_handler.
-    endif.
-    set handler lcl_appl=>m_ctrl_box_handler->on_box_close for mo_box.
+    set handler on_box_close for mo_box.
   endmethod.                    "create_popup
 
   method create_alv.
@@ -2596,4 +2634,3 @@ form callback_f4_tab tables record_tab structure seahlpres
     endif.
   endloop.
 endform.                    "callback_f4_tab
-
