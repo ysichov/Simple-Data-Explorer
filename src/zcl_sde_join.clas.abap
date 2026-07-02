@@ -66,6 +66,8 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
       show_sql_editor,
       run_select,
       execute_sql IMPORTING i_sql TYPE string,
+      upper_outside_quotes IMPORTING i_sql         TYPE string
+                           RETURNING VALUE(rv_sql) TYPE string,
 
       on_sapevent FOR EVENT sapevent OF cl_gui_html_viewer
         IMPORTING action getdata postdata,
@@ -725,6 +727,11 @@ CLASS zcl_sde_join IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    "dynamic Open SQL tokens must be uppercase (keep quoted literals as-is)
+    l_fields = to_upper( l_fields ).
+    l_from   = to_upper( l_from ).
+    l_where  = upper_outside_quotes( l_where ).
+
     TRY.
         DATA(lo_struct) = cl_abap_structdescr=>create( lt_comp ).
         DATA(lo_tab) = cl_abap_tabledescr=>create(
@@ -748,6 +755,17 @@ CLASS zcl_sde_join IMPLEMENTATION.
     zcl_sde_appl=>open_int_table(
       it_ref  = lr_table
       iv_name = |JOIN { m_tabname } ({ lines( <result> ) })| ).
+  ENDMETHOD.
+
+  METHOD upper_outside_quotes.
+    "segments alternate: outside / inside single quotes
+    SPLIT i_sql AT '''' INTO TABLE DATA(lt_parts).
+    LOOP AT lt_parts ASSIGNING FIELD-SYMBOL(<part>).
+      IF sy-tabix MOD 2 = 1. "outside quotes
+        <part> = to_upper( <part> ).
+      ENDIF.
+    ENDLOOP.
+    rv_sql = concat_lines_of( table = lt_parts sep = '''' ).
   ENDMETHOD.
 
 ENDCLASS.
