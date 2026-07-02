@@ -38,6 +38,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
 
     METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer.
 
+protected section.
   PRIVATE SECTION.
     DATA: mo_viewer    TYPE REF TO zcl_sde_table_viewer,
           m_tabname    TYPE tabname,
@@ -86,7 +87,8 @@ ENDCLASS.
 
 
 
-CLASS zcl_sde_join IMPLEMENTATION.
+CLASS ZCL_SDE_JOIN IMPLEMENTATION.
+
 
   METHOD constructor.
     super->constructor( ).
@@ -150,6 +152,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     refresh_all( ).
   ENDMETHOD.
 
+
   METHOD get_fieldlist.
     CALL FUNCTION 'DDIF_FIELDINFO_GET'
       EXPORTING
@@ -166,6 +169,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDIF.
     DELETE rt_dfies WHERE datatype = 'CLNT' OR fieldname CP '.*'.
   ENDMETHOD.
+
 
   METHOD find_candidates.
     DATA: lt_dd08l TYPE TABLE OF dd08l,
@@ -275,6 +279,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD add_candidate.
     DATA(l_tabname) = i_tabname.
     TRANSLATE l_tabname TO UPPER CASE.
@@ -304,6 +309,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD toggle_candidate.
     READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = i_tabname.
     CHECK sy-subrc = 0.
@@ -319,11 +325,13 @@ CLASS zcl_sde_join IMPLEMENTATION.
     refresh_all( ).
   ENDMETHOD.
 
+
   METHOD refresh_all.
     render_html( ).
     render_flds( ).
     update_sql_view( ).
   ENDMETHOD.
+
 
   METHOD rebuild_selection.
     DATA: lt_old_flds TYPE tt_jfld,
@@ -425,6 +433,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     normalize_pos( ).
   ENDMETHOD.
 
+
   METHOD normalize_pos.
     DATA l_max TYPE i.
     LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WHERE sel = abap_true AND pos > 0.
@@ -440,6 +449,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       CLEAR <fld>-pos.
     ENDLOOP.
   ENDMETHOD.
+
 
   METHOD render_html.
     CHECK mo_html IS BOUND.
@@ -522,6 +532,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_html i_html = l_html ).
   ENDMETHOD.
+
 
   METHOD render_flds.
     DATA: lt_sel TYPE tt_jfld.
@@ -619,6 +630,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     show_html( io_html = mo_flds_html i_html = l_html ).
   ENDMETHOD.
 
+
   METHOD show_html.
     DATA: lt_html TYPE TABLE OF char255,
           l_url   TYPE char255.
@@ -645,6 +657,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       io_html->show_url( url = l_url ).
     ENDIF.
   ENDMETHOD.
+
 
   METHOD move_table.
     "visual swap in the join order; the base table takes part via m_base_pos
@@ -673,6 +686,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     <cand>-sel_order  = <other>-sel_order.
     <other>-sel_order = l_tmp.
   ENDMETHOD.
+
 
   METHOD move_table_before.
     "drag&drop: place table i_from before i_to ('#END' = last position)
@@ -718,6 +732,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     rebuild_selection( ).
   ENDMETHOD.
 
+
   METHOD move_field_before.
     "drag&drop: place field i_from (ALIAS~FIELD) before i_to ('#END' = last)
     DATA lt_keys TYPE TABLE OF string.
@@ -750,6 +765,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
+
 
   METHOD handle_fld_action.
     CASE i_act.
@@ -804,6 +820,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     update_sql_view( ).
   ENDMETHOD.
 
+
   METHOD apply_postdata.
     "form fields: act=..., jt_Tn=..., on_Tn=... (url-encoded)
     DATA(l_post) = concat_lines_of( table = it_postdata ).
@@ -827,6 +844,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
+
 
   METHOD on_sapevent.
     CASE action.
@@ -890,6 +908,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDCASE.
   ENDMETHOD.
 
+
   METHOD create_sql_view.
     mo_low_split->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_cont) ).
 
@@ -900,6 +919,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
         OTHERS = 1.
   ENDMETHOD.
 
+
   METHOD update_sql_view.
     CHECK mo_sql_text IS BOUND.
     mo_sql_text->set_textstream( generate_select( ) ).
@@ -909,9 +929,11 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD result_alive.
     rv_alive = boolc( mo_result IS BOUND AND line_exists( zcl_sde_appl=>mt_obj[ alv_viewer = mo_result ] ) ).
   ENDMETHOD.
+
 
   METHOD generate_select.
     DATA: l_fields TYPE string,
@@ -954,6 +976,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } UP TO { l_rows } ROWS|.
   ENDMETHOD.
 
+
   METHOD run_select.
     DATA l_sql TYPE string.
     mo_sql_text->get_textstream( IMPORTING text = l_sql ).
@@ -961,6 +984,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     CHECK l_sql IS NOT INITIAL.
     execute_sql( l_sql ).
   ENDMETHOD.
+
 
   METHOD execute_sql.
     DATA: l_sql    TYPE string,
@@ -1108,7 +1132,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
         RETURN.
     ENDTRY.
 
-    DATA(l_name) = |JOIN { m_tabname } ({ lines( <result> ) })|.
+    l_name = |JOIN { m_tabname } ({ lines( <result> ) })|.
     IF result_alive( ) = abap_true. "rebuild the existing result window in place
       mo_result->rebind( ir_tab = lr_table i_name = l_name ).
     ELSE.
@@ -1118,6 +1142,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       mo_result = <obj>-alv_viewer.
     ENDIF.
   ENDMETHOD.
+
 
   METHOD upper_outside_quotes.
     "segments alternate: outside / inside single quotes
@@ -1129,5 +1154,4 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDLOOP.
     rv_sql = concat_lines_of( table = lt_parts sep = '''' ).
   ENDMETHOD.
-
 ENDCLASS.
