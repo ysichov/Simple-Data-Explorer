@@ -27,6 +27,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
 
            BEGIN OF t_jfld,
              sel       TYPE abap_bool,
+             pos       TYPE i, "order in the SELECT list (only when sel = X)
              alias     TYPE char5,
              tabname   TYPE tabname,
              fieldname TYPE fieldname,
@@ -47,7 +48,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
           m_base_pos   TYPE i VALUE 1, "position of the base table in the join order (1 = FROM)
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
-          mo_flds_alv  TYPE REF TO cl_gui_alv_grid,
+          mo_flds_html TYPE REF TO cl_gui_html_viewer,
           mo_sql_text  TYPE REF TO cl_gui_textedit.
 
     METHODS:
@@ -55,16 +56,19 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
       get_fieldlist IMPORTING i_tabname       TYPE tabname
                     RETURNING VALUE(rt_dfies) TYPE ddfields,
       render_html,
+      render_flds,
       show_html IMPORTING io_html TYPE REF TO cl_gui_html_viewer i_html TYPE string,
       add_candidate IMPORTING i_tabname TYPE tabname,
       toggle_candidate IMPORTING i_tabname TYPE tabname,
       rebuild_selection,
+      normalize_pos,
       move_table IMPORTING i_alias TYPE char5 i_dir TYPE i,
+      move_table_before IMPORTING i_from TYPE string i_to TYPE string,
+      move_field_before IMPORTING i_from TYPE string i_to TYPE string,
+      handle_fld_action IMPORTING i_act TYPE string,
       apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
       create_sql_view,
       update_sql_view,
-      create_flds_alv,
-      set_marked_rows IMPORTING i_sel TYPE abap_bool,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
       run_select,
@@ -73,10 +77,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
                            RETURNING VALUE(rv_sql) TYPE string,
 
       on_sapevent FOR EVENT sapevent OF cl_gui_html_viewer
-        IMPORTING action getdata postdata,
-      on_flds_toolbar FOR EVENT toolbar OF cl_gui_alv_grid IMPORTING e_object,
-      on_flds_ucomm FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
-      on_flds_dblclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING es_row_no.
+        IMPORTING action getdata postdata.
 ENDCLASS.
 
 
@@ -127,12 +128,22 @@ CLASS zcl_sde_join IMPLEMENTATION.
       SET HANDLER on_sapevent FOR mo_html.
     ENDIF.
 
+    mo_low_split->set_column_width( id = 1 width = 45 ).
+    mo_low_split->get_container( EXPORTING row = 1 column = 2 RECEIVING container = DATA(lo_right) ).
+    CREATE OBJECT mo_flds_html
+      EXPORTING
+        parent = lo_right
+      EXCEPTIONS
+        OTHERS = 1.
+    IF sy-subrc = 0.
+      mo_flds_html->set_registered_events( VALUE #( ( eventid = cl_gui_html_viewer=>m_id_sapevent ) ) ).
+      SET HANDLER on_sapevent FOR mo_flds_html.
+    ENDIF.
+
     find_candidates( ).
     rebuild_selection( ).
     create_sql_view( ).
-    create_flds_alv( ).
-    render_html( ).
-    update_sql_view( ).
+    refresh_all( ).
   ENDMETHOD.
 
   METHOD get_fieldlist.
@@ -306,9 +317,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
 
   METHOD refresh_all.
     render_html( ).
-    IF mo_flds_alv IS BOUND.
-      Zcl_SDE_common=>refresh( mo_flds_alv ).
-    ENDIF.
+    render_flds( ).
     update_sql_view( ).
   ENDMETHOD.
 
@@ -331,6 +340,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     lt_sorted = VALUE #( FOR wa IN mt_cand WHERE ( selected = abap_true ) ( wa ) ).
     SORT lt_sorted BY sel_order.
 
+    "candidates: aliases T1..Tn by candidate order (stable regardless of base position)
     LOOP AT lt_sorted INTO DATA(ls_cand).
       DATA(l_alias) = |T{ sy-tabix }|.
       APPEND INITIAL LINE TO mt_jtabs ASSIGNING FIELD-SYMBOL(<jtab>).
@@ -388,19 +398,37 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ENDIF.
       CLEAR <first>-cond. "FROM table has no ON
 
-      "old base ON edits survive via lt_old_tabs
+      "old base ON edits survive
       READ TABLE lt_old_tabs INTO ls_old_base WITH KEY tabname = m_tabname.
       IF sy-subrc = 0 AND ls_old_base-cond IS NOT INITIAL.
         <base>-cond = ls_old_base-cond.
       ENDIF.
     ENDIF.
 
-    "restore previous manual (de)selections
+    "restore previous manual (de)selections and the SELECT order
     LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
       READ TABLE lt_old_flds INTO DATA(ls_old) WITH KEY tabname = <fld>-tabname fieldname = <fld>-fieldname.
       IF sy-subrc = 0.
         <fld>-sel = ls_old-sel.
+        <fld>-pos = ls_old-pos.
       ENDIF.
+    ENDLOOP.
+    normalize_pos( ).
+  ENDMETHOD.
+
+  METHOD normalize_pos.
+    DATA l_max TYPE i.
+    LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WHERE sel = abap_true AND pos > 0.
+      IF <fld>-pos > l_max.
+        l_max = <fld>-pos.
+      ENDIF.
+    ENDLOOP.
+    LOOP AT mt_jflds ASSIGNING <fld> WHERE sel = abap_true AND pos = 0.
+      l_max = l_max + 1.
+      <fld>-pos = l_max.
+    ENDLOOP.
+    LOOP AT mt_jflds ASSIGNING <fld> WHERE sel = abap_false AND pos NE 0.
+      CLEAR <fld>-pos.
     ENDLOOP.
   ENDMETHOD.
 
@@ -420,9 +448,17 @@ CLASS zcl_sde_join IMPLEMENTATION.
       `table.j td{padding:2px 5px;vertical-align:middle;white-space:nowrap;}` &&
       `.alias{font-weight:bold;color:#2c5f8a;}` &&
       `.btn{border:1px solid #bbb;background:#f2f2f2;border-radius:3px;cursor:pointer;font-size:10px;padding:0 4px;}` &&
+      `.grip{cursor:move;color:#888;font-weight:bold;}` &&
       `input.cond{width:380px;font-family:Consolas,monospace;font-size:11px;}` &&
       `select{font-size:11px;}` &&
-      `</style></head><body>` &&
+      `</style>` &&
+      `<script>var dk=null;` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function ov(e){if(e.preventDefault)e.preventDefault();return false;}` &&
+      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();` &&
+      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}return false;}` &&
+      `</script>` &&
+      `</head><body>` &&
       |<span class="base">{ m_tabname }</span> &#8646; |.
 
     LOOP AT mt_cand INTO DATA(ls_cand).
@@ -447,12 +483,16 @@ CLASS zcl_sde_join IMPLEMENTATION.
       l_html = l_html && `<form method="post" action="SAPEVENT:tabs"><table class="j">`.
       LOOP AT mt_jtabs INTO DATA(ls_tab).
         DATA(l_idx) = sy-tabix.
+        DATA(l_key) = condense( CONV string( ls_tab-alias ) ).
         DATA(l_del) = COND string( WHEN ls_tab-tabname NE m_tabname
-          THEN |<button class="btn" type="submit" name="act" value="del_{ ls_tab-alias }">&#10005;</button>| ).
+          THEN |<button class="btn" type="submit" name="act" value="del_{ l_key }">&#10005;</button>| ).
         l_html = l_html &&
-          |<tr><td><button class="btn" type="submit" name="act" value="up_{ ls_tab-alias }">&#9650;</button>| &&
-          |<button class="btn" type="submit" name="act" value="dn_{ ls_tab-alias }">&#9660;</button>{ l_del }</td>| &&
-          |<td class="alias">{ ls_tab-alias }</td>| &&
+          |<tr draggable="true" ondragstart="ds(event,'{ l_key }')" ondragover="return ov(event)"| &&
+          | ondrop="return dp(event,'{ l_key }','tmv')">| &&
+          |<td><span class="grip">&#8801;</span> | &&
+          |<button class="btn" type="submit" name="act" value="up_{ l_key }">&#9650;</button>| &&
+          |<button class="btn" type="submit" name="act" value="dn_{ l_key }">&#9660;</button>{ l_del }</td>| &&
+          |<td class="alias">{ l_key }</td>| &&
           |<td><b>{ ls_tab-tabname }</b></td>|.
         IF l_idx = 1.
           l_html = l_html && |<td>FROM</td><td></td></tr>|.
@@ -460,9 +500,9 @@ CLASS zcl_sde_join IMPLEMENTATION.
           DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
           DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
           l_html = l_html &&
-            |<td><select name="jt_{ ls_tab-alias }">| &&
+            |<td><select name="jt_{ l_key }">| &&
             |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
-            |<td><input class="cond" type="text" name="on_{ ls_tab-alias }" value="{
+            |<td><input class="cond" type="text" name="on_{ l_key }" value="{
                escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
         ENDIF.
       ENDLOOP.
@@ -472,6 +512,79 @@ CLASS zcl_sde_join IMPLEMENTATION.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_html i_html = l_html ).
+  ENDMETHOD.
+
+  METHOD render_flds.
+    DATA: lt_sel TYPE tt_jfld.
+
+    CHECK mo_flds_html IS BOUND.
+
+    DATA(l_html) =
+      `<html><head><meta charset="utf-8"><style>` &&
+      `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#fff;}` &&
+      `h4{margin:4px 0 2px 0;font-size:11px;color:#555;}` &&
+      `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
+      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;` &&
+      `background:#fff;text-decoration:none;color:#000;}` &&
+      `.chip:hover{border-color:#2c5f8a;}` &&
+      `.on{background:#d3f2d3;border-color:#2e8b2e;font-weight:bold;}` &&
+      `.key{border-style:double;border-width:3px;}` &&
+      `.fld{display:inline-block;border:1px solid #2e8b2e;border-radius:4px;background:#eef8ee;` &&
+      `padding:1px 6px;margin:2px;font-family:Consolas,monospace;cursor:move;}` &&
+      `.fld a{color:#a00;text-decoration:none;margin-left:4px;}` &&
+      `.zone{display:inline-block;border:1px dashed #bbb;border-radius:4px;color:#999;padding:1px 8px;margin:2px;}` &&
+      `.dir{color:#888;font-size:9px;}` &&
+      `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
+      `.run{display:inline-block;background:#2e8b2e;color:#fff;border-radius:4px;padding:2px 10px;` &&
+      `text-decoration:none;font-weight:bold;margin-right:10px;}` &&
+      `</style>` &&
+      `<script>var dk=null;` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function ov(e){if(e.preventDefault)e.preventDefault();return false;}` &&
+      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();` &&
+      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}return false;}` &&
+      `</script>` &&
+      `</head><body>` &&
+      `<a class="run" href="SAPEVENT:fld?RUN">&#9654; Run</a>` &&
+      `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
+      `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
+      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>`.
+
+    "selected fields in SELECT order: drag to reorder, x to remove
+    lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT lt_sel BY pos.
+    l_html = l_html && `<h4>SELECT fields (drag to reorder):</h4>`.
+    LOOP AT lt_sel INTO DATA(ls_sel).
+      DATA(l_key) = |{ condense( CONV string( ls_sel-alias ) ) }~{ ls_sel-fieldname }|.
+      l_html = l_html &&
+        |<span class="fld" draggable="true" ondragstart="ds(event,'{ l_key }')"| &&
+        | ondragover="return ov(event)" ondrop="return dp(event,'{ l_key }','fmv')">| &&
+        |{ to_lower( l_key ) }<a href="SAPEVENT:fld?tg_{ l_key }">&#10005;</a></span>|.
+    ENDLOOP.
+    l_html = l_html &&
+      `<span class="zone" ondragover="return ov(event)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
+
+    "all fields grouped by table: click chip to toggle
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      DATA(l_alias) = condense( CONV string( ls_tab-alias ) ).
+      l_html = l_html &&
+        |<div class="tabhdr">{ l_alias } { ls_tab-tabname }&nbsp;&nbsp;| &&
+        |<a class="act" href="SAPEVENT:fld?all_{ l_alias }">all</a>| &&
+        |<a class="act" href="SAPEVENT:fld?non_{ l_alias }">none</a>| &&
+        |<a class="act" href="SAPEVENT:fld?key_{ l_alias }">keys</a></div>|.
+      LOOP AT mt_jflds INTO DATA(ls_fld) WHERE alias = ls_tab-alias.
+        DATA(l_cls) = COND string( WHEN ls_fld-sel = abap_true THEN 'chip on' ELSE 'chip' ).
+        IF ls_fld-keyflag = abap_true.
+          l_cls = l_cls && ' key'.
+        ENDIF.
+        l_html = l_html &&
+          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_alias }~{ ls_fld-fieldname }">| &&
+          |{ ls_fld-fieldname } <span class="dir">{ escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text ) }</span></a>|.
+      ENDLOOP.
+    ENDLOOP.
+
+    l_html = l_html && `</body></html>`.
+    show_html( io_html = mo_flds_html i_html = l_html ).
   ENDMETHOD.
 
   METHOD show_html.
@@ -529,6 +642,132 @@ CLASS zcl_sde_join IMPLEMENTATION.
     <other>-sel_order = l_tmp.
   ENDMETHOD.
 
+  METHOD move_table_before.
+    "drag&drop: place table i_from before i_to ('#END' = last position)
+    DATA lt_order TYPE TABLE OF tabname.
+
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      IF condense( CONV string( ls_tab-alias ) ) = i_from.
+        DATA(l_from_tab) = ls_tab-tabname.
+      ELSE.
+        APPEND ls_tab-tabname TO lt_order.
+      ENDIF.
+    ENDLOOP.
+    CHECK l_from_tab IS NOT INITIAL.
+
+    IF i_to = '#END'.
+      APPEND l_from_tab TO lt_order.
+    ELSE.
+      READ TABLE mt_jtabs INTO ls_tab WITH KEY alias = i_to.
+      CHECK sy-subrc = 0.
+      READ TABLE lt_order TRANSPORTING NO FIELDS WITH KEY table_line = ls_tab-tabname.
+      IF sy-subrc = 0.
+        INSERT l_from_tab INTO lt_order INDEX sy-tabix.
+      ELSE.
+        APPEND l_from_tab TO lt_order.
+      ENDIF.
+    ENDIF.
+
+    "write the new order back: base position + candidate selection order
+    DATA(l_ord) = 0.
+    LOOP AT lt_order INTO DATA(l_tabname).
+      IF l_tabname = m_tabname.
+        m_base_pos = sy-tabix.
+        CONTINUE.
+      ENDIF.
+      ADD 1 TO l_ord.
+      READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = l_tabname.
+      IF sy-subrc = 0.
+        <cand>-sel_order = l_ord.
+      ENDIF.
+    ENDLOOP.
+    m_sel_count = l_ord.
+
+    rebuild_selection( ).
+  ENDMETHOD.
+
+  METHOD move_field_before.
+    "drag&drop: place field i_from (ALIAS~FIELD) before i_to ('#END' = last)
+    DATA lt_keys TYPE TABLE OF string.
+
+    DATA(lt_sel) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT lt_sel BY pos.
+    LOOP AT lt_sel INTO DATA(ls_sel).
+      DATA(l_key) = |{ condense( CONV string( ls_sel-alias ) ) }~{ ls_sel-fieldname }|.
+      IF l_key NE i_from.
+        APPEND l_key TO lt_keys.
+      ENDIF.
+    ENDLOOP.
+
+    IF i_to = '#END'.
+      APPEND i_from TO lt_keys.
+    ELSE.
+      READ TABLE lt_keys TRANSPORTING NO FIELDS WITH KEY table_line = i_to.
+      IF sy-subrc = 0.
+        INSERT i_from INTO lt_keys INDEX sy-tabix.
+      ELSE.
+        APPEND i_from TO lt_keys.
+      ENDIF.
+    ENDIF.
+
+    LOOP AT lt_keys INTO l_key.
+      SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
+      READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_alias fieldname = l_field.
+      IF sy-subrc = 0.
+        <fld>-pos = sy-tabix. "position in lt_keys loop
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD handle_fld_action.
+    CASE i_act.
+      WHEN 'RUN'.
+        run_select( ).
+        RETURN.
+      WHEN 'ALL'.
+        LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
+          <fld>-sel = abap_true.
+        ENDLOOP.
+      WHEN 'NONE'.
+        LOOP AT mt_jflds ASSIGNING <fld>.
+          <fld>-sel = abap_false.
+        ENDLOOP.
+      WHEN 'KEYS'.
+        LOOP AT mt_jflds ASSIGNING <fld>.
+          <fld>-sel = <fld>-keyflag.
+          CLEAR <fld>-pos.
+        ENDLOOP.
+      WHEN OTHERS.
+        IF strlen( i_act ) > 3 AND i_act(3) = 'tg_'. "toggle single field: tg_ALIAS~FIELD
+          SPLIT i_act+3 AT '~' INTO DATA(l_alias) DATA(l_field).
+          READ TABLE mt_jflds ASSIGNING <fld> WITH KEY alias = l_alias fieldname = l_field.
+          IF sy-subrc = 0.
+            <fld>-sel = boolc( <fld>-sel = abap_false ).
+            CLEAR <fld>-pos.
+          ENDIF.
+        ELSEIF strlen( i_act ) > 4.
+          DATA(l_arg) = CONV char5( i_act+4 ).
+          CASE i_act(4).
+            WHEN 'all_'.
+              LOOP AT mt_jflds ASSIGNING <fld> WHERE alias = l_arg.
+                <fld>-sel = abap_true.
+              ENDLOOP.
+            WHEN 'non_'.
+              LOOP AT mt_jflds ASSIGNING <fld> WHERE alias = l_arg.
+                <fld>-sel = abap_false.
+              ENDLOOP.
+            WHEN 'key_'.
+              LOOP AT mt_jflds ASSIGNING <fld> WHERE alias = l_arg.
+                <fld>-sel = <fld>-keyflag.
+              ENDLOOP.
+          ENDCASE.
+        ENDIF.
+    ENDCASE.
+    normalize_pos( ).
+    render_flds( ).
+    update_sql_view( ).
+  ENDMETHOD.
+
   METHOD apply_postdata.
     "form fields: act=..., jt_Tn=..., on_Tn=... (url-encoded)
     DATA(l_post) = concat_lines_of( table = it_postdata ).
@@ -582,11 +821,25 @@ CLASS zcl_sde_join IMPLEMENTATION.
           ENDCASE.
         ENDIF.
         refresh_all( ).
+      WHEN 'tmv'. "drag&drop of tables: FROM__TO
+        SPLIT getdata AT '__' INTO DATA(l_from) DATA(l_to).
+        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
+          move_table_before( i_from = l_from i_to = l_to ).
+          refresh_all( ).
+        ENDIF.
+      WHEN 'fmv'. "drag&drop of fields: ALIAS~FIELD__ALIAS~FIELD
+        SPLIT getdata AT '__' INTO l_from l_to.
+        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
+          move_field_before( i_from = l_from i_to = l_to ).
+          render_flds( ).
+          update_sql_view( ).
+        ENDIF.
+      WHEN 'fld'.
+        handle_fld_action( CONV #( getdata ) ).
     ENDCASE.
   ENDMETHOD.
 
   METHOD create_sql_view.
-    mo_low_split->set_column_width( id = 1 width = 45 ).
     mo_low_split->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_cont) ).
 
     CREATE OBJECT mo_sql_text
@@ -601,100 +854,14 @@ CLASS zcl_sde_join IMPLEMENTATION.
     mo_sql_text->set_textstream( generate_select( ) ).
   ENDMETHOD.
 
-  METHOD create_flds_alv.
-    DATA: ls_layout TYPE lvc_s_layo.
-
-    mo_low_split->get_container( EXPORTING row = 1 column = 2 RECEIVING container = DATA(lo_cont) ).
-    mo_flds_alv = NEW #( i_parent = lo_cont ).
-
-    DATA(lt_fcat) = VALUE lvc_t_fcat(
-      ( fieldname = 'SEL'       coltext = 'Sel'   outputlen = 3 checkbox = 'X' )
-      ( fieldname = 'ALIAS'     coltext = 'Alias' outputlen = 5 )
-      ( fieldname = 'TABNAME'   coltext = 'Table' outputlen = 12 )
-      ( fieldname = 'FIELDNAME' coltext = 'Field' outputlen = 15 )
-      ( fieldname = 'KEYFLAG'   coltext = 'Key'   outputlen = 3 checkbox = 'X' )
-      ( fieldname = 'DDTEXT'    coltext = 'Description' outputlen = 30 ) ).
-
-    ls_layout-cwidth_opt = abap_true.
-    ls_layout-sel_mode   = 'A'. "multi-row selection with Ctrl/Shift
-    SET HANDLER on_flds_toolbar  FOR mo_flds_alv.
-    SET HANDLER on_flds_ucomm    FOR mo_flds_alv.
-    SET HANDLER on_flds_dblclick FOR mo_flds_alv.
-
-    mo_flds_alv->set_table_for_first_display(
-      EXPORTING
-        is_layout       = ls_layout
-      CHANGING
-        it_outtab       = mt_jflds
-        it_fieldcatalog = lt_fcat
-      EXCEPTIONS
-        OTHERS          = 1 ).
-    mo_flds_alv->set_toolbar_interactive( ).
-  ENDMETHOD.
-
-  METHOD on_flds_toolbar.
-    e_object->mt_toolbar = VALUE ttb_button(
-      ( function = 'MARK'    icon = icon_okay   quickinfo = 'Mark selected rows (Ctrl/Shift+click rows first)' text = 'Mark' )
-      ( function = 'UNMARK'  icon = icon_cancel quickinfo = 'Unmark selected rows' text = 'Unmark' )
-      ( butn_type = 3 )
-      ( function = 'SEL_ALL' icon = icon_select_all   quickinfo = 'Select all fields' )
-      ( function = 'DESEL'   icon = icon_deselect_all quickinfo = 'Deselect all fields' )
-      ( function = 'KEYS'    icon = icon_foreign_key  quickinfo = 'Select key fields only' )
-      ( butn_type = 3 )
-      ( function = 'RUN'     icon = icon_execute_object quickinfo = 'Run the SELECT shown on the left' text = 'Run' ) ).
-  ENDMETHOD.
-
-  METHOD set_marked_rows.
-    mo_flds_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_rows) ).
-    LOOP AT lt_rows INTO DATA(ls_row).
-      READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) INDEX ls_row-index.
-      IF sy-subrc = 0.
-        <fld>-sel = i_sel.
-      ENDIF.
-    ENDLOOP.
-  ENDMETHOD.
-
-  METHOD on_flds_ucomm.
-    CASE e_ucomm.
-      WHEN 'MARK'.
-        set_marked_rows( abap_true ).
-      WHEN 'UNMARK'.
-        set_marked_rows( abap_false ).
-      WHEN 'SEL_ALL'.
-        LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
-          <fld>-sel = abap_true.
-        ENDLOOP.
-      WHEN 'DESEL'.
-        LOOP AT mt_jflds ASSIGNING <fld>.
-          <fld>-sel = abap_false.
-        ENDLOOP.
-      WHEN 'KEYS'.
-        LOOP AT mt_jflds ASSIGNING <fld>.
-          <fld>-sel = <fld>-keyflag.
-        ENDLOOP.
-      WHEN 'RUN'. "run whatever is in the SQL view (incl. manual edits)
-        run_select( ).
-        RETURN.
-      WHEN OTHERS.
-        RETURN.
-    ENDCASE.
-    Zcl_SDE_common=>refresh( mo_flds_alv ).
-    update_sql_view( ).
-  ENDMETHOD.
-
-  METHOD on_flds_dblclick. "double click toggles a single field
-    READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) INDEX es_row_no-row_id.
-    CHECK sy-subrc = 0.
-    <fld>-sel = boolc( <fld>-sel = abap_false ).
-    Zcl_SDE_common=>refresh( mo_flds_alv ).
-    update_sql_view( ).
-  ENDMETHOD.
-
   METHOD generate_select.
     DATA: l_fields TYPE string,
-          l_from   TYPE string.
+          l_from   TYPE string,
+          lt_sel   TYPE tt_jfld.
 
-    LOOP AT mt_jflds INTO DATA(ls_fld) WHERE sel = abap_true.
+    lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT lt_sel BY pos.
+    LOOP AT lt_sel INTO DATA(ls_fld).
       IF l_fields IS NOT INITIAL.
         l_fields = |{ l_fields },{ cl_abap_char_utilities=>newline }       |.
       ENDIF.
