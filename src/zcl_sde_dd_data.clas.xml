@@ -5,7 +5,7 @@
    <VSEOCLASS>
     <CLSNAME>ZCL_SDE_DD_DATA</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>SDE drag&drop data</DESCRIPT>
+    <DESCRIPT>SDE drag and drop data</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>
