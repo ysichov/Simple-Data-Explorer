@@ -571,8 +571,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.zone{display:inline-block;border:1px dashed #bbb;border-radius:4px;color:#999;padding:1px 8px;margin:2px;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
-      `.run{display:inline-block;background:#2e8b2e;color:#fff;border-radius:4px;padding:2px 10px;` &&
-      `text-decoration:none;font-weight:bold;margin-right:10px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null,lt=null;` &&
@@ -1036,15 +1034,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
   ENDMETHOD.
 
 
-  METHOD run_select.
-    DATA l_sql TYPE string.
-    mo_sql_text->get_textstream( IMPORTING text = l_sql ).
-    cl_gui_cfw=>flush( ).
-    CHECK l_sql IS NOT INITIAL.
-    execute_sql( l_sql ).
-  ENDMETHOD.
-
-
   METHOD execute_sql.
     DATA: l_sql    TYPE string,
           l_rows   TYPE i,
@@ -1191,15 +1180,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         RETURN.
     ENDTRY.
 
-    l_name = |JOIN { m_tabname } ({ lines( <result> ) })|.
-    IF result_alive( ) = abap_true. "rebuild the existing result window in place
-      mo_result->rebind( ir_tab = lr_table i_name = l_name ).
-    ELSE.
-      APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
-      <obj>-alv_viewer = NEW #( i_additional_name = l_name ir_tab = lr_table ).
-      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
-      mo_result = <obj>-alv_viewer.
-    ENDIF.
+    DATA(l_view_name) = |JOIN { m_tabname } ({ lines( <result> ) })|.
+    mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true ).
   ENDMETHOD.
 
 

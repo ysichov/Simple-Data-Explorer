@@ -24,7 +24,8 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
           mo_sel_width       TYPE i,
           m_visible,
           m_std_tbar         TYPE x,
-          m_show_empty.
+          m_show_empty,
+          m_join_active      TYPE abap_bool.
 
     METHODS:
       constructor IMPORTING i_tname           TYPE any OPTIONAL
@@ -33,7 +34,9 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
                             i_is_view         TYPE boolean OPTIONAL
                             i_is_cds          TYPE boolean OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
-      rebind IMPORTING ir_tab TYPE REF TO data i_name TYPE string, "replace displayed data (new structure allowed)
+      rebind IMPORTING ir_tab    TYPE REF TO data
+                       i_name    TYPE string
+                       i_generic TYPE abap_bool DEFAULT abap_false, "replace displayed data (new structure allowed)
       refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
   PRIVATE SECTION.
@@ -249,7 +252,13 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
-    mt_alv_catalog = create_field_cat( m_tabname ).
+    IF i_generic = abap_true.
+      mt_alv_catalog = create_generic_field_cat( ).
+      m_join_active = abap_true.
+    ELSE.
+      mt_alv_catalog = create_field_cat( m_tabname ).
+      CLEAR m_join_active.
+    ENDIF.
     ASSIGN mr_table->* TO <f_tab>.
     IF m_tabname IS NOT INITIAL.
       IF m_is_view  = abap_true.
@@ -845,6 +854,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
   METHOD refresh_table.
     DATA: ls_row    TYPE zcl_sde_appl=>t_sel_row,
           lt_filter TYPE lvc_t_filt.
+    CHECK m_join_active = abap_false.
     IF m_is_sql = abap_true.
       DATA(l_where) = get_where( ).
       zcl_sde_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = zcl_sde_appl=>gv_rows CHANGING cr_tab =  mr_table c_count = m_count ).
