@@ -847,10 +847,11 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDIF.
 
     LOOP AT lt_keys INTO l_key.
+      DATA(l_pos) = sy-tabix. "READ TABLE below overwrites sy-tabix!
       SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
       READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_alias fieldname = l_field.
       IF sy-subrc = 0.
-        <fld>-pos = sy-tabix. "position in lt_keys loop
+        <fld>-pos = l_pos.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -894,10 +895,11 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDIF.
 
     LOOP AT lt_keys INTO l_key.
+      DATA(l_pos) = sy-tabix. "READ TABLE below overwrites sy-tabix!
       SPLIT l_key AT '~' INTO l_split_alias l_split_field.
       READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_split_alias fieldname = l_split_field.
       IF sy-subrc = 0.
-        <fld>-pos = sy-tabix.
+        <fld>-pos = l_pos.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
