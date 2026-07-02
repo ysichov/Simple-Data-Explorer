@@ -46,6 +46,7 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
       get_field_info IMPORTING i_tab TYPE tabname,
       create_field_cat IMPORTING i_tname           TYPE tabname
                        RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
+      create_generic_field_cat RETURNING VALUE(et_catalog) TYPE lvc_t_fcat,
       on_f4 FOR EVENT onf4 OF cl_gui_alv_grid
         IMPORTING e_fieldname
                   es_row_no
@@ -97,11 +98,13 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       m_is_cds = 'X'.
     ENDIF.
 
-    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
-    IF m_texttabname IS NOT INITIAL.
-      get_field_info( m_texttabname ).
+    IF m_tabname IS NOT INITIAL. "generic tables (joins, cluster refs) have no DDIC name
+      zcl_sde_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
+      IF m_texttabname IS NOT INITIAL.
+        get_field_info( m_texttabname ).
+      ENDIF.
+      get_field_info( m_tabname ).
     ENDIF.
-    get_field_info( m_tabname ).
     IF ir_tab IS NOT BOUND.
       zcl_sde_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
       IF m_is_view IS INITIAL.
@@ -510,6 +513,11 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
           l_texttab      TYPE tabname,
           lo_str         TYPE REF TO cl_abap_structdescr.
 
+    IF i_tname IS INITIAL. "dynamically built table (join result etc.): catalog from RTTI
+      et_catalog = create_generic_field_cat( ).
+      RETURN.
+    ENDIF.
+
     zcl_sde_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components e_handle = lo_str ).
     CREATE DATA lr_struc TYPE HANDLE lo_str.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
@@ -544,6 +552,41 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
 
       IF ls_tf-keyflag = abap_true.
         <catalog>-style = <catalog>-style BIT-OR Zcl_SDE_common=>c_bold.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD create_generic_field_cat.
+    FIELD-SYMBOLS <tab> TYPE STANDARD TABLE.
+
+    CHECK mr_table IS BOUND.
+    ASSIGN mr_table->* TO <tab>.
+    DATA(lo_struc) = CAST cl_abap_structdescr(
+      CAST cl_abap_tabledescr( cl_abap_typedescr=>describe_by_data( <tab> ) )->get_table_line_type( ) ).
+
+    LOOP AT lo_struc->components INTO DATA(ls_comp) WHERE type_kind NE cl_abap_typedescr=>typekind_table
+                                                      AND type_kind NE cl_abap_typedescr=>typekind_dref
+                                                      AND type_kind NE cl_abap_typedescr=>typekind_oref.
+      APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
+      <catalog>-col_pos   = sy-tabix.
+      <catalog>-fieldname = ls_comp-name.
+      <catalog>-style     = Zcl_SDE_common=>c_white.
+      TRY.
+          DATA(lo_elem) = CAST cl_abap_elemdescr( lo_struc->get_component_type( ls_comp-name ) ).
+          IF lo_elem->is_ddic_type( ) = abap_true.
+            DATA(ls_dfies) = lo_elem->get_ddic_field( ).
+            MOVE-CORRESPONDING ls_dfies TO <catalog>.
+            <catalog>-fieldname = ls_comp-name. "keep the component name, not the element's
+            CLEAR: <catalog>-tabname, <catalog>-key.
+          ELSE.
+            <catalog>-inttype  = lo_elem->type_kind.
+            <catalog>-intlen   = lo_elem->length.
+            <catalog>-decimals = lo_elem->decimals.
+          ENDIF.
+        CATCH cx_root.                                  "#EC NO_HANDLER
+      ENDTRY.
+      IF <catalog>-reptext IS INITIAL AND <catalog>-scrtext_l IS INITIAL.
+        <catalog>-reptext = <catalog>-scrtext_l = <catalog>-scrtext_m = <catalog>-scrtext_s = ls_comp-name.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
