@@ -252,13 +252,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     FIELD-SYMBOLS: <f_tab>   TYPE STANDARD TABLE.
 
     mo_alv = NEW #( i_parent = mo_alv_parent ).
-    IF i_generic = abap_true.
-      mt_alv_catalog = create_generic_field_cat( ).
-      m_join_active = abap_true.
-    ELSE.
-      mt_alv_catalog = create_field_cat( m_tabname ).
-      CLEAR m_join_active.
-    ENDIF.
+    mt_alv_catalog = create_field_cat( m_tabname ).
     ASSIGN mr_table->* TO <f_tab>.
     IF m_tabname IS NOT INITIAL.
       IF m_is_view  = abap_true.
@@ -575,7 +569,13 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     m_additional_name = i_name.
     ASSIGN mr_table->* TO <f_tab>.
     m_count = lines( <f_tab> ).
-    mt_alv_catalog = create_field_cat( m_tabname ).
+    IF i_generic = abap_true.
+      mt_alv_catalog = create_generic_field_cat( ).
+      m_join_active = abap_true.
+    ELSE.
+      mt_alv_catalog = create_field_cat( m_tabname ).
+      CLEAR m_join_active.
+    ENDIF.
 
     ls_layout-col_opt    = abap_true.
     ls_layout-cwidth_opt = abap_true.
