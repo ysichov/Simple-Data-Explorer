@@ -395,10 +395,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDIF.
 
       LOOP AT get_fieldlist( ls_cand-tabname ) INTO ls_f.
+        "default for a joined table: key fields only, skip names already in the SELECT
+        DATA(l_dupe) = boolc( line_exists( mt_jflds[ fieldname = ls_f-fieldname sel = abap_true ] ) ).
         APPEND VALUE #( alias = l_alias tabname = ls_cand-tabname
                         fieldname = ls_f-fieldname keyflag = ls_f-keyflag
                         ddtext = ls_f-fieldtext
-                        sel = boolc( NOT line_exists( ls_cand-pairs[ cand_field = ls_f-fieldname ] ) )
+                        sel = boolc( ls_f-keyflag = abap_true AND l_dupe = abap_false )
                       ) TO mt_jflds.
       ENDLOOP.
     ENDLOOP.
