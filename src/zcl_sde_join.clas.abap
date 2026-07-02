@@ -658,15 +658,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
-      `<script>var dk=null,dt=null,dpfx=null;` &&
-      `function md(e,k,p){e=e||window.event;dk=k;dt=k;dpfx=p;` &&
+      `<script>var dk=null,dt=null,dpfx=null,de=null,mv=false;` &&
+      `function hi(el){if(de)de.style.outline='';de=el;if(de)de.style.outline='2px solid #d2691e';}` &&
+      `function go(k,p){if(dk&&k&&dk!=k){k=String(k).replace('#','%23');` &&
+      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;hi(null);}` &&
+      `function md(e,k,p,el){e=e||window.event;if(dk){if(dk==k){dk=null;hi(null);}else{go(k,p||dpfx);}` &&
       `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
-      `function mo(e,k){if(dk)dt=k;return false;}` &&
-      `function mu(e,k,p){e=e||window.event;if(dk){dt=k||dt;p=p||dpfx;` &&
-      `if(dk&&dt&&dk!=dt){dt=String(dt).replace('#','%23');` &&
-      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+dt;}dk=null;}` &&
+      `dk=k;dt=k;dpfx=p;mv=false;hi(el);if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
+      `function mo(e,k){if(dk&&k!=dt){dt=k;mv=true;}return false;}` &&
+      `function mu(e,k,p){e=e||window.event;if(dk&&mv)go(k||dt,p||dpfx);` &&
       `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
-      `document.onmouseup=function(){dk=null;};` &&
       `</script>` &&
       `</head><body onselectstart="return false">`.
 
@@ -681,7 +682,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_ord_color_idx = l_ord_color_idx + 1.
       DATA(l_ord_color) = |c{ l_ord_color_idx }|.
       l_html = l_html &&
-        |<span class="tblpill { l_ord_color }" onmousedown="return md(event,'{ l_ord_alias }','fgmv')"| &&
+        |<span class="tblpill { l_ord_color }" onmousedown="return md(event,'{ l_ord_alias }','fgmv',this)"| &&
         | onmouseover="return mo(event,'{ l_ord_alias }')" onmouseup="return mu(event,'{ l_ord_alias }','fgmv')">| &&
         |{ l_ord_alias }</span>|.
     ENDLOOP.
@@ -705,7 +706,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
         ELSE |{ ls_sel-fieldname }| ).
       l_html = l_html &&
-        |<span class="{ l_cls }" onmousedown="return md(event,'{ l_fkey }','fmv')"| &&
+        |<span class="{ l_cls }" onmousedown="return md(event,'{ l_fkey }','fmv',this)"| &&
         | onmouseover="return mo(event,'{ l_fkey }')" onmouseup="return mu(event,'{ l_fkey }','fmv')"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</span>|.
