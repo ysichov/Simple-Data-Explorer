@@ -136,6 +136,17 @@ CLASS zcl_sde_sel_opt IMPLEMENTATION.
       IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL OR mo_viewer->m_count = 0.
         APPEND INITIAL LINE TO mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
         READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
+        IF sy-subrc NE 0.
+          "the join builder renames base fields CARRID <-> T0_CARRID: keep the entered ranges
+          DATA l_alt TYPE lvc_fname.
+          FIND REGEX '^T\d+_' IN l_catalog-fieldname MATCH LENGTH DATA(l_pfx_len).
+          IF sy-subrc = 0.
+            l_alt = l_catalog-fieldname+l_pfx_len.
+          ELSE.
+            l_alt = |T0_{ l_catalog-fieldname }|.
+          ENDIF.
+          READ TABLE lt_copy INTO ls_copy WITH KEY field_label = l_alt.
+        ENDIF.
         IF sy-subrc = 0.
           MOVE-CORRESPONDING ls_copy TO <sel_tab>.
         ELSE.
