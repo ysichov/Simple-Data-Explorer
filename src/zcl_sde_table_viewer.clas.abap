@@ -33,6 +33,7 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
                             i_is_view         TYPE boolean OPTIONAL
                             i_is_cds          TYPE boolean OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
+      rebind IMPORTING ir_tab TYPE REF TO data i_name TYPE string, "replace displayed data (new structure allowed)
       refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
   PRIVATE SECTION.
@@ -554,6 +555,32 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         <catalog>-style = <catalog>-style BIT-OR Zcl_SDE_common=>c_bold.
       ENDIF.
     ENDLOOP.
+  ENDMETHOD.
+
+  METHOD rebind.
+    DATA ls_layout TYPE lvc_s_layo.
+    FIELD-SYMBOLS <f_tab> TYPE STANDARD TABLE.
+
+    CHECK mo_alv IS BOUND.
+    mr_table = ir_tab.
+    m_additional_name = i_name.
+    ASSIGN mr_table->* TO <f_tab>.
+    m_count = lines( <f_tab> ).
+    mt_alv_catalog = create_field_cat( m_tabname ).
+
+    ls_layout-col_opt    = abap_true.
+    ls_layout-cwidth_opt = abap_true.
+    ls_layout-sel_mode   = 'D'.
+    mo_alv->set_table_for_first_display(
+      EXPORTING
+        is_layout       = ls_layout
+      CHANGING
+        it_outtab       = <f_tab>
+        it_fieldcatalog = mt_alv_catalog
+      EXCEPTIONS
+        OTHERS          = 1 ).
+    set_header( ).
+    Zcl_SDE_common=>refresh( mo_alv ).
   ENDMETHOD.
 
   METHOD create_generic_field_cat.

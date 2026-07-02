@@ -49,7 +49,10 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
           mo_flds_html TYPE REF TO cl_gui_html_viewer,
-          mo_sql_text  TYPE REF TO cl_gui_textedit.
+          mo_sql_text  TYPE REF TO cl_gui_textedit,
+          mo_result    TYPE REF TO zcl_sde_table_viewer, "result window, rebuilt in place
+          m_auto       TYPE abap_bool VALUE abap_true,   "auto-refresh the result on changes
+          m_show_texts TYPE abap_bool.                   "field chips: texts instead of tech names
 
     METHODS:
       find_candidates,
@@ -72,7 +75,8 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
       run_select,
-      execute_sql IMPORTING i_sql TYPE string,
+      execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
+      result_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
       upper_outside_quotes IMPORTING i_sql         TYPE string
                            RETURNING VALUE(rv_sql) TYPE string,
 
@@ -376,10 +380,15 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ENDLOOP.
     ENDLOOP.
 
-    "insert the base table at its chosen position in the join order
+    "insert the base table at its chosen position in the join order.
+    "star topology: every ON references t0, so the base must be the 1st or 2nd
+    "table - otherwise the DB sees t0 before it is joined ("table T0 unknown")
     IF m_base_pos < 1.
       m_base_pos = 1.
-    ELSEIF m_base_pos > lines( mt_jtabs ) + 1.
+    ELSEIF m_base_pos > 2.
+      m_base_pos = 2.
+    ENDIF.
+    IF m_base_pos > lines( mt_jtabs ) + 1.
       m_base_pos = lines( mt_jtabs ) + 1.
     ENDIF.
     DATA(ls_base) = VALUE t_jtab( alias = 'T0' tabname = m_tabname jtype = 'LEFT OUTER' ).
@@ -537,18 +546,32 @@ CLASS zcl_sde_join IMPLEMENTATION.
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.run{display:inline-block;background:#2e8b2e;color:#fff;border-radius:4px;padding:2px 10px;` &&
       `text-decoration:none;font-weight:bold;margin-right:10px;}` &&
+      `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
       `function ov(e){if(e.preventDefault)e.preventDefault();return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();` &&
       `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}return false;}` &&
+      "lasso selection: hold the left mouse button and sweep over the chips
+      `var pt=false,pks={},pn=0,painted=false;` &&
+      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return false;}` &&
+      `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
+      `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
+      `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
+      `document.onmouseup=function(){if(!pt)return;pt=false;` &&
+      `if(pn>1){var a=[];for(var k in pks)a.push(k);` &&
+      `document.getElementById('pk').value=a.join(';');document.getElementById('pf').submit();}};` &&
       `</script>` &&
-      `</head><body>` &&
+      `</head><body onselectstart="return false">` &&
+      `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
+      `<input type="hidden" name="keys" id="pk"></form>` &&
       `<a class="run" href="SAPEVENT:fld?RUN">&#9654; Run</a>` &&
       `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
       `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
-      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>`.
+      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>` &&
+      |<a class="act" href="SAPEVENT:fld?NAMES">names: { COND string( WHEN m_show_texts = abap_true THEN 'text' ELSE 'tech' ) }</a>| &&
+      |<a class="act" href="SAPEVENT:fld?AUTO">auto-refresh: { COND string( WHEN m_auto = abap_true THEN 'on' ELSE 'off' ) }</a>|.
 
     "selected fields in SELECT order: drag to reorder, x to remove
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
@@ -577,9 +600,18 @@ CLASS zcl_sde_join IMPLEMENTATION.
         IF ls_fld-keyflag = abap_true.
           l_cls = l_cls && ' key'.
         ENDIF.
+        DATA(l_fkey) = |{ l_alias }~{ ls_fld-fieldname }|.
+        "compact chip label: technical name or text in the logon language
+        DATA(l_label) = COND string(
+          WHEN m_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL
+          THEN escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text )
+          ELSE |{ ls_fld-fieldname }| ).
         l_html = l_html &&
-          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_alias }~{ ls_fld-fieldname }">| &&
-          |{ ls_fld-fieldname } <span class="dir">{ escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text ) }</span></a>|.
+          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
+          | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
+          | onmouseover="pv(event,this,'{ l_fkey }')"| &&
+          | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
+          |{ l_label }</a>|.
       ENDLOOP.
     ENDLOOP.
 
@@ -737,6 +769,10 @@ CLASS zcl_sde_join IMPLEMENTATION.
           <fld>-sel = <fld>-keyflag.
           CLEAR <fld>-pos.
         ENDLOOP.
+      WHEN 'AUTO'.
+        m_auto = boolc( m_auto = abap_false ).
+      WHEN 'NAMES'.
+        m_show_texts = boolc( m_show_texts = abap_false ).
       WHEN OTHERS.
         IF strlen( i_act ) > 3 AND i_act(3) = 'tg_'. "toggle single field: tg_ALIAS~FIELD
           SPLIT i_act+3 AT '~' INTO DATA(l_alias) DATA(l_field).
@@ -836,6 +872,21 @@ CLASS zcl_sde_join IMPLEMENTATION.
         ENDIF.
       WHEN 'fld'.
         handle_fld_action( CONV #( getdata ) ).
+      WHEN 'fsel'. "lasso: select all painted fields (keys=T0~F1;T1~F2;...)
+        l_post = concat_lines_of( table = postdata ).
+        SPLIT l_post AT '=' INTO l_dummy DATA(l_keys).
+        l_keys = cl_http_utility=>unescape_url( l_keys ).
+        SPLIT l_keys AT ';' INTO TABLE DATA(lt_keys).
+        LOOP AT lt_keys INTO DATA(l_fkey).
+          SPLIT l_fkey AT '~' INTO DATA(l_alias) DATA(l_field).
+          READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_alias fieldname = l_field.
+          IF sy-subrc = 0.
+            <fld>-sel = abap_true.
+          ENDIF.
+        ENDLOOP.
+        normalize_pos( ).
+        render_flds( ).
+        update_sql_view( ).
     ENDCASE.
   ENDMETHOD.
 
@@ -852,6 +903,14 @@ CLASS zcl_sde_join IMPLEMENTATION.
   METHOD update_sql_view.
     CHECK mo_sql_text IS BOUND.
     mo_sql_text->set_textstream( generate_select( ) ).
+    "rebuild the open result window right away
+    IF m_auto = abap_true AND result_alive( ) = abap_true.
+      execute_sql( i_sql = generate_select( ) i_quiet = abap_true ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD result_alive.
+    rv_alive = boolc( mo_result IS BOUND AND line_exists( zcl_sde_appl=>mt_obj[ alv_viewer = mo_result ] ) ).
   ENDMETHOD.
 
   METHOD generate_select.
@@ -931,12 +990,16 @@ CLASS zcl_sde_join IMPLEMENTATION.
     "split into SELECT <fields> FROM <from> [WHERE <where>]
     FIND REGEX '^\s*SELECT\s' IN l_upper MATCH LENGTH DATA(l_sel_len).
     IF sy-subrc NE 0.
-      MESSAGE 'Statement must start with SELECT' TYPE 'S' DISPLAY LIKE 'E'.
+      IF i_quiet = abap_false.
+        MESSAGE 'Statement must start with SELECT' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDIF.
       RETURN.
     ENDIF.
     FIND REGEX '\sFROM\s' IN l_upper MATCH OFFSET DATA(l_from_off) MATCH LENGTH DATA(l_from_len).
     IF sy-subrc NE 0.
-      MESSAGE 'FROM clause not found' TYPE 'S' DISPLAY LIKE 'E'.
+      IF i_quiet = abap_false.
+        MESSAGE 'FROM clause not found' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDIF.
       RETURN.
     ENDIF.
 
@@ -976,7 +1039,9 @@ CLASS zcl_sde_join IMPLEMENTATION.
       FIND REGEX '^(?:(\w+)~)?(\w+)(?:\s+AS\s+(\w+))?$' IN l_fld_up
         SUBMATCHES l_alias2 l_field l_name.
       IF sy-subrc NE 0.
-        MESSAGE |Cannot parse field: { l_fld_str }| TYPE 'S' DISPLAY LIKE 'E'.
+        IF i_quiet = abap_false.
+          MESSAGE |Cannot parse field: { l_fld_str }| TYPE 'S' DISPLAY LIKE 'E'.
+        ENDIF.
         RETURN.
       ENDIF.
       IF l_name IS INITIAL.
@@ -995,7 +1060,9 @@ CLASS zcl_sde_join IMPLEMENTATION.
           DATA(lo_type) = CAST cl_abap_datadescr(
             cl_abap_typedescr=>describe_by_name( |{ ls_alias-tabname }-{ l_field }| ) ).
         CATCH cx_root.
-          MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
+          IF i_quiet = abap_false.
+            MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
+          ENDIF.
           RETURN.
       ENDTRY.
 
@@ -1007,7 +1074,9 @@ CLASS zcl_sde_join IMPLEMENTATION.
     ENDLOOP.
 
     IF lt_comp IS INITIAL.
-      MESSAGE 'No fields to select' TYPE 'S' DISPLAY LIKE 'E'.
+      IF i_quiet = abap_false.
+        MESSAGE 'No fields to select' TYPE 'S' DISPLAY LIKE 'E'.
+      ENDIF.
       RETURN.
     ENDIF.
 
@@ -1033,13 +1102,21 @@ CLASS zcl_sde_join IMPLEMENTATION.
           UP TO @l_rows ROWS.
 
       CATCH cx_root INTO DATA(lx).
-        MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        IF i_quiet = abap_false.
+          MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        ENDIF.
         RETURN.
     ENDTRY.
 
-    zcl_sde_appl=>open_int_table(
-      it_ref  = lr_table
-      iv_name = |JOIN { m_tabname } ({ lines( <result> ) })| ).
+    DATA(l_name) = |JOIN { m_tabname } ({ lines( <result> ) })|.
+    IF result_alive( ) = abap_true. "rebuild the existing result window in place
+      mo_result->rebind( ir_tab = lr_table i_name = l_name ).
+    ELSE.
+      APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      <obj>-alv_viewer = NEW #( i_additional_name = l_name ir_tab = lr_table ).
+      <obj>-alv_viewer->mo_sel->raise_selection_done( ).
+      mo_result = <obj>-alv_viewer.
+    ENDIF.
   ENDMETHOD.
 
   METHOD upper_outside_quotes.
