@@ -741,11 +741,12 @@ CLASS zcl_sde_join IMPLEMENTATION.
         CREATE DATA lr_table TYPE HANDLE lo_tab.
         ASSIGN lr_table->* TO <result>.
 
+        "new strict-mode Open SQL: dynamic tokens with AS aliases are supported here
         SELECT (l_fields)
           FROM (l_from)
-          INTO CORRESPONDING FIELDS OF TABLE <result>
-          UP TO l_rows ROWS
-          WHERE (l_where).
+          WHERE (l_where)
+          INTO CORRESPONDING FIELDS OF TABLE @<result>
+          UP TO @l_rows ROWS.
 
       CATCH cx_root INTO DATA(lx).
         MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
