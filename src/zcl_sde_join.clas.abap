@@ -53,7 +53,8 @@ protected section.
           mo_sql_text  TYPE REF TO cl_gui_textedit,
           mo_result    TYPE REF TO zcl_sde_table_viewer, "result window, rebuilt in place
           m_auto       TYPE abap_bool VALUE abap_true,   "auto-refresh the result on changes
-          m_show_texts TYPE abap_bool.                   "field chips: texts instead of tech names
+          m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
+          m_fld_lang   TYPE spras.                       "language of the field texts
 
     METHODS:
       find_candidates,
@@ -70,6 +71,7 @@ protected section.
       move_table_before IMPORTING i_from TYPE string i_to TYPE string,
       move_field_before IMPORTING i_from TYPE string i_to TYPE string,
       handle_fld_action IMPORTING i_act TYPE string,
+      reload_field_texts,
       apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
       create_sql_view,
       update_sql_view,
@@ -94,6 +96,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     super->constructor( ).
     mo_viewer = io_viewer.
     m_tabname = io_viewer->m_tabname.
+    m_fld_lang = sy-langu.
 
     mo_box = create( i_width = 1000 i_hight = 400 ).
     mo_box->set_caption( |Join builder: { m_tabname }| ).
@@ -157,7 +160,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     CALL FUNCTION 'DDIF_FIELDINFO_GET'
       EXPORTING
         tabname        = i_tabname
-        langu          = sy-langu
+        langu          = COND spras( WHEN m_fld_lang IS NOT INITIAL THEN m_fld_lang ELSE sy-langu )
       TABLES
         dfies_tab      = rt_dfies
       EXCEPTIONS
@@ -471,11 +474,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `input.cond{width:380px;font-family:Consolas,monospace;font-size:11px;}` &&
       `select{font-size:11px;}` &&
       `</style>` &&
-      `<script>var dk=null;` &&
+      `<script>var dk=null,lt=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
-      `function ov(e){if(e.preventDefault)e.preventDefault();return false;}` &&
-      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();` &&
-      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}return false;}` &&
+      "highlight the element the dragged one will be inserted BEFORE
+      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
+      `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
+      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
+      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
+      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
+      `document.ondragend=function(){uh();};` &&
       `</script>` &&
       `</head><body>` &&
       |<span class="base">{ m_tabname }</span> &#8646; |.
@@ -506,7 +513,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         DATA(l_del) = COND string( WHEN ls_tab-tabname NE m_tabname
           THEN |<button class="btn" type="submit" name="act" value="del_{ l_key }">&#10005;</button>| ).
         l_html = l_html &&
-          |<tr draggable="true" ondragstart="ds(event,'{ l_key }')" ondragover="return ov(event)"| &&
+          |<tr draggable="true" ondragstart="ds(event,'{ l_key }')" ondragover="return ov(event,this)"| &&
           | ondrop="return dp(event,'{ l_key }','tmv')">| &&
           |<td><span class="grip">&#8801;</span> | &&
           |<button class="btn" type="submit" name="act" value="up_{ l_key }">&#9650;</button>| &&
@@ -559,11 +566,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `text-decoration:none;font-weight:bold;margin-right:10px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
-      `<script>var dk=null;` &&
+      `<script>var dk=null,lt=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
-      `function ov(e){if(e.preventDefault)e.preventDefault();return false;}` &&
-      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();` &&
-      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}return false;}` &&
+      "highlight the element the dragged one will be inserted BEFORE
+      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
+      `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
+      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
+      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
+      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
+      `document.ondragend=function(){uh();};` &&
       "lasso selection: hold the left mouse button and sweep over the chips
       `var pt=false,pks={},pn=0,painted=false;` &&
       `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return false;}` &&
@@ -581,22 +592,32 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
       `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
       `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>` &&
-      |<a class="act" href="SAPEVENT:fld?NAMES">names: { COND string( WHEN m_show_texts = abap_true THEN 'text' ELSE 'tech' ) }</a>| &&
       |<a class="act" href="SAPEVENT:fld?AUTO">auto-refresh: { COND string( WHEN m_auto = abap_true THEN 'on' ELSE 'off' ) }</a>|.
+
+    "field name variant: technical or one of the installed languages (as in the table viewer)
+    l_html = l_html &&
+      `<select onchange="window.location.href='SAPEVENT:fld?lng_'+this.value">` &&
+      |<option value="TECH"{ COND string( WHEN m_show_texts = abap_false THEN ' selected' ) }>Technical name</option>|.
+    LOOP AT zcl_sde_appl=>mt_lang INTO DATA(ls_lang).
+      DATA(l_sel_opt) = COND string( WHEN m_show_texts = abap_true AND m_fld_lang = ls_lang-spras THEN ' selected' ).
+      l_html = l_html &&
+        |<option value="{ ls_lang-spras }"{ l_sel_opt }>{ escape( val = ls_lang-sptxt format = cl_abap_format=>e_html_text ) }</option>|.
+    ENDLOOP.
+    l_html = l_html && `</select>`.
 
     "selected fields in SELECT order: drag to reorder, x to remove
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
     SORT lt_sel BY pos.
-    l_html = l_html && `<h4>SELECT fields (drag to reorder):</h4>`.
+    l_html = l_html && `<h4>SELECT fields (drag to reorder - drops before the marked chip):</h4>`.
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_key) = |{ condense( CONV string( ls_sel-alias ) ) }~{ ls_sel-fieldname }|.
       l_html = l_html &&
         |<span class="fld" draggable="true" ondragstart="ds(event,'{ l_key }')"| &&
-        | ondragover="return ov(event)" ondrop="return dp(event,'{ l_key }','fmv')">| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_key }','fmv')">| &&
         |{ to_lower( l_key ) }<a href="SAPEVENT:fld?tg_{ l_key }">&#10005;</a></span>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" ondragover="return ov(event)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
+      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
 
     "all fields grouped by table: click chip to toggle
     LOOP AT mt_jtabs INTO DATA(ls_tab).
@@ -787,10 +808,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDLOOP.
       WHEN 'AUTO'.
         m_auto = boolc( m_auto = abap_false ).
-      WHEN 'NAMES'.
-        m_show_texts = boolc( m_show_texts = abap_false ).
       WHEN OTHERS.
-        IF strlen( i_act ) > 3 AND i_act(3) = 'tg_'. "toggle single field: tg_ALIAS~FIELD
+        IF strlen( i_act ) > 4 AND i_act(4) = 'lng_'. "field name variant: lng_TECH / lng_<spras>
+          IF i_act+4 = 'TECH'.
+            m_show_texts = abap_false.
+          ELSE.
+            m_show_texts = abap_true.
+            m_fld_lang = i_act+4.
+            reload_field_texts( ).
+          ENDIF.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'tg_'. "toggle single field: tg_ALIAS~FIELD
           SPLIT i_act+3 AT '~' INTO DATA(l_alias) DATA(l_field).
           READ TABLE mt_jflds ASSIGNING <fld> WITH KEY alias = l_alias fieldname = l_field.
           IF sy-subrc = 0.
@@ -818,6 +845,19 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     normalize_pos( ).
     render_flds( ).
     update_sql_view( ).
+  ENDMETHOD.
+
+
+  METHOD reload_field_texts.
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      LOOP AT get_fieldlist( ls_tab-tabname ) INTO DATA(ls_f). "uses m_fld_lang
+        READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>)
+          WITH KEY alias = ls_tab-alias fieldname = ls_f-fieldname.
+        IF sy-subrc = 0.
+          <fld>-ddtext = ls_f-fieldtext.
+        ENDIF.
+      ENDLOOP.
+    ENDLOOP.
   ENDMETHOD.
 
 
