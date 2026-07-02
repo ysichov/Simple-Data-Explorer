@@ -65,6 +65,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
       generate_select RETURNING VALUE(rv_sql) TYPE string,
       show_sql_editor,
       run_select,
+      execute_sql IMPORTING i_sql TYPE string,
 
       on_sapevent FOR EVENT sapevent OF cl_gui_html_viewer
         IMPORTING action getdata postdata,
@@ -315,12 +316,15 @@ CLASS zcl_sde_join IMPLEMENTATION.
       <jtab>-tabname = ls_cand-tabname.
       <jtab>-ddtext  = ls_cand-ddtext.
       <jtab>-jtype   = 'LEFT OUTER'.
+      DATA l_cond TYPE string. "build in a string: char field would eat trailing blanks after AND
+      CLEAR l_cond.
       LOOP AT ls_cand-pairs INTO DATA(ls_pair).
-        IF <jtab>-cond IS NOT INITIAL.
-          <jtab>-cond = |{ <jtab>-cond } AND |.
+        IF l_cond IS NOT INITIAL.
+          l_cond = |{ l_cond } AND |.
         ENDIF.
-        <jtab>-cond = |{ <jtab>-cond }{ l_alias CASE = LOWER }~{ ls_pair-cand_field } = t0~{ ls_pair-base_field }|.
+        l_cond = |{ l_cond }{ l_alias CASE = LOWER }~{ ls_pair-cand_field } = t0~{ ls_pair-base_field }|.
       ENDLOOP.
+      <jtab>-cond = l_cond.
       "keep user's edits from previous rebuild
       READ TABLE lt_old_tabs INTO DATA(ls_old_tab) WITH KEY tabname = ls_cand-tabname.
       IF sy-subrc = 0.
@@ -484,7 +488,8 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ( function = 'DESEL'    icon = icon_deselect_all quickinfo = 'Deselect all fields' )
       ( function = 'KEYS'     icon = icon_foreign_key  quickinfo = 'Select key fields only' )
       ( butn_type = 3 )
-      ( function = 'GENERATE' icon = icon_generate     quickinfo = 'Generate SELECT' text = 'SQL' ) ).
+      ( function = 'RUN'      icon = icon_execute_object quickinfo = 'Run join now' text = 'Run' )
+      ( function = 'GENERATE' icon = icon_generate     quickinfo = 'Show and edit SELECT' text = 'SQL' ) ).
   ENDMETHOD.
 
   METHOD on_flds_ucomm.
@@ -503,6 +508,9 @@ CLASS zcl_sde_join IMPLEMENTATION.
         LOOP AT mt_jflds ASSIGNING <fld>.
           <fld>-sel = <fld>-keyflag.
         ENDLOOP.
+      WHEN 'RUN'. "run immediately, no SQL editor
+        execute_sql( generate_select( ) ).
+        RETURN.
       WHEN 'GENERATE'.
         show_sql_editor( ).
         RETURN.
@@ -602,14 +610,21 @@ CLASS zcl_sde_join IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_select.
+    DATA l_sql TYPE string.
+    mo_sql_text->get_textstream( IMPORTING text = l_sql ).
+    cl_gui_cfw=>flush( ).
+    CHECK l_sql IS NOT INITIAL.
+    execute_sql( l_sql ).
+  ENDMETHOD.
+
+  METHOD execute_sql.
     DATA: l_sql    TYPE string,
           l_rows   TYPE i,
           lt_comp  TYPE abap_component_tab,
           lr_table TYPE REF TO data.
     FIELD-SYMBOLS: <result> TYPE STANDARD TABLE.
 
-    mo_sql_text->get_textstream( IMPORTING text = l_sql ).
-    cl_gui_cfw=>flush( ).
+    l_sql = i_sql.
     CHECK l_sql IS NOT INITIAL.
 
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf   IN l_sql WITH ` `.
