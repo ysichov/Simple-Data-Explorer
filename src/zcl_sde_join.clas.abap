@@ -484,6 +484,20 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.grip{cursor:move;color:#888;font-weight:bold;}` &&
       `input.cond{width:380px;font-family:Consolas,monospace;font-size:11px;}` &&
       `select{font-size:11px;}` &&
+      `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
+      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
+      `.chip:hover{border-color:#2c5f8a;}` &&
+      `.off{background:#fff!important;}` &&
+      `.c1{background:#d8ecff;border-color:#5797c9;}` &&
+      `.c2{background:#dcf5d6;border-color:#67a95e;}` &&
+      `.c3{background:#fff1c2;border-color:#c09a2b;}` &&
+      `.c4{background:#f3ddff;border-color:#a678c2;}` &&
+      `.c5{background:#ffdede;border-color:#c87373;}` &&
+      `.c6{background:#d9f4ef;border-color:#58a99b;}` &&
+      `.key{border-style:double;border-width:3px;}` &&
+      `.tblpill{display:inline-block;border:1px solid #888;border-radius:4px;padding:1px 8px;margin:2px;font-weight:bold;}` &&
+      `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
+      `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null,lt=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
@@ -495,8 +509,19 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
+      "lasso selection: hold the left mouse button and sweep over the chips
+      `var pt=false,pks={},pn=0,painted=false;` &&
+      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return true;}` &&
+      `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
+      `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
+      `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
+      `document.onmouseup=function(){if(!pt)return;pt=false;` &&
+      `if(pn>1){var a=[];for(var k in pks)a.push(k);` &&
+      `document.getElementById('pk').value=a.join(';');document.getElementById('pf').submit();}};` &&
       `</script>` &&
       `</head><body>` &&
+      `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
+      `<input type="hidden" name="keys" id="pk"></form>` &&
       |<span class="base">{ m_tabname }</span> &#8646; |.
 
     LOOP AT mt_cand INTO DATA(ls_cand).
@@ -548,6 +573,54 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         `</table><button class="btn" type="submit" name="act" value="apply">Apply</button></form>`.
     ENDIF.
 
+    l_html = l_html &&
+      `<div class="tabhdr">FIELDS&nbsp;&nbsp;` &&
+      `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
+      `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
+      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>` &&
+      `<select onchange="window.location.href='SAPEVENT:fld?lng_'+this.value">` &&
+      |<option value="TECH"{ COND string( WHEN m_show_texts = abap_false THEN ' selected' ) }>Technical name</option>|.
+    LOOP AT zcl_sde_appl=>mt_lang INTO DATA(ls_top_lang).
+      DATA(l_top_lang_sel) = COND string( WHEN m_show_texts = abap_true AND m_fld_lang = ls_top_lang-spras THEN ' selected' ).
+      l_html = l_html &&
+        |<option value="{ ls_top_lang-spras }"{ l_top_lang_sel }>{ escape( val = ls_top_lang-sptxt format = cl_abap_format=>e_html_text ) }</option>|.
+    ENDLOOP.
+    l_html = l_html && `</select></div>`.
+
+    "available fields grouped by table: click or paint to add to SELECT
+    LOOP AT mt_jtabs INTO DATA(ls_pick_tab).
+      DATA(l_pick_alias) = condense( CONV string( ls_pick_tab-alias ) ).
+      DATA(l_pick_color_idx) = sy-tabix - 1.
+      l_pick_color_idx = l_pick_color_idx MOD 6.
+      l_pick_color_idx = l_pick_color_idx + 1.
+      DATA(l_pick_color) = |c{ l_pick_color_idx }|.
+      l_html = l_html &&
+        |<div class="tabhdr"><span class="tblpill { l_pick_color }">{ l_pick_alias }</span>| &&
+        |{ ls_pick_tab-tabname }&nbsp;&nbsp;| &&
+        |<a class="act" href="SAPEVENT:fld?all_{ l_pick_alias }">all</a>| &&
+        |<a class="act" href="SAPEVENT:fld?non_{ l_pick_alias }">none</a>| &&
+        |<a class="act" href="SAPEVENT:fld?key_{ l_pick_alias }">keys</a></div>|.
+      LOOP AT mt_jflds INTO DATA(ls_pick_fld) WHERE alias = ls_pick_tab-alias AND sel = abap_false.
+        DATA(l_pick_cls) = 'chip off'.
+        IF ls_pick_fld-keyflag = abap_true.
+          l_pick_cls = l_pick_cls && ' key'.
+        ENDIF.
+        l_pick_cls = |{ l_pick_cls } { l_pick_color }|.
+        DATA(l_pick_fkey) = |{ l_pick_alias }~{ ls_pick_fld-fieldname }|.
+        DATA(l_pick_label) = COND string(
+          WHEN m_show_texts = abap_true AND ls_pick_fld-ddtext IS NOT INITIAL
+          THEN escape( val = ls_pick_fld-ddtext format = cl_abap_format=>e_html_text )
+          ELSE |{ ls_pick_fld-fieldname }| ).
+        l_html = l_html &&
+          |<a class="{ l_pick_cls }" href="SAPEVENT:fld?tg_{ l_pick_fkey }"| &&
+          | onmousedown="return pd(event,this,'{ l_pick_fkey }')"| &&
+          | onmouseover="pv(event,this,'{ l_pick_fkey }')"| &&
+          | onselectstart="return false"| &&
+          | onclick="return pc(event)" title="{ l_pick_fkey } { escape( val = ls_pick_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
+          |{ l_pick_label }</a>|.
+      ENDLOOP.
+    ENDLOOP.
+
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_html i_html = l_html ).
   ENDMETHOD.
@@ -590,33 +663,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
-      "lasso selection: hold the left mouse button and sweep over the chips
-      `var pt=false,pks={},pn=0,painted=false;` &&
-      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return true;}` &&
-      `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
-      `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
-      `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
-      `document.onmouseup=function(){if(!pt)return;pt=false;` &&
-      `if(pn>1){var a=[];for(var k in pks)a.push(k);` &&
-      `document.getElementById('pk').value=a.join(';');document.getElementById('pf').submit();}};` &&
       `</script>` &&
-      `</head><body onselectstart="return false">` &&
-      `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
-      `<input type="hidden" name="keys" id="pk"></form>` &&
-      `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
-      `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
-      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>`.
-
-    "field name variant: technical or one of the installed languages (as in the table viewer)
-    l_html = l_html &&
-      `<select onchange="window.location.href='SAPEVENT:fld?lng_'+this.value">` &&
-      |<option value="TECH"{ COND string( WHEN m_show_texts = abap_false THEN ' selected' ) }>Technical name</option>|.
-    LOOP AT zcl_sde_appl=>mt_lang INTO DATA(ls_lang).
-      DATA(l_sel_opt) = COND string( WHEN m_show_texts = abap_true AND m_fld_lang = ls_lang-spras THEN ' selected' ).
-      l_html = l_html &&
-        |<option value="{ ls_lang-spras }"{ l_sel_opt }>{ escape( val = ls_lang-sptxt format = cl_abap_format=>e_html_text ) }</option>|.
-    ENDLOOP.
-    l_html = l_html && `</select>`.
+      `</head><body>`.
 
     "selected fields in SELECT order: color shows the real source table
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
@@ -660,41 +708,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDLOOP.
     l_html = l_html &&
       `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
-
-    "available fields grouped by table: click to add to SELECT
-    LOOP AT mt_jtabs INTO DATA(ls_tab).
-      l_alias = condense( CONV string( ls_tab-alias ) ).
-      l_color_idx = sy-tabix - 1.
-      l_color_idx = l_color_idx MOD 6.
-      l_color_idx = l_color_idx + 1.
-      l_color = |c{ l_color_idx }|.
-      l_html = l_html &&
-        |<div class="tabhdr" draggable="true" ondragstart="ds(event,'{ l_alias }')"| &&
-        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_alias }','fgmv')">| &&
-        |{ l_alias } { ls_tab-tabname }&nbsp;&nbsp;| &&
-        |<a class="act" href="SAPEVENT:fld?all_{ l_alias }">all</a>| &&
-        |<a class="act" href="SAPEVENT:fld?non_{ l_alias }">none</a>| &&
-        |<a class="act" href="SAPEVENT:fld?key_{ l_alias }">keys</a></div>|.
-      LOOP AT mt_jflds INTO DATA(ls_fld) WHERE alias = ls_tab-alias AND sel = abap_false.
-        l_cls = 'chip off'.
-        IF ls_fld-keyflag = abap_true.
-          l_cls = l_cls && ' key'.
-        ENDIF.
-        l_cls = |{ l_cls } { l_color }|.
-        l_fkey = |{ l_alias }~{ ls_fld-fieldname }|.
-        "compact chip label: technical name or text in the logon language
-        l_label = COND string(
-          WHEN m_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL
-          THEN escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text )
-          ELSE |{ ls_fld-fieldname }| ).
-        l_html = l_html &&
-          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
-          | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
-          | onmouseover="pv(event,this,'{ l_fkey }')"| &&
-          | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
-          |{ l_label }</a>|.
-      ENDLOOP.
-    ENDLOOP.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_flds_html i_html = l_html ).
@@ -934,6 +947,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDIF.
     ENDCASE.
     normalize_pos( ).
+    render_html( ).
     render_flds( ).
     update_sql_view( ).
   ENDMETHOD.
@@ -1045,6 +1059,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           ENDIF.
         ENDLOOP.
         normalize_pos( ).
+        render_html( ).
         render_flds( ).
         update_sql_view( ).
     ENDCASE.
