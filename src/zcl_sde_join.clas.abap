@@ -503,18 +503,18 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `<script>var dk=null,lt=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
       `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
-      "highlight the element the dragged one will be inserted BEFORE
-      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
+      `function uh(){}` &&
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
-      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
+      `try{e.dataTransfer.dropEffect='move';}catch(x){}return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
       `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
       "lasso selection: hold the left mouse button and sweep over the chips
       `var pt=false,pks={},pn=0,painted=false,pm='1';` &&
-      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;` &&
-      `pm=(' '+el.className+' ').indexOf(' on ')>=0?'0':'1';pa(el,k);return true;}` &&
+      `function pd(e,el,k){e=e||window.event;pt=true;pks={};pn=0;painted=false;` &&
+      `pm=(' '+el.className+' ').indexOf(' on ')>=0?'0':'1';pa(el,k);` &&
+      `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
       `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
       `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
       `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
@@ -617,6 +617,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           ELSE |{ ls_pick_fld-fieldname }| ).
         l_html = l_html &&
           |<a class="{ l_pick_cls }" href="SAPEVENT:fld?tg_{ l_pick_fkey }"| &&
+          | draggable="false" ondragstart="return false"| &&
           | onmousedown="return pd(event,this,'{ l_pick_fkey }')"| &&
           | onmouseover="pv(event,this,'{ l_pick_fkey }')"| &&
           | onselectstart="return false"| &&
@@ -660,10 +661,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `<script>var dk=null,lt=null;` &&
       `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
       `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
-      "highlight the element the dragged one will be inserted BEFORE
-      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
+      `function uh(){}` &&
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
-      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
+      `try{e.dataTransfer.dropEffect='move';}catch(x){}return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
       `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
