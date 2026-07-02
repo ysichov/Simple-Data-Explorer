@@ -658,17 +658,19 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
-      `<script>var dk=null,lt=null;` &&
-      `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
-      `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
-      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
-      `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
-      `try{e.dataTransfer.dropEffect='move';}catch(x){}` &&
-      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
-      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
-      `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
-      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
-      `document.ondragend=function(){uh();};` &&
+      "mouse-based reordering (no HTML5 dnd - unreliable in the embedded browser):
+      "mousedown on a chip arms the move, mouseover marks the target, mouseup fires SAPEVENT
+      `<script>var mk=null,mp=null,mt=null,mtk=null,mv=false;` &&
+      `function md(e,k,p){e=e||window.event;mk=k;mp=p;mv=false;` &&
+      `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
+      `function mo(e,el,k,p){if(!mk||p!=mp||k==mk)return;mv=true;` &&
+      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mtk=k;` &&
+      `el.style.boxShadow='-4px 0 0 0 #d2691e';}` &&
+      `document.onmouseup=function(){if(!mk)return;` &&
+      `var k=mk,p=mp,t=mtk,ok=mv;mk=null;mp=null;mtk=null;mv=false;` &&
+      `if(mt){mt.style.boxShadow='';mt=null;}` &&
+      `if(ok&&t){t=String(t).replace('#','%23');` &&
+      `window.location.href='SAPEVENT:'+p+'?'+k+'__'+t;}};` &&
       `</script>` &&
       `</head><body onselectstart="return false">`.
 
@@ -683,12 +685,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_ord_color_idx = l_ord_color_idx + 1.
       DATA(l_ord_color) = |c{ l_ord_color_idx }|.
       l_html = l_html &&
-        |<span class="tblpill { l_ord_color }" draggable="true" ondragstart="ds(event,'{ l_ord_alias }')"| &&
-        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_ord_alias }','fgmv')">| &&
+        |<span class="tblpill { l_ord_color }" onmousedown="return md(event,'{ l_ord_alias }','fgmv')"| &&
+        | onmouseover="mo(event,this,'{ l_ord_alias }','fgmv')">| &&
         |{ l_ord_alias }</span>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fgmv')">&#8677; tables end</span></div>`.
+      `<span class="zone" onmouseover="mo(event,this,'#END','fgmv')">&#8677; tables end</span></div>`.
 
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
@@ -707,13 +709,13 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
         ELSE |{ ls_sel-fieldname }| ).
       l_html = l_html &&
-        |<span class="{ l_cls }" draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
-        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| &&
+        |<span class="{ l_cls }" onmousedown="return md(event,'{ l_fkey }','fmv')"| &&
+        | onmouseover="mo(event,this,'{ l_fkey }','fmv')"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</span>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
+      `<span class="zone" onmouseover="mo(event,this,'#END','fmv')">&#8677; end</span>`.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_flds_html i_html = l_html ).
