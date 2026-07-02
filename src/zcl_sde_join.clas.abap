@@ -147,40 +147,69 @@ CLASS zcl_sde_join IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD find_candidates.
-    DATA: lt_dd05s TYPE TABLE OF dd05s.
+    DATA: lt_dd08l TYPE TABLE OF dd08l,
+          lt_keys  TYPE TABLE OF dd05p. "resolved field pairs incl. checkfield
 
     "Outgoing: foreign keys defined on the base table -> check tables
-    SELECT * FROM dd05s INTO TABLE lt_dd05s
-      WHERE tabname = m_tabname.                        "#EC CI_GENBUFF
-    LOOP AT lt_dd05s INTO DATA(ls_key) WHERE fortable = m_tabname
-                                         AND checktable IS NOT INITIAL
-                                         AND checktable NE m_tabname
-                                         AND checktable NE '*'.
-      READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_key-checktable.
+    SELECT * FROM dd08l INTO TABLE lt_dd08l
+      WHERE tabname = m_tabname
+        AND as4local = 'A'.                             "#EC CI_GENBUFF
+    LOOP AT lt_dd08l INTO DATA(ls_fk) WHERE checktable IS NOT INITIAL
+                                        AND checktable NE m_tabname
+                                        AND checktable NE '*'.
+      CLEAR lt_keys.
+      CALL FUNCTION 'DD_FORKEY_GET'
+        EXPORTING
+          feldname  = ls_fk-fieldname
+          tabname   = m_tabname
+        TABLES
+          forkeytab = lt_keys
+        EXCEPTIONS
+          OTHERS    = 4.
+      CHECK sy-subrc < 2.
+      READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_fk-checktable.
       IF sy-subrc NE 0.
-        APPEND VALUE #( tabname = ls_key-checktable direction = 'O' ) TO mt_cand ASSIGNING <cand>.
+        APPEND VALUE #( tabname = ls_fk-checktable direction = 'O' ) TO mt_cand ASSIGNING <cand>.
       ENDIF.
-      IF ls_key-checkfield NE 'MANDT' AND NOT line_exists( <cand>-pairs[ cand_field = ls_key-checkfield ] ).
-        APPEND VALUE #( cand_field = ls_key-checkfield base_field = ls_key-forkey ) TO <cand>-pairs.
-      ENDIF.
+      LOOP AT lt_keys INTO DATA(ls_key) WHERE fortable = m_tabname
+                                          AND checkfield NE 'MANDT'
+                                          AND checkfield IS NOT INITIAL.
+        IF NOT line_exists( <cand>-pairs[ cand_field = ls_key-checkfield ] ).
+          APPEND VALUE #( cand_field = ls_key-checkfield base_field = ls_key-forkey ) TO <cand>-pairs.
+        ENDIF.
+      ENDLOOP.
     ENDLOOP.
 
     "Incoming: tables having the base table as check table
-    CLEAR lt_dd05s.
-    SELECT * FROM dd05s INTO TABLE lt_dd05s UP TO 1000 ROWS
-      WHERE checktable = m_tabname.                     "#EC CI_GENBUFF
-    LOOP AT lt_dd05s INTO ls_key WHERE tabname NE m_tabname.
-      CHECK ls_key-fortable = ls_key-tabname. "skip constants/other tables in the key mapping
-      READ TABLE mt_cand ASSIGNING <cand> WITH KEY tabname = ls_key-tabname.
+    CLEAR lt_dd08l.
+    SELECT * FROM dd08l INTO TABLE lt_dd08l UP TO 100 ROWS
+      WHERE checktable = m_tabname
+        AND as4local = 'A'.                             "#EC CI_GENBUFF
+    LOOP AT lt_dd08l INTO ls_fk WHERE tabname NE m_tabname.
+      IF NOT line_exists( mt_cand[ tabname = ls_fk-tabname ] ) AND lines( mt_cand ) >= 30.
+        CONTINUE. "keep the canvas readable
+      ENDIF.
+      CLEAR lt_keys.
+      CALL FUNCTION 'DD_FORKEY_GET'
+        EXPORTING
+          feldname  = ls_fk-fieldname
+          tabname   = ls_fk-tabname
+        TABLES
+          forkeytab = lt_keys
+        EXCEPTIONS
+          OTHERS    = 4.
+      CHECK sy-subrc < 2.
+      READ TABLE mt_cand ASSIGNING <cand> WITH KEY tabname = ls_fk-tabname.
       IF sy-subrc NE 0.
-        IF lines( mt_cand ) >= 30. "keep the canvas readable
-          CONTINUE.
+        APPEND VALUE #( tabname = ls_fk-tabname direction = 'I' ) TO mt_cand ASSIGNING <cand>.
+      ENDIF.
+      LOOP AT lt_keys INTO ls_key WHERE fortable = ls_fk-tabname
+                                    AND checkfield NE 'MANDT'
+                                    AND checkfield IS NOT INITIAL.
+        IF NOT line_exists( <cand>-pairs[ cand_field = ls_key-forkey ] ).
+          APPEND VALUE #( cand_field = ls_key-forkey base_field = ls_key-checkfield ) TO <cand>-pairs.
         ENDIF.
-        APPEND VALUE #( tabname = ls_key-tabname direction = 'I' ) TO mt_cand ASSIGNING <cand>.
-      ENDIF.
-      IF ls_key-checkfield NE 'MANDT' AND NOT line_exists( <cand>-pairs[ cand_field = ls_key-forkey ] ).
-        APPEND VALUE #( cand_field = ls_key-forkey base_field = ls_key-checkfield ) TO <cand>-pairs.
-      ENDIF.
+      ENDLOOP.
     ENDLOOP.
 
     "Text table
