@@ -658,11 +658,26 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.dir{color:#888;font-size:9px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
-      "click-to-move: plain SAPEVENT links only, no JS (JS navigation is blocked here)
       `.pick{outline:2px dashed #d2691e;}` &&
       `.hint{color:#d2691e;font-weight:bold;}` &&
       `</style>` &&
-      `</head><body>`.
+      "drag with the mouse (hold and sweep, drop before the marked element);
+      "a plain click still works as pick/insert
+      `<script>var mk=null,mp=null,mt=null,mtk=null,mv=false;` &&
+      `function md(e,k,p){mk=k;mp=p;mv=false;return true;}` &&
+      `function mo(e,el,k,p){if(!mk||p!=mp||k==mk)return;mv=true;` &&
+      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mtk=k;` &&
+      `el.style.boxShadow='-4px 0 0 0 #d2691e';}` &&
+      `function cl(e){if(mv){mv=false;if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
+      `document.onmouseup=function(){if(!mk)return;` &&
+      `var k=mk,p=mp,t=mtk,ok=mv;mk=null;mp=null;mtk=null;` &&
+      `if(mt){mt.style.boxShadow='';mt=null;}` &&
+      `if(ok&&t){var f=document.getElementById('mf');f.action='SAPEVENT:'+p;` &&
+      `document.getElementById('mv').value=k+'__'+t;f.submit();}};` &&
+      `</script>` &&
+      `</head><body onselectstart="return false">` &&
+      `<form id="mf" method="post" action="SAPEVENT:fmv" style="display:none">` &&
+      `<input type="hidden" name="mv" id="mv"></form>`.
 
     IF m_pick IS NOT INITIAL.
       l_html = l_html &&
@@ -682,11 +697,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       DATA(l_ord_color) = |c{ l_ord_color_idx }|.
       DATA(l_ord_pick) = COND string( WHEN m_pick = l_ord_alias THEN ' pick' ).
       l_html = l_html &&
-        |<a class="tblpill { l_ord_color }{ l_ord_pick }" href="SAPEVENT:fpick?{ l_ord_alias }">| &&
+        |<a class="tblpill { l_ord_color }{ l_ord_pick }" href="SAPEVENT:fpick?{ l_ord_alias }"| &&
+        | draggable="false" ondragstart="return false"| &&
+        | onmousedown="return md(event,'{ l_ord_alias }','fgmv')"| &&
+        | onmouseover="mo(event,this,'{ l_ord_alias }','fgmv')" onclick="return cl(event)">| &&
         |{ l_ord_alias }</a>|.
     ENDLOOP.
     l_html = l_html &&
-      `<a class="zone" href="SAPEVENT:fpick?END_T">&#8677; tables end</a></div>`.
+      `<a class="zone" href="SAPEVENT:fpick?END_T"` &&
+      ` onmouseover="mo(event,this,'END_T','fgmv')" onclick="return cl(event)">&#8677; tables end</a></div>`.
 
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
@@ -709,11 +728,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDIF.
       l_html = l_html &&
         |<a class="{ l_cls }" href="SAPEVENT:fpick?{ l_fkey }"| &&
+        | draggable="false" ondragstart="return false"| &&
+        | onmousedown="return md(event,'{ l_fkey }','fmv')"| &&
+        | onmouseover="mo(event,this,'{ l_fkey }','fmv')" onclick="return cl(event)"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</a>|.
     ENDLOOP.
     l_html = l_html &&
-      `<a class="zone" href="SAPEVENT:fpick?END_F">&#8677; end</a>`.
+      `<a class="zone" href="SAPEVENT:fpick?END_F"` &&
+      ` onmouseover="mo(event,this,'END_F','fmv')" onclick="return cl(event)">&#8677; end</a>`.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_flds_html i_html = l_html ).
@@ -1033,6 +1056,25 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
           move_table_before( i_from = l_from i_to = l_to ).
           refresh_all( ).
+        ENDIF.
+      WHEN 'fmv' OR 'fgmv'. "mouse drag posted as mv=FROM__TO (TO may be END_F/END_T)
+        l_post = concat_lines_of( table = postdata ).
+        SPLIT l_post AT '=' INTO l_dummy DATA(l_move).
+        REPLACE ALL OCCURRENCES OF '+' IN l_move WITH ` `.
+        l_move = cl_http_utility=>unescape_url( l_move ).
+        SPLIT l_move AT '__' INTO l_from l_to.
+        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
+          IF l_to = 'END_F' OR l_to = 'END_T'.
+            l_to = '#END'.
+          ENDIF.
+          IF action = 'fmv'.
+            move_field_before( i_from = l_from i_to = l_to ).
+          ELSE.
+            move_alias_fields_before( i_from = l_from i_to = l_to ).
+          ENDIF.
+          CLEAR m_pick.
+          render_flds( ).
+          update_sql_view( ).
         ENDIF.
       WHEN 'fpick'. "click-to-move: 1st click picks, 2nd click inserts before the target
         DATA(l_key) = CONV string( getdata ).
