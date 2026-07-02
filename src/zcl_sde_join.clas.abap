@@ -52,6 +52,7 @@ protected section.
           mo_flds_html TYPE REF TO cl_gui_html_viewer,
           mo_sql_html  TYPE REF TO cl_gui_html_viewer,
           m_ready      TYPE abap_bool,                   "constructor finished: changes go live to the viewer
+          m_pick       TYPE string,                     "click-to-move: picked field key or table alias
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras.                       "language of the field texts
 
@@ -642,7 +643,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
       `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
       `.chip:hover{border-color:#2c5f8a;}` &&
-      `.on{font-weight:bold;cursor:move;}` &&
+      `.on{font-weight:bold;cursor:pointer;}` &&
       `.off{background:#fff!important;}` &&
       `.c1{background:#d8ecff;border-color:#5797c9;}` &&
       `.c2{background:#dcf5d6;border-color:#67a95e;}` &&
@@ -652,30 +653,22 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.c6{background:#d9f4ef;border-color:#58a99b;}` &&
       `.key{border-style:double;border-width:3px;}` &&
       `.rm{color:#a00;text-decoration:none;margin-left:4px;}` &&
-      `.tblpill{display:inline-block;border:1px solid #888;border-radius:4px;padding:1px 8px;margin:2px;font-weight:bold;cursor:move;}` &&
-      `.zone{display:inline-block;border:1px dashed #bbb;border-radius:10px;color:#999;padding:1px 8px;margin:2px;}` &&
+      `.tblpill{display:inline-block;border:1px solid #888;border-radius:4px;padding:1px 8px;margin:2px;font-weight:bold;text-decoration:none;color:#000;}` &&
+      `.zone{display:inline-block;border:1px dashed #bbb;border-radius:10px;color:#999;padding:1px 8px;margin:2px;text-decoration:none;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
+      "click-to-move: plain SAPEVENT links only, no JS (JS navigation is blocked here)
+      `.pick{outline:2px dashed #d2691e;}` &&
+      `.hint{color:#d2691e;font-weight:bold;}` &&
       `</style>` &&
-      "mouse-based reordering (no HTML5 dnd - unreliable in the embedded browser):
-      "mousedown on a chip arms the move, mouseover marks the target, mouseup fires SAPEVENT
-      `<script>var mk=null,mp=null,mt=null,mtk=null,mv=false;` &&
-      `function md(e,k,p){e=e||window.event;mk=k;mp=p;mv=false;` &&
-      `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
-      `function mo(e,el,k,p){if(!mk||p!=mp||k==mk)return;mv=true;` &&
-      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mtk=k;` &&
-      `el.style.boxShadow='-4px 0 0 0 #d2691e';}` &&
-      "fire via a hidden form post: location.href='SAPEVENT:...' does not navigate from mouseup here
-      `document.onmouseup=function(){if(!mk)return;` &&
-      `var k=mk,p=mp,t=mtk,ok=mv;mk=null;mp=null;mtk=null;mv=false;` &&
-      `if(mt){mt.style.boxShadow='';mt=null;}` &&
-      `if(ok&&t){var f=document.getElementById('mf');f.action='SAPEVENT:'+p;` &&
-      `document.getElementById('mv').value=k+'__'+t;f.submit();}};` &&
-      `</script>` &&
-      `</head><body onselectstart="return false">` &&
-      `<form id="mf" method="post" action="SAPEVENT:fmv" style="display:none">` &&
-      `<input type="hidden" name="mv" id="mv"></form>`.
+      `</head><body>`.
+
+    IF m_pick IS NOT INITIAL.
+      l_html = l_html &&
+        |<div class="hint">moving <b>{ m_pick }</b> - click the element to insert it before | &&
+        |(same element = cancel)</div>|.
+    ENDIF.
 
     "selected fields in SELECT order: color shows the real source table
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
@@ -687,13 +680,13 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_ord_color_idx = l_ord_color_idx MOD 6.
       l_ord_color_idx = l_ord_color_idx + 1.
       DATA(l_ord_color) = |c{ l_ord_color_idx }|.
+      DATA(l_ord_pick) = COND string( WHEN m_pick = l_ord_alias THEN ' pick' ).
       l_html = l_html &&
-        |<span class="tblpill { l_ord_color }" onmousedown="return md(event,'{ l_ord_alias }','fgmv')"| &&
-        | onmouseover="mo(event,this,'{ l_ord_alias }','fgmv')">| &&
-        |{ l_ord_alias }</span>|.
+        |<a class="tblpill { l_ord_color }{ l_ord_pick }" href="SAPEVENT:fpick?{ l_ord_alias }">| &&
+        |{ l_ord_alias }</a>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" onmouseover="mo(event,this,'#END','fgmv')">&#8677; tables end</span></div>`.
+      `<a class="zone" href="SAPEVENT:fpick?END_T">&#8677; tables end</a></div>`.
 
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
@@ -711,14 +704,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         WHEN m_show_texts = abap_true AND ls_sel-ddtext IS NOT INITIAL
         THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
         ELSE |{ ls_sel-fieldname }| ).
+      IF m_pick = l_fkey.
+        l_cls = l_cls && ' pick'.
+      ENDIF.
       l_html = l_html &&
-        |<span class="{ l_cls }" onmousedown="return md(event,'{ l_fkey }','fmv')"| &&
-        | onmouseover="mo(event,this,'{ l_fkey }','fmv')"| &&
+        |<a class="{ l_cls }" href="SAPEVENT:fpick?{ l_fkey }"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
-        |{ l_label }</span>|.
+        |{ l_label }</a>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" onmouseover="mo(event,this,'#END','fmv')">&#8677; end</span>`.
+      `<a class="zone" href="SAPEVENT:fpick?END_F">&#8677; end</a>`.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_flds_html i_html = l_html ).
@@ -1037,21 +1032,32 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           move_table_before( i_from = l_from i_to = l_to ).
           refresh_all( ).
         ENDIF.
-      WHEN 'fmv' OR 'fgmv'. "mouse reorder: field or table group, posted as mv=FROM__TO
-        DATA(l_move) = CONV string( getdata ).
-        IF l_move IS INITIAL. "sent by the hidden form
-          l_post = concat_lines_of( table = postdata ).
-          SPLIT l_post AT '=' INTO l_dummy l_move.
-        ENDIF.
-        REPLACE ALL OCCURRENCES OF '+' IN l_move WITH ` `.
-        l_move = cl_http_utility=>unescape_url( l_move ).
-        SPLIT l_move AT '__' INTO l_from l_to.
-        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
-          IF action = 'fmv'.
-            move_field_before( i_from = l_from i_to = l_to ).
-          ELSE.
-            move_alias_fields_before( i_from = l_from i_to = l_to ).
+      WHEN 'fpick'. "click-to-move: 1st click picks, 2nd click inserts before the target
+        DATA(l_key) = CONV string( getdata ).
+        IF m_pick IS INITIAL.
+          IF l_key NE 'END_F' AND l_key NE 'END_T'. "end zones cannot be picked up
+            m_pick = l_key.
           ENDIF.
+          render_flds( ).
+        ELSEIF m_pick = l_key. "cancel
+          CLEAR m_pick.
+          render_flds( ).
+        ELSE.
+          DATA(l_pick_is_fld) = boolc( m_pick CS '~' ).
+          DATA(l_key_is_fld)  = boolc( l_key CS '~' OR l_key = 'END_F' ).
+          IF l_pick_is_fld NE l_key_is_fld. "field onto table pill etc: re-pick instead
+            m_pick = COND #( WHEN l_key NE 'END_F' AND l_key NE 'END_T' THEN l_key ).
+            render_flds( ).
+            RETURN.
+          ENDIF.
+          IF l_pick_is_fld = abap_true.
+            move_field_before( i_from = m_pick
+                               i_to   = COND #( WHEN l_key = 'END_F' THEN '#END' ELSE l_key ) ).
+          ELSE.
+            move_alias_fields_before( i_from = m_pick
+                                      i_to   = COND #( WHEN l_key = 'END_T' THEN '#END' ELSE l_key ) ).
+          ENDIF.
+          CLEAR m_pick.
           render_flds( ).
           update_sql_view( ).
         ENDIF.
