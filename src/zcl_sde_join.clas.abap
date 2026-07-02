@@ -44,6 +44,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
           mt_jtabs     TYPE tt_jtab,
           mt_jflds     TYPE tt_jfld,
           m_sel_count  TYPE i,
+          m_base_pos   TYPE i VALUE 1, "position of the base table in the join order (1 = FROM)
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
           mo_flds_alv  TYPE REF TO cl_gui_alv_grid,
@@ -217,6 +218,20 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ENDLOOP.
     ENDLOOP.
 
+    "Keep only real database tables (drop structures and generated maintenance views)
+    IF mt_cand IS NOT INITIAL.
+      SELECT tabname FROM dd02l
+        INTO TABLE @DATA(lt_real)
+        FOR ALL ENTRIES IN @mt_cand
+        WHERE tabname = @mt_cand-tabname
+          AND tabclass IN ('TRANSP','POOL','CLUSTER').
+      LOOP AT mt_cand ASSIGNING <cand>.
+        IF NOT line_exists( lt_real[ table_line = <cand>-tabname ] ).
+          DELETE mt_cand.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
     "Text table
     zcl_sde_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = DATA(l_texttab) ).
     IF l_texttab IS NOT INITIAL AND NOT line_exists( mt_cand[ tabname = l_texttab ] ).
@@ -306,8 +321,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     lt_old_tabs = mt_jtabs.
     CLEAR: mt_jtabs, mt_jflds.
 
-    "base table always first, alias t0
-    APPEND VALUE #( alias = 'T0' tabname = m_tabname ) TO mt_jtabs.
+    "base table fields always listed first
     LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
       APPEND VALUE #( sel = ls_f-keyflag alias = 'T0' tabname = m_tabname
                       fieldname = ls_f-fieldname keyflag = ls_f-keyflag
@@ -351,6 +365,35 @@ CLASS zcl_sde_join IMPLEMENTATION.
                       ) TO mt_jflds.
       ENDLOOP.
     ENDLOOP.
+
+    "insert the base table at its chosen position in the join order
+    IF m_base_pos < 1.
+      m_base_pos = 1.
+    ELSEIF m_base_pos > lines( mt_jtabs ) + 1.
+      m_base_pos = lines( mt_jtabs ) + 1.
+    ENDIF.
+    DATA(ls_base) = VALUE t_jtab( alias = 'T0' tabname = m_tabname jtype = 'LEFT OUTER' ).
+    READ TABLE lt_old_tabs INTO DATA(ls_old_base) WITH KEY tabname = m_tabname.
+    IF sy-subrc = 0 AND ls_old_base-jtype IS NOT INITIAL.
+      ls_base-jtype = ls_old_base-jtype.
+    ENDIF.
+    INSERT ls_base INTO mt_jtabs INDEX m_base_pos.
+
+    "if the base is not the FROM table, the first table's link condition moves to the base row
+    IF m_base_pos > 1.
+      READ TABLE mt_jtabs ASSIGNING FIELD-SYMBOL(<first>) INDEX 1.
+      READ TABLE mt_jtabs ASSIGNING FIELD-SYMBOL(<base>) INDEX m_base_pos.
+      IF <base>-cond IS INITIAL.
+        <base>-cond = <first>-cond.
+      ENDIF.
+      CLEAR <first>-cond. "FROM table has no ON
+
+      "old base ON edits survive via lt_old_tabs
+      READ TABLE lt_old_tabs INTO ls_old_base WITH KEY tabname = m_tabname.
+      IF sy-subrc = 0 AND ls_old_base-cond IS NOT INITIAL.
+        <base>-cond = ls_old_base-cond.
+      ENDIF.
+    ENDIF.
 
     "restore previous manual (de)selections
     LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
@@ -399,22 +442,29 @@ CLASS zcl_sde_join IMPLEMENTATION.
       `<input type="text" name="newtab" size="16" maxlength="30">` &&
       `<input type="submit" value="Add table"></form>`.
 
-    "joined tables: order, join type, ON condition
+    "joined tables: order (the first one is FROM), join type, ON condition
     IF lines( mt_jtabs ) > 1.
       l_html = l_html && `<form method="post" action="SAPEVENT:tabs"><table class="j">`.
-      LOOP AT mt_jtabs INTO DATA(ls_tab) FROM 2.
-        DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
-        DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
+      LOOP AT mt_jtabs INTO DATA(ls_tab).
+        DATA(l_idx) = sy-tabix.
+        DATA(l_del) = COND string( WHEN ls_tab-tabname NE m_tabname
+          THEN |<button class="btn" type="submit" name="act" value="del_{ ls_tab-alias }">&#10005;</button>| ).
         l_html = l_html &&
           |<tr><td><button class="btn" type="submit" name="act" value="up_{ ls_tab-alias }">&#9650;</button>| &&
-          |<button class="btn" type="submit" name="act" value="dn_{ ls_tab-alias }">&#9660;</button>| &&
-          |<button class="btn" type="submit" name="act" value="del_{ ls_tab-alias }">&#10005;</button></td>| &&
+          |<button class="btn" type="submit" name="act" value="dn_{ ls_tab-alias }">&#9660;</button>{ l_del }</td>| &&
           |<td class="alias">{ ls_tab-alias }</td>| &&
-          |<td><b>{ ls_tab-tabname }</b></td>| &&
-          |<td><select name="jt_{ ls_tab-alias }">| &&
-          |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
-          |<td><input class="cond" type="text" name="on_{ ls_tab-alias }" value="{
-             escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
+          |<td><b>{ ls_tab-tabname }</b></td>|.
+        IF l_idx = 1.
+          l_html = l_html && |<td>FROM</td><td></td></tr>|.
+        ELSE.
+          DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
+          DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
+          l_html = l_html &&
+            |<td><select name="jt_{ ls_tab-alias }">| &&
+            |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
+            |<td><input class="cond" type="text" name="on_{ ls_tab-alias }" value="{
+               escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
+        ENDIF.
       ENDLOOP.
       l_html = l_html &&
         `</table><button class="btn" type="submit" name="act" value="apply">Apply</button></form>`.
@@ -452,21 +502,27 @@ CLASS zcl_sde_join IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD move_table.
+    "visual swap in the join order; the base table takes part via m_base_pos
     READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = i_alias.
     CHECK sy-subrc = 0.
-    READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_tab-tabname.
-    CHECK sy-subrc = 0 AND <cand>-selected = abap_true.
+    DATA(l_idx) = sy-tabix.
+    DATA(l_other_idx) = l_idx + i_dir.
+    CHECK l_other_idx >= 1 AND l_other_idx <= lines( mt_jtabs ).
+    READ TABLE mt_jtabs INTO DATA(ls_other) INDEX l_other_idx.
 
-    "find the neighbour in selection order
-    DATA(l_best) = 0.
-    LOOP AT mt_cand ASSIGNING FIELD-SYMBOL(<other>) WHERE selected = abap_true AND tabname NE <cand>-tabname.
-      IF ( i_dir < 0 AND <other>-sel_order < <cand>-sel_order AND ( l_best = 0 OR <other>-sel_order > l_best ) )
-      OR ( i_dir > 0 AND <other>-sel_order > <cand>-sel_order AND ( l_best = 0 OR <other>-sel_order < l_best ) ).
-        l_best = <other>-sel_order.
-      ENDIF.
-    ENDLOOP.
-    CHECK l_best NE 0.
-    READ TABLE mt_cand ASSIGNING <other> WITH KEY sel_order = l_best selected = abap_true.
+    IF ls_tab-tabname = m_tabname. "moving the base itself
+      m_base_pos = m_base_pos + i_dir.
+      RETURN.
+    ENDIF.
+    IF ls_other-tabname = m_tabname. "candidate crosses the base
+      m_base_pos = m_base_pos - i_dir.
+      RETURN.
+    ENDIF.
+
+    "two candidates: swap their selection order
+    READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_tab-tabname.
+    CHECK sy-subrc = 0.
+    READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<other>) WITH KEY tabname = ls_other-tabname.
     CHECK sy-subrc = 0.
     DATA(l_tmp) = <cand>-sel_order.
     <cand>-sel_order  = <other>-sel_order.
@@ -650,7 +706,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
 
     LOOP AT mt_jtabs INTO DATA(ls_tab).
       IF sy-tabix = 1.
-        l_from = |{ ls_tab-tabname CASE = LOWER } AS t0|.
+        l_from = |{ ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER }|.
       ELSE.
         l_from = |{ l_from }{ cl_abap_char_utilities=>newline }  { ls_tab-jtype } JOIN { ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER } ON { ls_tab-cond }|.
       ENDIF.
