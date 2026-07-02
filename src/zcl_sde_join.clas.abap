@@ -659,9 +659,11 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null,lt=null;` &&
-      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
+      `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
       `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
+      `try{e.dataTransfer.dropEffect='move';}catch(x){}` &&
       `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
       `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
