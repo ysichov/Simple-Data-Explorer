@@ -69,6 +69,7 @@ protected section.
       move_table IMPORTING i_alias TYPE char5 i_dir TYPE i,
       move_table_before IMPORTING i_from TYPE string i_to TYPE string,
       move_field_before IMPORTING i_from TYPE string i_to TYPE string,
+      move_alias_fields_before IMPORTING i_from TYPE string i_to TYPE string,
       handle_fld_action IMPORTING i_act TYPE string,
       reload_field_texts,
       apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
@@ -396,7 +397,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         APPEND VALUE #( alias = l_alias tabname = ls_cand-tabname
                         fieldname = ls_f-fieldname keyflag = ls_f-keyflag
                         ddtext = ls_f-fieldtext
-                        sel = abap_true "user removes what is not needed
+                        sel = boolc( NOT line_exists( ls_cand-pairs[ cand_field = ls_f-fieldname ] ) )
                       ) TO mt_jflds.
       ENDLOOP.
     ENDLOOP.
@@ -552,6 +553,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
 
   METHOD render_flds.
+    DATA lt_sel TYPE tt_jfld.
+
     CHECK mo_flds_html IS BOUND.
 
     DATA(l_html) =
@@ -612,48 +615,71 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDLOOP.
     l_html = l_html && `</select>`.
 
-    "all fields grouped by table: selected chips can be dragged to change SELECT order
-    LOOP AT mt_jtabs INTO DATA(ls_tab).
-      DATA(l_alias) = condense( CONV string( ls_tab-alias ) ).
+    "selected fields in SELECT order: color shows the real source table
+    lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT lt_sel BY pos.
+    l_html = l_html && `<div class="tabhdr">SELECT&nbsp;&nbsp;</div>`.
+    LOOP AT lt_sel INTO DATA(ls_sel).
+      DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
+      READ TABLE mt_jtabs TRANSPORTING NO FIELDS WITH KEY alias = ls_sel-alias.
       DATA(l_color_idx) = sy-tabix - 1.
       l_color_idx = l_color_idx MOD 6.
       l_color_idx = l_color_idx + 1.
       DATA(l_color) = |c{ l_color_idx }|.
+      DATA(l_fkey) = |{ l_alias }~{ ls_sel-fieldname }|.
+      DATA(l_cls) = |chip on { l_color }|.
+      IF ls_sel-keyflag = abap_true.
+        l_cls = l_cls && ' key'.
+      ENDIF.
+      DATA(l_label) = COND string(
+        WHEN m_show_texts = abap_true AND ls_sel-ddtext IS NOT INITIAL
+        THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
+        ELSE |{ ls_sel-fieldname }| ).
       l_html = l_html &&
-        |<div class="tabhdr">{ l_alias } { ls_tab-tabname }&nbsp;&nbsp;| &&
+        |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
+        | draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| &&
+        | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
+        | onmouseover="pv(event,this,'{ l_fkey }')"| &&
+        | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
+        |{ l_label } <span class="rm">&#10005;</span></a>|.
+    ENDLOOP.
+    l_html = l_html &&
+      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
+
+    "available fields grouped by table: click to add to SELECT
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      l_alias = condense( CONV string( ls_tab-alias ) ).
+      l_color_idx = sy-tabix - 1.
+      l_color_idx = l_color_idx MOD 6.
+      l_color_idx = l_color_idx + 1.
+      l_color = |c{ l_color_idx }|.
+      l_html = l_html &&
+        |<div class="tabhdr" draggable="true" ondragstart="ds(event,'{ l_alias }')"| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_alias }','fgmv')">| &&
+        |{ l_alias } { ls_tab-tabname }&nbsp;&nbsp;| &&
         |<a class="act" href="SAPEVENT:fld?all_{ l_alias }">all</a>| &&
         |<a class="act" href="SAPEVENT:fld?non_{ l_alias }">none</a>| &&
         |<a class="act" href="SAPEVENT:fld?key_{ l_alias }">keys</a></div>|.
-      LOOP AT mt_jflds INTO DATA(ls_fld) WHERE alias = ls_tab-alias.
-        DATA(l_cls) = COND string( WHEN ls_fld-sel = abap_true THEN 'chip on' ELSE 'chip' ).
+      LOOP AT mt_jflds INTO DATA(ls_fld) WHERE alias = ls_tab-alias AND sel = abap_false.
+        l_cls = 'chip off'.
         IF ls_fld-keyflag = abap_true.
           l_cls = l_cls && ' key'.
         ENDIF.
         l_cls = |{ l_cls } { l_color }|.
-        DATA(l_fkey) = |{ l_alias }~{ ls_fld-fieldname }|.
+        l_fkey = |{ l_alias }~{ ls_fld-fieldname }|.
         "compact chip label: technical name or text in the logon language
-        DATA(l_label) = COND string(
+        l_label = COND string(
           WHEN m_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL
           THEN escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text )
           ELSE |{ ls_fld-fieldname }| ).
-        DATA(l_drag) = COND string(
-          WHEN ls_fld-sel = abap_true
-          THEN | draggable="true" ondragstart="ds(event,'{ l_fkey }')"| ).
-        DATA(l_drop) = COND string(
-          WHEN ls_fld-sel = abap_true
-          THEN | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| ).
-        DATA(l_remove) = COND string(
-          WHEN ls_fld-sel = abap_true
-          THEN | <span class="rm">&#10005;</span>| ).
         l_html = l_html &&
-          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"{ l_drag }{ l_drop }| &&
+          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
           | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
           | onmouseover="pv(event,this,'{ l_fkey }')"| &&
           | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
-          |{ l_label }{ l_remove }</a>|.
+          |{ l_label }</a>|.
       ENDLOOP.
-      l_html = l_html &&
-        `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
     ENDLOOP.
 
     l_html = l_html && `</body></html>`.
@@ -797,6 +823,53 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD move_alias_fields_before.
+    "drag&drop: place all selected fields of alias i_from before alias i_to
+    DATA: lt_keys TYPE TABLE OF string,
+          lt_move TYPE TABLE OF string,
+          l_split_alias TYPE string,
+          l_split_field TYPE string.
+
+    DATA(lt_sel) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT lt_sel BY pos.
+    LOOP AT lt_sel INTO DATA(ls_sel).
+      DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
+      DATA(l_key) = |{ l_alias }~{ ls_sel-fieldname }|.
+      IF l_alias = i_from.
+        APPEND l_key TO lt_move.
+      ELSE.
+        APPEND l_key TO lt_keys.
+      ENDIF.
+    ENDLOOP.
+    CHECK lt_move IS NOT INITIAL.
+
+    IF i_to = '#END'.
+      APPEND LINES OF lt_move TO lt_keys.
+    ELSE.
+      DATA(l_inserted) = abap_false.
+      LOOP AT lt_keys INTO l_key.
+        SPLIT l_key AT '~' INTO l_split_alias l_split_field.
+        IF l_split_alias = i_to.
+          INSERT LINES OF lt_move INTO lt_keys INDEX sy-tabix.
+          l_inserted = abap_true.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      IF l_inserted = abap_false.
+        APPEND LINES OF lt_move TO lt_keys.
+      ENDIF.
+    ENDIF.
+
+    LOOP AT lt_keys INTO l_key.
+      SPLIT l_key AT '~' INTO l_split_alias l_split_field.
+      READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_split_alias fieldname = l_split_field.
+      IF sy-subrc = 0.
+        <fld>-pos = sy-tabix.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
   METHOD handle_fld_action.
     CASE i_act.
       WHEN 'ALL'.
@@ -929,6 +1002,13 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         SPLIT getdata AT '__' INTO l_from l_to.
         IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
           move_field_before( i_from = l_from i_to = l_to ).
+          render_flds( ).
+          update_sql_view( ).
+        ENDIF.
+      WHEN 'fgmv'. "drag&drop of all selected fields from one alias before another alias
+        SPLIT getdata AT '__' INTO l_from l_to.
+        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
+          move_alias_fields_before( i_from = l_from i_to = l_to ).
           render_flds( ).
           update_sql_view( ).
         ENDIF.
