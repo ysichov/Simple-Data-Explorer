@@ -487,6 +487,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
       `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
       `.chip:hover{border-color:#2c5f8a;}` &&
+      `.on{font-weight:bold;}` &&
       `.off{background:#fff!important;}` &&
       `.c1{background:#d8ecff;border-color:#5797c9;}` &&
       `.c2{background:#dcf5d6;border-color:#67a95e;}` &&
@@ -500,7 +501,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null,lt=null;` &&
-      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
+      `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
       "highlight the element the dragged one will be inserted BEFORE
       `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
@@ -510,14 +512,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
       "lasso selection: hold the left mouse button and sweep over the chips
-      `var pt=false,pks={},pn=0,painted=false;` &&
-      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return true;}` &&
+      `var pt=false,pks={},pn=0,painted=false,pm='1';` &&
+      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;` &&
+      `pm=(' '+el.className+' ').indexOf(' on ')>=0?'0':'1';pa(el,k);return true;}` &&
       `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
       `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
       `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
       `document.onmouseup=function(){if(!pt)return;pt=false;` &&
       `if(pn>1){var a=[];for(var k in pks)a.push(k);` &&
-      `document.getElementById('pk').value=a.join(';');document.getElementById('pf').submit();}};` &&
+      `var f=document.getElementById('pf');f.action='SAPEVENT:fsel'+pm;` &&
+      `document.getElementById('pk').value=a.join(';');f.submit();}};` &&
       `</script>` &&
       `</head><body>` &&
       `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
@@ -587,7 +591,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDLOOP.
     l_html = l_html && `</select></div>`.
 
-    "available fields grouped by table: click or paint to add to SELECT
+    "fields grouped by table: click toggles SELECT membership, paint selects many
     LOOP AT mt_jtabs INTO DATA(ls_pick_tab).
       DATA(l_pick_alias) = condense( CONV string( ls_pick_tab-alias ) ).
       DATA(l_pick_color_idx) = sy-tabix - 1.
@@ -600,8 +604,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         |<a class="act" href="SAPEVENT:fld?all_{ l_pick_alias }">all</a>| &&
         |<a class="act" href="SAPEVENT:fld?non_{ l_pick_alias }">none</a>| &&
         |<a class="act" href="SAPEVENT:fld?key_{ l_pick_alias }">keys</a></div>|.
-      LOOP AT mt_jflds INTO DATA(ls_pick_fld) WHERE alias = ls_pick_tab-alias AND sel = abap_false.
-        DATA(l_pick_cls) = 'chip off'.
+      LOOP AT mt_jflds INTO DATA(ls_pick_fld) WHERE alias = ls_pick_tab-alias.
+        DATA(l_pick_cls) = COND string( WHEN ls_pick_fld-sel = abap_true THEN 'chip on' ELSE 'chip off' ).
         IF ls_pick_fld-keyflag = abap_true.
           l_pick_cls = l_pick_cls && ' key'.
         ENDIF.
@@ -654,7 +658,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
       `<script>var dk=null,lt=null;` &&
-      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.effectAllowed='move';` &&
+      `e.dataTransfer.setData('Text',k);e.dataTransfer.setData('text',k);}catch(x){}return true;}` &&
       "highlight the element the dragged one will be inserted BEFORE
       `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
@@ -664,7 +669,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
       `</script>` &&
-      `</head><body>`.
+      `</head><body onselectstart="return false">`.
 
     "selected fields in SELECT order: color shows the real source table
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
@@ -1046,7 +1051,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDIF.
       WHEN 'fld'.
         handle_fld_action( CONV #( getdata ) ).
-      WHEN 'fsel'. "lasso: select all painted fields (keys=T0~F1;T1~F2;...)
+      WHEN 'fsel' OR 'fsel0' OR 'fsel1'. "lasso: select/unselect painted fields (keys=T0~F1;T1~F2;...)
+        DATA(l_lasso_sel) = boolc( action NE 'fsel0' ).
         l_post = concat_lines_of( table = postdata ).
         SPLIT l_post AT '=' INTO l_dummy DATA(l_keys).
         l_keys = cl_http_utility=>unescape_url( l_keys ).
@@ -1055,7 +1061,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           SPLIT l_fkey AT '~' INTO DATA(l_alias) DATA(l_field).
           READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) WITH KEY alias = l_alias fieldname = l_field.
           IF sy-subrc = 0.
-            <fld>-sel = abap_true.
+            <fld>-sel = l_lasso_sel.
           ENDIF.
         ENDLOOP.
         normalize_pos( ).
