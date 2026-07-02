@@ -50,7 +50,7 @@ protected section.
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
           mo_flds_html TYPE REF TO cl_gui_html_viewer,
-          mo_sql_text  TYPE REF TO cl_gui_textedit,
+          mo_sql_html  TYPE REF TO cl_gui_html_viewer,
           m_ready      TYPE abap_bool,                   "constructor finished: changes go live to the viewer
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras.                       "language of the field texts
@@ -153,6 +153,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     create_sql_view( ).
     refresh_all( ).
     m_ready = abap_true. "from now on every change is applied to the original window
+    update_sql_view( ).
 
     "react on filter changes in the original window: SQL text + data follow
     IF mo_viewer->mo_sel IS BOUND.
@@ -551,24 +552,25 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
 
   METHOD render_flds.
-    DATA: lt_sel TYPE tt_jfld.
-
     CHECK mo_flds_html IS BOUND.
 
     DATA(l_html) =
       `<html><head><meta charset="utf-8"><style>` &&
       `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#fff;}` &&
-      `h4{margin:4px 0 2px 0;font-size:11px;color:#555;}` &&
       `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
-      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;` &&
-      `background:#fff;text-decoration:none;color:#000;}` &&
+      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
       `.chip:hover{border-color:#2c5f8a;}` &&
-      `.on{background:#d3f2d3;border-color:#2e8b2e;font-weight:bold;}` &&
+      `.on{font-weight:bold;cursor:move;}` &&
+      `.off{background:#fff!important;}` &&
+      `.c1{background:#d8ecff;border-color:#5797c9;}` &&
+      `.c2{background:#dcf5d6;border-color:#67a95e;}` &&
+      `.c3{background:#fff1c2;border-color:#c09a2b;}` &&
+      `.c4{background:#f3ddff;border-color:#a678c2;}` &&
+      `.c5{background:#ffdede;border-color:#c87373;}` &&
+      `.c6{background:#d9f4ef;border-color:#58a99b;}` &&
       `.key{border-style:double;border-width:3px;}` &&
-      `.fld{display:inline-block;border:1px solid #2e8b2e;border-radius:4px;background:#eef8ee;` &&
-      `padding:1px 6px;margin:2px;font-family:Consolas,monospace;cursor:move;}` &&
-      `.fld a{color:#a00;text-decoration:none;margin-left:4px;}` &&
-      `.zone{display:inline-block;border:1px dashed #bbb;border-radius:4px;color:#999;padding:1px 8px;margin:2px;}` &&
+      `.rm{color:#a00;text-decoration:none;margin-left:4px;}` &&
+      `.zone{display:inline-block;border:1px dashed #bbb;border-radius:10px;color:#999;padding:1px 8px;margin:2px;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
@@ -584,7 +586,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `document.ondragend=function(){uh();};` &&
       "lasso selection: hold the left mouse button and sweep over the chips
       `var pt=false,pks={},pn=0,painted=false;` &&
-      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return false;}` &&
+      `function pd(e,el,k){pt=true;pks={};pn=0;painted=false;pa(el,k);return true;}` &&
       `function pv(e,el,k){if(pt&&!pks[k]){pa(el,k);if(pn>1)painted=true;}}` &&
       `function pa(el,k){pks[k]=1;pn++;el.className+=' paint';}` &&
       `function pc(e){if(painted){if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
@@ -610,23 +612,13 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     ENDLOOP.
     l_html = l_html && `</select>`.
 
-    "selected fields in SELECT order: drag to reorder, x to remove
-    lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
-    SORT lt_sel BY pos.
-    l_html = l_html && `<h4>SELECT fields (drag to reorder - drops before the marked chip):</h4>`.
-    LOOP AT lt_sel INTO DATA(ls_sel).
-      DATA(l_key) = |{ condense( CONV string( ls_sel-alias ) ) }~{ ls_sel-fieldname }|.
-      l_html = l_html &&
-        |<span class="fld" draggable="true" ondragstart="ds(event,'{ l_key }')"| &&
-        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_key }','fmv')">| &&
-        |{ to_lower( l_key ) }<a href="SAPEVENT:fld?tg_{ l_key }">&#10005;</a></span>|.
-    ENDLOOP.
-    l_html = l_html &&
-      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
-
-    "all fields grouped by table: click chip to toggle
+    "all fields grouped by table: selected chips can be dragged to change SELECT order
     LOOP AT mt_jtabs INTO DATA(ls_tab).
       DATA(l_alias) = condense( CONV string( ls_tab-alias ) ).
+      DATA(l_color_idx) = sy-tabix - 1.
+      l_color_idx = l_color_idx MOD 6.
+      l_color_idx = l_color_idx + 1.
+      DATA(l_color) = |c{ l_color_idx }|.
       l_html = l_html &&
         |<div class="tabhdr">{ l_alias } { ls_tab-tabname }&nbsp;&nbsp;| &&
         |<a class="act" href="SAPEVENT:fld?all_{ l_alias }">all</a>| &&
@@ -637,19 +629,31 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         IF ls_fld-keyflag = abap_true.
           l_cls = l_cls && ' key'.
         ENDIF.
+        l_cls = |{ l_cls } { l_color }|.
         DATA(l_fkey) = |{ l_alias }~{ ls_fld-fieldname }|.
         "compact chip label: technical name or text in the logon language
         DATA(l_label) = COND string(
           WHEN m_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL
           THEN escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text )
           ELSE |{ ls_fld-fieldname }| ).
+        DATA(l_drag) = COND string(
+          WHEN ls_fld-sel = abap_true
+          THEN | draggable="true" ondragstart="ds(event,'{ l_fkey }')"| ).
+        DATA(l_drop) = COND string(
+          WHEN ls_fld-sel = abap_true
+          THEN | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| ).
+        DATA(l_remove) = COND string(
+          WHEN ls_fld-sel = abap_true
+          THEN | <span class="rm">&#10005;</span>| ).
         l_html = l_html &&
-          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
+          |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"{ l_drag }{ l_drop }| &&
           | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
           | onmouseover="pv(event,this,'{ l_fkey }')"| &&
           | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
-          |{ l_label }</a>|.
+          |{ l_label }{ l_remove }</a>|.
       ENDLOOP.
+      l_html = l_html &&
+        `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
     ENDLOOP.
 
     l_html = l_html && `</body></html>`.
@@ -952,21 +956,40 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
   METHOD create_sql_view.
     mo_low_split->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_cont) ).
 
-    CREATE OBJECT mo_sql_text
+    CREATE OBJECT mo_sql_html
       EXPORTING
         parent = lo_cont
       EXCEPTIONS
         OTHERS = 1.
-    IF mo_sql_text IS BOUND.
-      mo_sql_text->set_readonly_mode( 1 ). "live view of the statement being applied
-    ENDIF.
   ENDMETHOD.
 
 
   METHOD update_sql_view.
-    CHECK mo_sql_text IS BOUND.
+    CHECK mo_sql_html IS BOUND.
     DATA(l_sql) = generate_select( ).
-    mo_sql_text->set_textstream( l_sql ).
+    DATA(l_sql_html) = escape( val = l_sql format = cl_abap_format=>e_html_text ).
+    REPLACE ALL OCCURRENCES OF REGEX '\bSELECT\b' IN l_sql_html WITH '<span class="kw">SELECT</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bFROM\b' IN l_sql_html WITH '<span class="kw">FROM</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bWHERE\b' IN l_sql_html WITH '<span class="kw">WHERE</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bJOIN\b' IN l_sql_html WITH '<span class="kw">JOIN</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bLEFT\b' IN l_sql_html WITH '<span class="kw">LEFT</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bOUTER\b' IN l_sql_html WITH '<span class="kw">OUTER</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bINNER\b' IN l_sql_html WITH '<span class="kw">INNER</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bON\b' IN l_sql_html WITH '<span class="kw">ON</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bAS\b' IN l_sql_html WITH '<span class="kw2">AS</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bAND\b' IN l_sql_html WITH '<span class="kw2">AND</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bUP TO\b' IN l_sql_html WITH '<span class="kw">UP TO</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bROWS\b' IN l_sql_html WITH '<span class="kw">ROWS</span>'.
+
+    DATA(l_html) =
+      `<html><head><meta charset="utf-8"><style>` &&
+      `body{margin:0;background:#f6f8fa;font-family:Consolas,monospace;font-size:12px;}` &&
+      `pre{margin:6px;white-space:pre-wrap;}` &&
+      `.kw{color:#0033cc;font-weight:bold;}` &&
+      `.kw2{color:#7a3db8;font-weight:bold;}` &&
+      `</style></head><body><pre>` && l_sql_html && `</pre></body></html>`.
+    show_html( io_html = mo_sql_html i_html = l_html ).
+
     "apply every change directly to the original window
     IF m_ready = abap_true AND viewer_alive( ) = abap_true.
       execute_sql( i_sql = l_sql ).
