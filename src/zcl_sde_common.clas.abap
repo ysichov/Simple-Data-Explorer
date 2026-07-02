@@ -29,7 +29,11 @@ CLASS Zcl_SDE_common IMPLEMENTATION.
     IF i_layout IS SUPPLIED.
       i_obj->set_frontend_layout( i_layout ) .
     ENDIF.
-    i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = i_soft  ).
+    TRY. "S/4 guards refresh_table_display inside grid callbacks (CX_SALV_METHOD_NOT_SUPPORTED)
+        i_obj->refresh_table_display( EXPORTING is_stable = l_stable i_soft_refresh = i_soft  ).
+      CATCH cx_root.                                    "#EC NO_HANDLER
+        "the grid refreshes itself after the callback anyway
+    ENDTRY.
   ENDMETHOD.
 
   METHOD translate_field.

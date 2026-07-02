@@ -585,12 +585,14 @@ CLASS zcl_sde_sel_opt IMPLEMENTATION.
     ENDIF.
 
     update_sel_row( CHANGING c_sel_row = <tab> ).
-    Zcl_SDE_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
-    raise_selection_done( ).
+    "no refresh/selection_done here: refresh_table_display inside the data_changed
+    "callback is forbidden in S/4 (CX_SALV_METHOD_NOT_SUPPORTED dump);
+    "both happen in on_data_changed_finished right afterwards
   ENDMETHOD.
 
   METHOD on_data_changed_finished.
     CHECK e_modified IS NOT INITIAL.
+    Zcl_SDE_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout ).
     RAISE EVENT selection_done.
   ENDMETHOD.
 
