@@ -11,6 +11,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
              ddtext    TYPE as4text,
              direction TYPE char1, "O-outgoing FK, I-incoming FK, T-text table, M-manual
              parent    TYPE tabname, "table whose FKs discovered this one; pairs link to it
+             alias     TYPE char5,   "assigned at first selection, never renumbered
              pairs     TYPE tt_pairs,
              selected  TYPE abap_bool,
              sel_order TYPE i,
@@ -47,6 +48,7 @@ protected section.
           mt_jtabs     TYPE tt_jtab,
           mt_jflds     TYPE tt_jfld,
           m_sel_count  TYPE i,
+          m_alias_count TYPE i, "grows only: aliases are never reused
           m_base_pos   TYPE i VALUE 1, "position of the base table in the join order (1 = FROM)
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
@@ -80,6 +82,7 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
+      build_where RETURNING VALUE(rv_where) TYPE string,
       execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
       viewer_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
       on_viewer_sel FOR EVENT selection_done OF zcl_sde_sel_opt,
@@ -345,10 +348,27 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     IF <cand>-selected = abap_true.
       <cand>-selected = abap_false.
       CLEAR <cand>-sel_order.
+      "cascade: tables joined via this one lose their anchor - deselect them too
+      DATA lt_gone TYPE TABLE OF tabname.
+      APPEND <cand>-tabname TO lt_gone.
+      DATA(l_i) = 0.
+      WHILE l_i < lines( lt_gone ).
+        l_i = l_i + 1.
+        DATA(l_parent) = lt_gone[ l_i ].
+        LOOP AT mt_cand ASSIGNING FIELD-SYMBOL(<child>) WHERE selected = abap_true AND parent = l_parent.
+          <child>-selected = abap_false.
+          CLEAR <child>-sel_order.
+          APPEND <child>-tabname TO lt_gone.
+        ENDLOOP.
+      ENDWHILE.
     ELSE.
       <cand>-selected = abap_true.
       ADD 1 TO m_sel_count.
       <cand>-sel_order = m_sel_count.
+      IF <cand>-alias IS INITIAL. "permanent alias: survives arbitrary deselection of other joins
+        ADD 1 TO m_alias_count.
+        <cand>-alias = |T{ m_alias_count }|.
+      ENDIF.
       discover_for( i_tabname ). "expand the canvas with the neighbours of this table
     ENDIF.
     rebuild_selection( ).
@@ -382,9 +402,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     lt_sorted = VALUE #( FOR wa IN mt_cand WHERE ( selected = abap_true ) ( wa ) ).
     SORT lt_sorted BY sel_order.
 
-    "candidates: aliases T1..Tn by candidate order (stable regardless of base position)
+    "candidates keep their permanent alias regardless of join order or removals
     LOOP AT lt_sorted INTO DATA(ls_cand).
-      DATA(l_alias) = |T{ sy-tabix }|.
+      DATA(l_alias) = condense( CONV string( ls_cand-alias ) ).
       APPEND INITIAL LINE TO mt_jtabs ASSIGNING FIELD-SYMBOL(<jtab>).
       <jtab>-alias   = l_alias.
       <jtab>-tabname = ls_cand-tabname.
@@ -1244,26 +1264,64 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     rv_sql = |SELECT { l_fields }{ cl_abap_char_utilities=>newline }| &&
              |  FROM { l_from }|.
 
-    "inherit WHERE from the window selections (visible in the SQL text)
-    DATA(l_where) = mo_viewer->get_where( ).
+    "WHERE built from the panel ranges with the CURRENT aliases;
+    "filters of removed joins are silently skipped
+    DATA(l_where) = build_where( ).
     IF l_where IS NOT INITIAL.
-      IF l_multi = abap_true.
-        "after a rebind the sel-options fields are named T0_FIELD/T1_FIELD -> tn~field
-        LOOP AT mt_jflds INTO DATA(ls_jf).
-          DATA(l_qual) = |{ condense( CONV string( ls_jf-alias ) ) }_{ ls_jf-fieldname }|.
-          REPLACE ALL OCCURRENCES OF REGEX |\\b{ l_qual }\\b| IN l_where
-            WITH |{ ls_jf-alias CASE = LOWER }~{ ls_jf-fieldname CASE = LOWER }|.
-        ENDLOOP.
-        "plain base field names (filters set before the first join) -> t0~field
-        LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
-          REPLACE ALL OCCURRENCES OF REGEX |\\b{ ls_f-fieldname }\\b| IN l_where WITH |t0~{ ls_f-fieldname }|.
-        ENDLOOP.
-      ENDIF.
       rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } WHERE { l_where }|.
     ENDIF.
 
     DATA(l_rows) = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
     rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } UP TO { l_rows } ROWS|.
+  ENDMETHOD.
+
+
+  METHOD build_where.
+    DATA: lt_where TYPE rsds_twhere,
+          lt_range TYPE rsds_trange.
+
+    CHECK mo_viewer->mo_sel IS BOUND.
+    DATA(l_multi) = boolc( lines( mt_jtabs ) > 1 ).
+
+    APPEND INITIAL LINE TO lt_range ASSIGNING FIELD-SYMBOL(<tabl>).
+    <tabl>-tablename = m_tabname.
+    LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
+      "panel label (CARRID or T1_CONNID) -> alias + field
+      DATA(l_label) = condense( CONV string( ls_tab-field_label ) ).
+      DATA(l_alias) = `T0`.
+      DATA(l_field) = l_label.
+      FIND REGEX '^T\d+_' IN l_label MATCH LENGTH DATA(l_len).
+      IF sy-subrc = 0.
+        DATA(l_alias_len) = l_len - 1. "without the trailing '_'
+        l_alias = l_label+0(l_alias_len).
+        l_field = l_label+l_len.
+      ENDIF.
+      "only fields of tables currently in the join; stale filters are dropped
+      READ TABLE mt_jflds TRANSPORTING NO FIELDS WITH KEY alias = l_alias fieldname = l_field.
+      IF sy-subrc NE 0.
+        CONTINUE.
+      ENDIF.
+      APPEND INITIAL LINE TO <tabl>-frange_t ASSIGNING FIELD-SYMBOL(<t_range>).
+      <t_range>-fieldname = COND #( WHEN l_multi = abap_true
+                                    THEN |{ to_lower( l_alias ) }~{ to_lower( l_field ) }|
+                                    ELSE to_lower( l_field ) ).
+      <t_range>-selopt_t  = ls_tab-range.
+    ENDLOOP.
+    CHECK <tabl>-frange_t IS NOT INITIAL.
+
+    CALL FUNCTION 'FREE_SELECTIONS_RANGE_2_WHERE'
+      EXPORTING
+        field_ranges  = lt_range
+      IMPORTING
+        where_clauses = lt_where.
+
+    LOOP AT lt_where INTO DATA(ls_where) WHERE tablename = m_tabname.
+      LOOP AT ls_where-where_tab INTO DATA(l_line).
+        CONDENSE l_line-line.
+        rv_where = |{ rv_where } { l_line-line }|.
+      ENDLOOP.
+    ENDLOOP.
+    CONDENSE rv_where.
   ENDMETHOD.
 
 
