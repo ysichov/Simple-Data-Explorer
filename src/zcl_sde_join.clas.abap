@@ -51,8 +51,7 @@ protected section.
           mo_low_split TYPE REF TO cl_gui_splitter_container,
           mo_flds_html TYPE REF TO cl_gui_html_viewer,
           mo_sql_text  TYPE REF TO cl_gui_textedit,
-          mo_result    TYPE REF TO zcl_sde_table_viewer, "result window, rebuilt in place
-          m_auto       TYPE abap_bool VALUE abap_true,   "auto-refresh the result on changes
+          m_ready      TYPE abap_bool,                   "constructor finished: changes go live to the viewer
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras.                       "language of the field texts
 
@@ -77,9 +76,9 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
-      run_select,
       execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
-      result_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
+      viewer_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
+      on_viewer_sel FOR EVENT selection_done OF zcl_sde_sel_opt,
       upper_outside_quotes IMPORTING i_sql         TYPE string
                            RETURNING VALUE(rv_sql) TYPE string,
 
@@ -153,6 +152,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     rebuild_selection( ).
     create_sql_view( ).
     refresh_all( ).
+    m_ready = abap_true. "from now on every change is applied to the original window
+
+    "react on filter changes in the original window: SQL text + data follow
+    IF mo_viewer->mo_sel IS BOUND.
+      SET HANDLER on_viewer_sel FOR mo_viewer->mo_sel.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD on_viewer_sel.
+    update_sql_view( ).
   ENDMETHOD.
 
 
@@ -347,7 +356,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
     "base table fields always listed first
     LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
-      APPEND VALUE #( sel = ls_f-keyflag alias = 'T0' tabname = m_tabname
+      APPEND VALUE #( sel = abap_true alias = 'T0' tabname = m_tabname "the window opened with all fields
                       fieldname = ls_f-fieldname keyflag = ls_f-keyflag
                       ddtext = ls_f-fieldtext ) TO mt_jflds.
     ENDLOOP.
@@ -386,7 +395,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         APPEND VALUE #( alias = l_alias tabname = ls_cand-tabname
                         fieldname = ls_f-fieldname keyflag = ls_f-keyflag
                         ddtext = ls_f-fieldtext
-                        sel = boolc( line_exists( ls_cand-pairs[ cand_field = ls_f-fieldname ] ) )
+                        sel = abap_true "user removes what is not needed
                       ) TO mt_jflds.
       ENDLOOP.
     ENDLOOP.
@@ -588,11 +597,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `</head><body onselectstart="return false">` &&
       `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
       `<input type="hidden" name="keys" id="pk"></form>` &&
-      `<a class="run" href="SAPEVENT:fld?RUN">&#9654; Run</a>` &&
       `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
       `<a class="act" href="SAPEVENT:fld?NONE">clear</a>` &&
-      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>` &&
-      |<a class="act" href="SAPEVENT:fld?AUTO">auto-refresh: { COND string( WHEN m_auto = abap_true THEN 'on' ELSE 'off' ) }</a>|.
+      `<a class="act" href="SAPEVENT:fld?KEYS">keys</a>`.
 
     "field name variant: technical or one of the installed languages (as in the table viewer)
     l_html = l_html &&
@@ -790,9 +797,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
   METHOD handle_fld_action.
     CASE i_act.
-      WHEN 'RUN'.
-        run_select( ).
-        RETURN.
       WHEN 'ALL'.
         LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
           <fld>-sel = abap_true.
@@ -806,8 +810,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           <fld>-sel = <fld>-keyflag.
           CLEAR <fld>-pos.
         ENDLOOP.
-      WHEN 'AUTO'.
-        m_auto = boolc( m_auto = abap_false ).
       WHEN OTHERS.
         IF strlen( i_act ) > 4 AND i_act(4) = 'lng_'. "field name variant: lng_TECH / lng_<spras>
           IF i_act+4 = 'TECH'.
@@ -957,21 +959,25 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         parent = lo_cont
       EXCEPTIONS
         OTHERS = 1.
+    IF mo_sql_text IS BOUND.
+      mo_sql_text->set_readonly_mode( 1 ). "live view of the statement being applied
+    ENDIF.
   ENDMETHOD.
 
 
   METHOD update_sql_view.
     CHECK mo_sql_text IS BOUND.
-    mo_sql_text->set_textstream( generate_select( ) ).
-    "rebuild the open result window right away
-    IF m_auto = abap_true AND result_alive( ) = abap_true.
-      execute_sql( i_sql = generate_select( ) i_quiet = abap_true ).
+    DATA(l_sql) = generate_select( ).
+    mo_sql_text->set_textstream( l_sql ).
+    "apply every change directly to the original window
+    IF m_ready = abap_true AND viewer_alive( ) = abap_true.
+      execute_sql( i_sql = l_sql ).
     ENDIF.
   ENDMETHOD.
 
 
-  METHOD result_alive.
-    rv_alive = boolc( mo_result IS BOUND AND line_exists( zcl_sde_appl=>mt_obj[ alv_viewer = mo_result ] ) ).
+  METHOD viewer_alive.
+    rv_alive = boolc( mo_viewer IS BOUND AND line_exists( zcl_sde_appl=>mt_obj[ alv_viewer = mo_viewer ] ) ).
   ENDMETHOD.
 
 
@@ -980,21 +986,32 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           l_from   TYPE string,
           lt_sel   TYPE tt_jfld.
 
+    "single table: plain field names, so the window looks exactly like the original one
+    DATA(l_multi) = boolc( lines( mt_jtabs ) > 1 ).
+
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
     SORT lt_sel BY pos.
     LOOP AT lt_sel INTO DATA(ls_fld).
       IF l_fields IS NOT INITIAL.
         l_fields = |{ l_fields },{ cl_abap_char_utilities=>newline }       |.
       ENDIF.
-      l_fields = |{ l_fields }{ ls_fld-alias CASE = LOWER }~{ ls_fld-fieldname CASE = LOWER } AS { ls_fld-alias CASE = LOWER }_{ ls_fld-fieldname CASE = LOWER }|.
+      IF l_multi = abap_true.
+        l_fields = |{ l_fields }{ ls_fld-alias CASE = LOWER }~{ ls_fld-fieldname CASE = LOWER } AS { ls_fld-alias CASE = LOWER }_{ ls_fld-fieldname CASE = LOWER }|.
+      ELSE.
+        l_fields = |{ l_fields }{ ls_fld-fieldname CASE = LOWER }|.
+      ENDIF.
     ENDLOOP.
     IF l_fields IS INITIAL.
-      l_fields = 't0~*'.
+      l_fields = COND #( WHEN l_multi = abap_true THEN 't0~*' ELSE '*' ).
     ENDIF.
 
     LOOP AT mt_jtabs INTO DATA(ls_tab).
       IF sy-tabix = 1.
-        l_from = |{ ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER }|.
+        IF l_multi = abap_true.
+          l_from = |{ ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER }|.
+        ELSE.
+          l_from = |{ ls_tab-tabname CASE = LOWER }|.
+        ENDIF.
       ELSE.
         l_from = |{ l_from }{ cl_abap_char_utilities=>newline }  { ls_tab-jtype } JOIN { ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER } ON { ls_tab-cond }|.
       ENDIF.
@@ -1003,12 +1020,14 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     rv_sql = |SELECT { l_fields }{ cl_abap_char_utilities=>newline }| &&
              |  FROM { l_from }|.
 
-    "inherit WHERE from the base window selections, qualified with t0~
+    "inherit WHERE from the window selections (visible in the SQL text)
     DATA(l_where) = mo_viewer->get_where( ).
     IF l_where IS NOT INITIAL.
-      LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
-        REPLACE ALL OCCURRENCES OF REGEX |\\b{ ls_f-fieldname }\\b| IN l_where WITH |t0~{ ls_f-fieldname }|.
-      ENDLOOP.
+      IF l_multi = abap_true. "qualify base fields with t0~
+        LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
+          REPLACE ALL OCCURRENCES OF REGEX |\\b{ ls_f-fieldname }\\b| IN l_where WITH |t0~{ ls_f-fieldname }|.
+        ENDLOOP.
+      ENDIF.
       rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } WHERE { l_where }|.
     ENDIF.
 
