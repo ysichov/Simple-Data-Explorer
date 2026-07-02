@@ -658,16 +658,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.paint{outline:2px solid #2e8b2e;}` &&
       `</style>` &&
-      `<script>var dk=null,dt=null,dpfx=null,de=null,mv=false;` &&
-      `function hi(el){if(de)de.style.outline='';de=el;if(de)de.style.outline='2px solid #d2691e';}` &&
-      `function go(k,p){if(dk&&k&&dk!=k){k=String(k).replace('#','%23');` &&
-      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;hi(null);}` &&
-      `function md(e,k,p,el){e=e||window.event;if(dk){if(dk==k){dk=null;hi(null);}else{go(k,p||dpfx);}` &&
-      `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
-      `dk=k;dt=k;dpfx=p;mv=false;hi(el);if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
-      `function mo(e,k){if(dk&&k!=dt){dt=k;mv=true;}return false;}` &&
-      `function mu(e,k,p){e=e||window.event;if(dk&&mv)go(k||dt,p||dpfx);` &&
-      `if(e.preventDefault)e.preventDefault();e.returnValue=false;return false;}` &&
+      `<script>var dk=null,lt=null;` &&
+      `function ds(e,k){dk=k;try{e.dataTransfer.setData('text',k);}catch(x){}}` &&
+      `function uh(){if(lt){lt.style.boxShadow='';lt=null;}}` &&
+      `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
+      `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
+      `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
+      `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
+      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
+      `document.ondragend=function(){uh();};` &&
       `</script>` &&
       `</head><body onselectstart="return false">`.
 
@@ -682,12 +681,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_ord_color_idx = l_ord_color_idx + 1.
       DATA(l_ord_color) = |c{ l_ord_color_idx }|.
       l_html = l_html &&
-        |<span class="tblpill { l_ord_color }" onmousedown="return md(event,'{ l_ord_alias }','fgmv',this)"| &&
-        | onmouseover="return mo(event,'{ l_ord_alias }')" onmouseup="return mu(event,'{ l_ord_alias }','fgmv')">| &&
+        |<span class="tblpill { l_ord_color }" draggable="true" ondragstart="ds(event,'{ l_ord_alias }')"| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_ord_alias }','fgmv')">| &&
         |{ l_ord_alias }</span>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" onmouseover="return mo(event,'#END')" onmouseup="return mu(event,'#END','fgmv')">&#8677; tables end</span></div>`.
+      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fgmv')">&#8677; tables end</span></div>`.
 
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
@@ -706,13 +705,13 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
         ELSE |{ ls_sel-fieldname }| ).
       l_html = l_html &&
-        |<span class="{ l_cls }" onmousedown="return md(event,'{ l_fkey }','fmv',this)"| &&
-        | onmouseover="return mo(event,'{ l_fkey }')" onmouseup="return mu(event,'{ l_fkey }','fmv')"| &&
+        |<span class="{ l_cls }" draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</span>|.
     ENDLOOP.
     l_html = l_html &&
-      `<span class="zone" onmouseover="return mo(event,'#END')" onmouseup="return mu(event,'#END','fmv')">&#8677; end</span>`.
+      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_flds_html i_html = l_html ).
