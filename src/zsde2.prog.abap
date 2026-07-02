@@ -35,14 +35,14 @@ PARAMETERS: gv_rows  TYPE i DEFAULT 500.
 
 FIELD-SYMBOLS: <g_str> TYPE any.
 
-CLASS lcl_data_receiver DEFINITION DEFERRED.
-CLASS lcl_data_transmitter DEFINITION DEFERRED.
+CLASS zcl_sde_receiver DEFINITION DEFERRED.
+CLASS zcl_sde_transmitter DEFINITION DEFERRED.
 
-CLASS lcl_table_viewer DEFINITION DEFERRED.
-CLASS lcl_sel_opt DEFINITION DEFERRED.
+CLASS zcl_sde_table_viewer DEFINITION DEFERRED.
+CLASS zcl_sde_sel_opt DEFINITION DEFERRED.
 
 "Begin of INCLUDE YS_SDE_CLASSES.
-CLASS lcl_popup DEFINITION.
+CLASS zcl_sde_popup DEFINITION.
   PUBLIC SECTION.
     CLASS-DATA m_counter TYPE i.
     DATA: mo_box            TYPE REF TO cl_gui_dialogbox_container,
@@ -59,7 +59,7 @@ CLASS lcl_popup DEFINITION.
       on_box_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
 ENDCLASS.
 
-CLASS lcl_popup IMPLEMENTATION.
+CLASS zcl_sde_popup IMPLEMENTATION.
 
   METHOD constructor.
     m_additional_name = i_additional_name.
@@ -99,13 +99,13 @@ CLASS lcl_popup IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_ddic DEFINITION.
+CLASS zcl_sde_ddic DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS: get_text_table IMPORTING i_tname TYPE tabname
                                   EXPORTING e_tab   TYPE tabname.
 ENDCLASS.
 
-CLASS lcl_ddic IMPLEMENTATION.
+CLASS zcl_sde_ddic IMPLEMENTATION.
   METHOD get_text_table.
     CALL FUNCTION 'DDUT_TEXTTABLE_GET'
       EXPORTING
@@ -115,20 +115,20 @@ CLASS lcl_ddic IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_dd_data DEFINITION."drag&drop data
+CLASS zcl_sde_dd_data DEFINITION."drag&drop data
   PUBLIC  SECTION.
     DATA: m_row    TYPE i,
           m_column TYPE lvc_s_col.
 ENDCLASS.
 
-CLASS lcl_dragdrop DEFINITION.
+CLASS zcl_sde_dragdrop DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
       drag FOR EVENT ondrag OF cl_gui_alv_grid IMPORTING e_dragdropobj e_row e_column ,
       drop FOR EVENT ondrop OF cl_gui_alv_grid IMPORTING e_dragdropobj e_row.
 ENDCLASS.
 
-CLASS lcl_sql DEFINITION.
+CLASS zcl_sde_sql DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
       read_any_table IMPORTING i_tabname   TYPE tabname
@@ -143,13 +143,13 @@ CLASS lcl_sql DEFINITION.
       exist_cds   IMPORTING i_tab TYPE tabname RETURNING VALUE(e_subrc) LIKE sy-subrc  .
 ENDCLASS.
 
-CLASS lcl_sql IMPLEMENTATION.
+CLASS zcl_sde_sql IMPLEMENTATION.
   METHOD read_any_table.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
 
     ASSIGN cr_tab->* TO <f_tab>.
     c_count = lines( <f_tab> ).
-    CHECK lcl_sql=>exist_table( i_tabname ) = 1.
+    CHECK zcl_sde_sql=>exist_table( i_tabname ) = 1.
     IF i_where IS NOT INITIAL.
       TRY.
           SELECT * FROM (i_tabname) INTO CORRESPONDING FIELDS OF TABLE <f_tab>  UP TO i_row_count ROWS  WHERE (i_where)  ORDER BY PRIMARY KEY.
@@ -191,7 +191,7 @@ CLASS lcl_sql IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_alv_common DEFINITION.
+CLASS Zcl_SDE_common DEFINITION.
   PUBLIC SECTION.
     CONSTANTS: c_white(4) TYPE x VALUE '00000001', "white background
                c_grey(4)  TYPE x VALUE '00000003', "gray background
@@ -215,7 +215,7 @@ CLASS lcl_alv_common DEFINITION.
 
 ENDCLASS.
 
-CLASS lcl_alv_common IMPLEMENTATION.
+CLASS Zcl_SDE_common IMPLEMENTATION.
   METHOD refresh.
     DATA l_stable TYPE lvc_s_stbl.
     l_stable = 'XX'.
@@ -275,7 +275,7 @@ CLASS lcl_alv_common IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_rtti DEFINITION.
+CLASS zcl_sde_rtti DEFINITION.
   PUBLIC SECTION.
 
     CONSTANTS:
@@ -357,14 +357,14 @@ CLASS lcl_rtti DEFINITION.
                   EXPORTING ev_list_box	TYPE abap_bool es_sh_desc	TYPE shlp_descr.
 ENDCLASS.
 
-CLASS lcl_rtti IMPLEMENTATION.
+CLASS zcl_sde_rtti IMPLEMENTATION.
 
   METHOD create_struc_handle.
     DATA: ls_comp       TYPE abap_componentdescr,
           lt_components TYPE abap_component_tab,
           lt_field_info TYPE TABLE OF dfies.
 
-    lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = DATA(l_texttab) ).
+    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = DATA(l_texttab) ).
     e_handle ?= cl_abap_typedescr=>describe_by_name( i_tname ).
 
     IF l_texttab IS NOT INITIAL.
@@ -397,13 +397,13 @@ CLASS lcl_rtti IMPLEMENTATION.
           APPEND: ls_comp TO lt_components,
                   ls_comp TO e_t_comp.
 
-          READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = l_texttab.
+          READ TABLE Zcl_SDE_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = l_texttab.
           IF sy-subrc NE 0.
             MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
             ls_tf-tabname = i_tname.
             ls_tf-fieldname = ls_comp-name.
             ls_tf-is_text = abap_true.
-            INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
+            INSERT ls_tf INTO TABLE Zcl_SDE_common=>mt_tabfields.
           ENDIF.
         ENDIF.
       ENDLOOP.
@@ -1045,7 +1045,7 @@ CLASS lcl_rtti IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_appl DEFINITION.
+CLASS zcl_sde_appl DEFINITION.
   PUBLIC SECTION.
 
     TYPES:
@@ -1067,8 +1067,8 @@ CLASS lcl_appl DEFINITION.
         domain      TYPE text60,
         datatype    TYPE string,
         length      TYPE i,
-        transmitter TYPE REF TO lcl_data_transmitter,
-        receiver    TYPE REF TO lcl_data_receiver,
+        transmitter TYPE REF TO zcl_sde_transmitter,
+        receiver    TYPE REF TO zcl_sde_receiver,
         color       TYPE lvc_t_scol,
         style       TYPE lvc_t_styl,
         drop_down   TYPE int4,
@@ -1091,7 +1091,7 @@ CLASS lcl_appl DEFINITION.
            END OF sign_option_icon_s,
 
            BEGIN OF t_obj,
-             alv_viewer TYPE REF TO lcl_table_viewer,
+             alv_viewer TYPE REF TO zcl_sde_table_viewer,
            END OF t_obj,
 
            BEGIN OF t_lang,
@@ -1117,15 +1117,15 @@ CLASS lcl_appl DEFINITION.
       exit.
 ENDCLASS.
 
-CLASS lcl_data_transmitter DEFINITION.
+CLASS zcl_sde_transmitter DEFINITION.
   PUBLIC SECTION.
-    EVENTS: data_changed EXPORTING VALUE(e_row) TYPE lcl_appl=>t_sel_row,
+    EVENTS: data_changed EXPORTING VALUE(e_row) TYPE zcl_sde_appl=>t_sel_row,
       col_changed EXPORTING VALUE(e_column) TYPE lvc_fname.
-    METHODS: emit IMPORTING e_row TYPE lcl_appl=>t_sel_row,
+    METHODS: emit IMPORTING e_row TYPE zcl_sde_appl=>t_sel_row,
       emit_col IMPORTING e_column TYPE lvc_fname.
 ENDCLASS.
 
-CLASS lcl_data_transmitter IMPLEMENTATION.
+CLASS zcl_sde_transmitter IMPLEMENTATION.
   METHOD  emit.
     RAISE EVENT data_changed EXPORTING e_row = e_row.
   ENDMETHOD.
@@ -1135,22 +1135,22 @@ CLASS lcl_data_transmitter IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_data_receiver DEFINITION.
+CLASS zcl_sde_receiver DEFINITION.
   PUBLIC SECTION.
-    DATA: mo_transmitter TYPE REF TO lcl_data_transmitter,
-          lo_tab_from    TYPE REF TO lcl_table_viewer,
-          lo_sel_to      TYPE REF TO lcl_sel_opt,
+    DATA: mo_transmitter TYPE REF TO zcl_sde_transmitter,
+          lo_tab_from    TYPE REF TO zcl_sde_table_viewer,
+          lo_sel_to      TYPE REF TO zcl_sde_sel_opt,
           m_from_field   TYPE lvc_fname,
           m_to_field     TYPE lvc_fname.
     METHODS: constructor
-      IMPORTING io_transmitter TYPE REF TO lcl_data_transmitter OPTIONAL
-                io_tab_from    TYPE REF TO lcl_table_viewer OPTIONAL
-                io_sel_to      TYPE REF TO lcl_sel_opt OPTIONAL
+      IMPORTING io_transmitter TYPE REF TO zcl_sde_transmitter OPTIONAL
+                io_tab_from    TYPE REF TO zcl_sde_table_viewer OPTIONAL
+                io_sel_to      TYPE REF TO zcl_sde_sel_opt OPTIONAL
                 i_from_field   TYPE lvc_fname OPTIONAL
                 i_to_field     TYPE lvc_fname OPTIONAL,
       shut_down,
-      update FOR EVENT data_changed OF lcl_data_transmitter IMPORTING e_row,
-      update_col FOR EVENT col_changed OF lcl_data_transmitter IMPORTING e_column,
+      update FOR EVENT data_changed OF zcl_sde_transmitter IMPORTING e_row,
+      update_col FOR EVENT col_changed OF zcl_sde_transmitter IMPORTING e_column,
       on_grid_button_click
         FOR EVENT button_click OF cl_gui_alv_grid
         IMPORTING
@@ -1158,21 +1158,21 @@ CLASS lcl_data_receiver DEFINITION.
           es_row_no.
 ENDCLASS.
 
-CLASS lcl_sel_opt DEFINITION.
+CLASS zcl_sde_sel_opt DEFINITION.
   PUBLIC SECTION.
-    DATA: mo_viewer  TYPE REF TO lcl_table_viewer,
+    DATA: mo_viewer  TYPE REF TO zcl_sde_table_viewer,
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
-          mt_sel_tab TYPE TABLE OF lcl_appl=>selection_display_s,
+          mt_sel_tab TYPE TABLE OF zcl_sde_appl=>selection_display_s,
           ms_layout  TYPE lvc_s_layo.
 
     EVENTS: selection_done.
     METHODS:
-      constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer io_container TYPE REF TO cl_gui_container,
+      constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer io_container TYPE REF TO cl_gui_container,
       raise_selection_done,
       update_sel_tab,
       set_value IMPORTING  i_field TYPE any i_low TYPE any OPTIONAL i_high TYPE any OPTIONAL i_clear TYPE boolean DEFAULT abap_true ,
-      update_sel_row CHANGING c_sel_row TYPE lcl_appl=>selection_display_s.
+      update_sel_row CHANGING c_sel_row TYPE zcl_sde_appl=>selection_display_s.
 
   PRIVATE SECTION.
     METHODS:
@@ -1190,11 +1190,11 @@ CLASS lcl_sel_opt DEFINITION.
       handle_context_menu_request FOR EVENT context_menu_request OF cl_gui_alv_grid IMPORTING e_object.
 ENDCLASS.
 
-CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
+CLASS zcl_sde_table_viewer DEFINITION INHERITING FROM zcl_sde_popup.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_column_emitter,
              column  TYPE lvc_fname,
-             emitter TYPE REF TO lcl_data_transmitter,
+             emitter TYPE REF TO zcl_sde_transmitter,
            END OF t_column_emitter.
 
     DATA: m_lang             TYPE ddlanguage,
@@ -1205,7 +1205,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
           m_texttabname      TYPE tabname,
           m_count            TYPE i,
           mo_alv             TYPE REF TO cl_gui_alv_grid,
-          mo_sel             TYPE REF TO lcl_sel_opt,
+          mo_sel             TYPE REF TO zcl_sde_sel_opt,
           mr_table           TYPE REF TO data,
           mr_text_table      TYPE REF TO data,
           mo_sel_parent      TYPE REF TO cl_gui_container,
@@ -1225,7 +1225,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
                             i_is_view         TYPE boolean OPTIONAL
                             i_is_cds          TYPE boolean OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
-      refresh_table FOR EVENT selection_done OF lcl_sel_opt.
+      refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
   PRIVATE SECTION.
     METHODS:
@@ -1251,7 +1251,7 @@ CLASS lcl_table_viewer DEFINITION INHERITING FROM lcl_popup.
       on_table_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
 ENDCLASS.
 
-CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
+CLASS zcl_sde_py_cluster_viewer DEFINITION INHERITING FROM zcl_sde_popup.
   PUBLIC SECTION.
 
     TYPES:
@@ -1265,7 +1265,7 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
       END OF ts_hier,
       tt_hier TYPE TABLE OF ts_hier,
       BEGIN OF t_children,
-        item TYPE REF TO lcl_table_viewer,
+        item TYPE REF TO zcl_sde_table_viewer,
       END OF t_children.
 
     DATA: mt_hier     TYPE tt_hier, " Tree hierarchy
@@ -1291,7 +1291,7 @@ CLASS lcl_py_cluster_viewer DEFINITION INHERITING FROM lcl_popup.
       hndl_double_click FOR EVENT double_click OF cl_salv_events_tree IMPORTING node_key.
 ENDCLASS.
 
-CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
+CLASS  zcl_sde_py_cluster_viewer IMPLEMENTATION.
   METHOD constructor.
     super->constructor( ).
     m_pernr = i_pernr.
@@ -1339,7 +1339,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     sender->free( ).
 
     LOOP AT mt_children INTO DATA(child).
-      READ TABLE lcl_appl=>mt_obj WITH KEY alv_viewer = child-item ASSIGNING FIELD-SYMBOL(<obj>).
+      READ TABLE zcl_sde_appl=>mt_obj WITH KEY alv_viewer = child-item ASSIGNING FIELD-SYMBOL(<obj>).
       CHECK sy-subrc = 0.
       DATA(l_indx) = sy-tabix.
 
@@ -1356,7 +1356,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
         ENDLOOP.
       ENDIF.
       FREE <obj>-alv_viewer.
-      DELETE lcl_appl=>mt_obj INDEX l_indx.
+      DELETE zcl_sde_appl=>mt_obj INDEX l_indx.
     ENDLOOP.
   ENDMETHOD.
 
@@ -1402,7 +1402,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     ELSE.
       go_struct  ?= cl_abap_structdescr=>describe_by_data_ref( ls_hier-tab_ref ).
       l_struc_name = go_struct->absolute_name.
-      lcl_rtti=>create_table_by_name( EXPORTING i_tname = l_struc_name CHANGING c_table = lr_tab  ).
+      zcl_sde_rtti=>create_table_by_name( EXPORTING i_tname = l_struc_name CHANGING c_table = lr_tab  ).
       ASSIGN lr_tab->* TO <table>.
       ASSIGN ls_hier-tab_ref->* TO <str>.
       APPEND INITIAL LINE TO <table> ASSIGNING FIELD-SYMBOL(<line>).
@@ -1412,7 +1412,7 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
     ls_hier-type = go_abapstr->type_kind.
     DATA(l_name) = |{ m_pernr }: ({ m_seqnr }) |.
     REPLACE ALL OCCURRENCES OF '\TYPE=' IN l_struc_name WITH ''.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_struc_name ir_tab = ls_hier-tab_ref i_additional_name = l_name.
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
     APPEND VALUE #( item = <obj>-alv_viewer  ) TO mt_children.
@@ -1536,16 +1536,16 @@ CLASS  lcl_py_cluster_viewer IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_text_viewer DEFINITION FINAL INHERITING FROM lcl_popup.
+CLASS zcl_sde_text_viewer DEFINITION FINAL INHERITING FROM zcl_sde_popup.
   PUBLIC SECTION.
     DATA: mo_text     TYPE REF TO cl_gui_textedit.
 
-    METHODS: constructor IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      load_text  IMPORTING io_viewer TYPE REF TO lcl_table_viewer.
+    METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
+      load_text  IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer.
 
 ENDCLASS.
 
-CLASS lcl_text_viewer IMPLEMENTATION.
+CLASS zcl_sde_text_viewer IMPLEMENTATION.
   METHOD constructor.
     super->constructor( ).
     mo_box = create( i_name = 'text' i_width = 200 i_hight = 100 ).
@@ -1598,7 +1598,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 *    ASSIGN lr_pskey->* TO <pskey>.
 *
 *    FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-*    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+*    DATA(l_row) = Zcl_SDE_common=>get_selected( io_viewer->mo_alv ).
 *    ASSIGN io_viewer->mr_table->* TO  <f_tab>.
 *    READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<row>).
 *    MOVE-CORRESPONDING <row> TO <pskey>.
@@ -1624,7 +1624,7 @@ CLASS lcl_text_viewer IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS lcl_plugins DEFINITION.
+CLASS zcl_sde_plugins DEFINITION.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_field_links,
              tab        TYPE tablename,
@@ -1645,37 +1645,37 @@ CLASS lcl_plugins DEFINITION.
                 mt_el_links    TYPE  TABLE OF t_el_links.
     CLASS-METHODS: init,
       link IMPORTING i_str     TYPE any
-                     io_viewer TYPE REF TO lcl_table_viewer
+                     io_viewer TYPE REF TO zcl_sde_table_viewer
                      i_column  TYPE any,
-      run_pa20 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      run_pp01 IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      run_text IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      run_subty IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
-      run_py_cluster IMPORTING io_viewer TYPE REF TO lcl_table_viewer,
+      run_pa20 IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
+      run_pp01 IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
+      run_text IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
+      run_subty IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
+      run_py_cluster IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer,
       run_dictionary_key IMPORTING i_str     TYPE any
-                                   io_viewer TYPE REF TO lcl_table_viewer
+                                   io_viewer TYPE REF TO zcl_sde_table_viewer
                                    i_column  TYPE any,
       run_data_element IMPORTING i_str          TYPE any
-                                 io_viewer      TYPE REF TO lcl_table_viewer
+                                 io_viewer      TYPE REF TO zcl_sde_table_viewer
                                  i_column       TYPE any
                        RETURNING VALUE(is_done) TYPE boolean,
       run_field_2_field IMPORTING i_str          TYPE any
-                                  io_viewer      TYPE REF TO lcl_table_viewer
+                                  io_viewer      TYPE REF TO zcl_sde_table_viewer
                                   i_column       TYPE any
                         RETURNING VALUE(is_done) TYPE boolean,
       run_field_2_plugin IMPORTING "i_str          TYPE any
-                                   io_viewer      TYPE REF TO lcl_table_viewer
+                                   io_viewer      TYPE REF TO zcl_sde_table_viewer
                                    i_column       TYPE any
                          RETURNING VALUE(is_done) TYPE boolean,
 
       run_hrp1001_adatanr IMPORTING i_str          TYPE any
-                                    io_viewer      TYPE REF TO lcl_table_viewer
+                                    io_viewer      TYPE REF TO zcl_sde_table_viewer
                                     i_column       TYPE any
                           RETURNING VALUE(is_done) TYPE boolean,
       run_hrpy_rgdir IMPORTING i_str          TYPE any.
 ENDCLASS.
 
-CLASS lcl_plugins IMPLEMENTATION.
+CLASS zcl_sde_plugins IMPLEMENTATION.
   METHOD init.
     "data elements links
     mt_el_links = VALUE #(
@@ -1712,7 +1712,7 @@ CLASS lcl_plugins IMPLEMENTATION.
     CHECK run_hrp1001_adatanr( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ) = abap_false.
     run_dictionary_key( EXPORTING io_viewer = io_viewer i_column = i_column i_str = i_str ).
 
-    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
+    LOOP AT zcl_sde_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
       CASE ls_link-method.
         WHEN 'RUN_PY_CLUSTER'.
           ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
@@ -1726,7 +1726,7 @@ CLASS lcl_plugins IMPLEMENTATION.
           l_temp(10) TYPE c.
 
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+    DATA(l_row) = Zcl_SDE_common=>get_selected( io_viewer->mo_alv ).
 
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
@@ -1759,7 +1759,7 @@ CLASS lcl_plugins IMPLEMENTATION.
           l_temp(10).
 
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+    DATA(l_row) = Zcl_SDE_common=>get_selected( io_viewer->mo_alv ).
 
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<tab>).
@@ -1809,11 +1809,11 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_text.
-    NEW lcl_text_viewer( io_viewer ).
+    NEW zcl_sde_text_viewer( io_viewer ).
   ENDMETHOD.
 
   METHOD run_hrpy_rgdir.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = 'HRPY_RGDIR'.
     ASSIGN COMPONENT 'PERNR' OF STRUCTURE i_str TO FIELD-SYMBOL(<pernr>).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'PERNR' i_low = <pernr>  ).
@@ -1828,7 +1828,7 @@ CLASS lcl_plugins IMPLEMENTATION.
       SELECT SINGLE dbtab INTO @DATA(lv_dbtab) FROM t77ad WHERE pasub = @lv_struc.
 
       IF sy-subrc = 0.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = lv_dbtab.
         <obj>-alv_viewer->mo_sel->set_value( i_field = 'ADATANR' i_low = <datanr>  ).
         <obj>-alv_viewer->mo_sel->raise_selection_done( ).
@@ -1839,14 +1839,14 @@ CLASS lcl_plugins IMPLEMENTATION.
 
   METHOD run_subty.
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+    DATA(l_row) = Zcl_SDE_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
 
     SELECT SINGLE stypt, namst INTO @DATA(l_result)   FROM t777d WHERE dbtab = @io_viewer->m_tabname.
     ASSIGN COMPONENT 'SUBTY' OF STRUCTURE <str> TO FIELD-SYMBOL(<subty>).
     DATA(l_infty) = io_viewer->m_tabname+2(4).
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_result-stypt.
     <obj>-alv_viewer->mo_sel->set_value( i_field = l_result-namst i_low = <subty> ).
     <obj>-alv_viewer->mo_sel->set_value( i_field = 'SUBTY' i_low = <subty> ).
@@ -1856,17 +1856,17 @@ CLASS lcl_plugins IMPLEMENTATION.
 
   METHOD run_py_cluster.
     FIELD-SYMBOLS: <f_tab> TYPE STANDARD  TABLE.
-    DATA(l_row) = lcl_alv_common=>get_selected( io_viewer->mo_alv ).
+    DATA(l_row) = Zcl_SDE_common=>get_selected( io_viewer->mo_alv ).
     ASSIGN io_viewer->mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX l_row ASSIGNING FIELD-SYMBOL(<str>).
 
     ASSIGN COMPONENT 'PERNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<pernr>).
     ASSIGN COMPONENT 'SEQNR' OF STRUCTURE <str> TO FIELD-SYMBOL(<seqnr>).
-    NEW lcl_py_cluster_viewer( i_pernr = <pernr> i_seqnr = <seqnr> ).
+    NEW zcl_sde_py_cluster_viewer( i_pernr = <pernr> i_seqnr = <seqnr> ).
   ENDMETHOD.
 
   METHOD run_field_2_plugin.
-    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
+    LOOP AT zcl_sde_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS NOT INITIAL.
       CASE ls_link-method.
         WHEN 'RUN_PY_CLUSTER'.
           run_py_cluster( io_viewer ).
@@ -1876,15 +1876,15 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_field_2_field.
-    DATA: lo_viewer TYPE REF TO lcl_table_viewer.
+    DATA: lo_viewer TYPE REF TO zcl_sde_table_viewer.
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
-    LOOP AT lcl_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS INITIAL.
+    LOOP AT zcl_sde_plugins=>mt_field_links INTO DATA(ls_link) WHERE tab = io_viewer->m_tabname AND field = i_column AND method IS INITIAL.
       ASSIGN COMPONENT ls_link-field OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
       IF lo_viewer IS INITIAL.
         IF ls_link-rtab IS INITIAL.
           lo_viewer = io_viewer.
         ELSE.
-          APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+          APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
           CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = ls_link-rtab.
           lo_viewer = <obj>-alv_viewer.
         ENDIF.
@@ -1900,20 +1900,20 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD run_data_element.
-    DATA: lo_viewer TYPE REF TO lcl_table_viewer.
+    DATA: lo_viewer TYPE REF TO zcl_sde_table_viewer.
 
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
-    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = io_viewer->m_tabname fieldname = i_column INTO DATA(l_field).
-    LOOP AT lcl_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname AND plugin NE '' ." 'PA20' .
+    READ TABLE Zcl_SDE_common=>mt_tabfields WITH KEY tabname = io_viewer->m_tabname fieldname = i_column INTO DATA(l_field).
+    LOOP AT zcl_sde_plugins=>mt_el_links INTO DATA(l_el_link) WHERE element = l_field-rollname AND plugin NE '' ." 'PA20' .
       CASE l_el_link-plugin.
         WHEN 'PA20'.
-          lcl_plugins=>run_pa20( io_viewer ).
+          zcl_sde_plugins=>run_pa20( io_viewer ).
         WHEN 'PP01'.
-          lcl_plugins=>run_pp01( io_viewer ).
+          zcl_sde_plugins=>run_pp01( io_viewer ).
         WHEN 'SHOW_TEXT'.
-          lcl_plugins=>run_text( io_viewer ).
+          zcl_sde_plugins=>run_text( io_viewer ).
         WHEN 'SUBTY'.
-          lcl_plugins=>run_subty( io_viewer ).
+          zcl_sde_plugins=>run_subty( io_viewer ).
       ENDCASE.
       is_done = abap_true.
     ENDLOOP.
@@ -1921,9 +1921,9 @@ CLASS lcl_plugins IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    LOOP AT lcl_plugins=>mt_el_links INTO l_el_link WHERE element = l_field-rollname .
+    LOOP AT zcl_sde_plugins=>mt_el_links INTO l_el_link WHERE element = l_field-rollname .
       IF lo_viewer IS INITIAL.
-        APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+        APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
         CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = l_el_link-rtab.
         lo_viewer = <obj>-alv_viewer.
       ENDIF.
@@ -1942,7 +1942,7 @@ CLASS lcl_plugins IMPLEMENTATION.
     DATA: lt_keys TYPE TABLE OF dd05p.
 
     GET PARAMETER ID 'MOL' FIELD DATA(l_mol).
-    READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = io_viewer->m_tabname fieldname = i_column .
+    READ TABLE Zcl_SDE_common=>mt_tabfields INTO DATA(field) WITH KEY tabname = io_viewer->m_tabname fieldname = i_column .
     ASSIGN COMPONENT i_column OF STRUCTURE i_str TO FIELD-SYMBOL(<field>).
     CHECK sy-subrc = 0.
     CHECK <field> IS NOT INITIAL.
@@ -1959,7 +1959,7 @@ CLASS lcl_plugins IMPLEMENTATION.
         OTHERS    = 4.
 
     IF sy-subrc < 2.
-      APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+      APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
       CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = field-checktable.
       LOOP AT lt_keys INTO DATA(l_keys).
         ASSIGN COMPONENT l_keys-forkey OF STRUCTURE i_str TO <field>.
@@ -1973,7 +1973,7 @@ CLASS lcl_plugins IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_data_receiver IMPLEMENTATION.
+CLASS zcl_sde_receiver IMPLEMENTATION.
   METHOD constructor.
     lo_sel_to = io_sel_to.
     m_from_field =  i_from_field.
@@ -2026,7 +2026,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD update_col.
-    DATA: lt_sel_row   TYPE lcl_appl=>t_sel_row.
+    DATA: lt_sel_row   TYPE zcl_sde_appl=>t_sel_row.
     FIELD-SYMBOLS: <tab>   TYPE STANDARD TABLE,
                    <field> TYPE any.
 
@@ -2064,7 +2064,7 @@ CLASS lcl_data_receiver IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_table_viewer IMPLEMENTATION.
+CLASS zcl_sde_table_viewer IMPLEMENTATION.
 
   METHOD constructor.
 
@@ -2102,13 +2102,13 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       m_is_cds = 'X'.
     ENDIF.
 
-    lcl_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
+    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = m_texttabname ).
     IF m_texttabname IS NOT INITIAL.
       get_field_info( m_texttabname ).
     ENDIF.
     get_field_info( m_tabname ).
     IF ir_tab IS NOT BOUND.
-      lcl_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
+      zcl_sde_rtti=>create_table_by_name( EXPORTING i_tname = m_tabname CHANGING c_table = mr_table  ).
       IF m_is_view IS INITIAL.
         m_is_sql = abap_true.
       ENDIF.
@@ -2262,7 +2262,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         m_count = lines( <f_tab> ).
       ELSE.
         read_text_table( ).
-        lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = gv_rows
+        zcl_sde_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = get_where( ) i_row_count = gv_rows
                              CHANGING cr_tab =  mr_table c_count = m_count ).
         update_texts( ).
 
@@ -2272,24 +2272,24 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ls_layout-col_opt = abap_true.
     ls_layout-cwidth_opt = abap_true.
     ls_layout-sel_mode = 'D'.
-    CREATE OBJECT lcl_appl=>c_dragdropalv.
+    CREATE OBJECT zcl_sde_appl=>c_dragdropalv.
     effect = cl_dragdrop=>move + cl_dragdrop=>copy.
 
-    CALL METHOD lcl_appl=>c_dragdropalv->add
+    CALL METHOD zcl_sde_appl=>c_dragdropalv->add
       EXPORTING
         flavor     = 'Line' ##NO_TEXT
         dragsrc    = abap_true
         droptarget = abap_true
         effect     = effect.
 
-    CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = DATA(handle_alv).
+    CALL METHOD zcl_sde_appl=>c_dragdropalv->get_handle IMPORTING handle = DATA(handle_alv).
     ls_layout-s_dragdrop-grid_ddid = handle_alv.
     SET HANDLER   before_user_command
                   handle_user_command
                   handle_menu_button
                   handle_tab_toolbar
                   handle_doubleclick
-                  lcl_dragdrop=>drag
+                  zcl_sde_dragdrop=>drag
                   on_menu_request
                   on_f4 FOR mo_alv.
 
@@ -2312,7 +2312,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     mo_alv->set_frontend_fieldcatalog( EXPORTING it_fieldcatalog = mt_alv_catalog ).
 
     LOOP AT mt_alv_catalog ASSIGNING FIELD-SYMBOL(<cat>) WHERE scrtext_l IS INITIAL.
-      lcl_alv_common=>translate_field(  CHANGING c_fld = <cat> ).
+      Zcl_SDE_common=>translate_field(  CHANGING c_fld = <cat> ).
     ENDLOOP.
 
     mo_alv->set_frontend_fieldcatalog( EXPORTING  it_fieldcatalog = mt_alv_catalog ).
@@ -2332,9 +2332,9 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
   METHOD read_text_table.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
-    lcl_ddic=>get_text_table( EXPORTING i_tname =  m_tabname IMPORTING e_tab = DATA(l_tab) ).
+    zcl_sde_ddic=>get_text_table( EXPORTING i_tname =  m_tabname IMPORTING e_tab = DATA(l_tab) ).
     CHECK l_tab IS NOT INITIAL.
-    lcl_rtti=>create_table_by_name( EXPORTING i_tname = l_tab CHANGING c_table = mr_text_table ).
+    zcl_sde_rtti=>create_table_by_name( EXPORTING i_tname = l_tab CHANGING c_table = mr_text_table ).
     ASSIGN mr_text_table->* TO <f_tab>.
     SELECT * FROM (l_tab) INTO TABLE <f_tab> ORDER BY PRIMARY KEY.
   ENDMETHOD.
@@ -2443,7 +2443,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           lt_field_info  TYPE TABLE OF dfies,
           l_fname        TYPE fieldname,
           l_tname        TYPE tabname,
-          ls_tf          LIKE LINE OF lcl_alv_common=>mt_tabfields,
+          ls_tf          LIKE LINE OF Zcl_SDE_common=>mt_tabfields,
           dref           TYPE REF TO data,
           l_x            TYPE xstring.
 
@@ -2451,14 +2451,14 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
 
-    DATA(l_exist) = lcl_sql=>exist_table( i_tab ).
+    DATA(l_exist) = zcl_sde_sql=>exist_table( i_tab ).
     IF  l_exist = 1.
       SELECT  COUNT( * ) FROM (i_tab).
       DATA(l_count) = sy-dbcnt.
     ENDIF.
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name NE 'CLIENT'.
-      IF NOT line_exists( lcl_alv_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
+      IF NOT line_exists( Zcl_SDE_common=>mt_tabfields[ tabname = i_tab fieldname = ls-name ] ).
         l_tname = i_tab.
         l_fname = ls-name.
 
@@ -2500,7 +2500,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
             ENDIF.
           ENDIF.
         ENDIF.
-        INSERT ls_tf INTO TABLE lcl_alv_common=>mt_tabfields.
+        INSERT ls_tf INTO TABLE Zcl_SDE_common=>mt_tabfields.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -2513,40 +2513,40 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           l_texttab      TYPE tabname,
           lo_str         TYPE REF TO cl_abap_structdescr.
 
-    lcl_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components e_handle = lo_str ).
+    zcl_sde_rtti=>create_struc_handle( EXPORTING i_tname = i_tname IMPORTING e_t_comp = mt_text_components e_handle = lo_str ).
     CREATE DATA lr_struc TYPE HANDLE lo_str.
     lr_table_descr ?= cl_abap_typedescr=>describe_by_data_ref( lr_struc ).
     it_tabdescr[] = lr_table_descr->components[].
-    lcl_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
+    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = i_tname IMPORTING e_tab = l_texttab ).
     l_replace = l_texttab && '_'.
 
     LOOP AT it_tabdescr INTO DATA(ls) WHERE name NE 'MANDT' AND name NE 'CLIENT'.
       DATA(l_ind) = sy-tabix.
       APPEND INITIAL LINE TO et_catalog ASSIGNING FIELD-SYMBOL(<catalog>).
       <catalog>-col_pos = l_ind.
-      READ TABLE lcl_alv_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
+      READ TABLE Zcl_SDE_common=>mt_tabfields INTO DATA(ls_tf) WITH KEY tabname = i_tname fieldname = ls-name.
 
-      <catalog>-style = lcl_alv_common=>c_white.
+      <catalog>-style = Zcl_SDE_common=>c_white.
       MOVE-CORRESPONDING ls_tf TO <catalog>.
       <catalog>-f4availabl = abap_true.
       IF ls_tf-is_text = abap_true.
-        <catalog>-style = lcl_alv_common=>c_grey.
+        <catalog>-style = Zcl_SDE_common=>c_grey.
       ENDIF.
 
       IF ls_tf-checktable IS NOT INITIAL.
-        <catalog>-style = lcl_alv_common=>c_blue.
+        <catalog>-style = Zcl_SDE_common=>c_blue.
       ENDIF.
 
-      IF line_exists( lcl_plugins=>mt_field_links[ tab = i_tname field = ls_tf-fieldname ] ).
-        <catalog>-style = lcl_alv_common=>c_green.
+      IF line_exists( zcl_sde_plugins=>mt_field_links[ tab = i_tname field = ls_tf-fieldname ] ).
+        <catalog>-style = Zcl_SDE_common=>c_green.
       ENDIF.
 
-      IF line_exists( lcl_plugins=>mt_el_links[ element = ls_tf-rollname ] ).
-        <catalog>-style = lcl_alv_common=>c_green.
+      IF line_exists( zcl_sde_plugins=>mt_el_links[ element = ls_tf-rollname ] ).
+        <catalog>-style = Zcl_SDE_common=>c_green.
       ENDIF.
 
       IF ls_tf-keyflag = abap_true.
-        <catalog>-style = <catalog>-style BIT-OR lcl_alv_common=>c_bold.
+        <catalog>-style = <catalog>-style BIT-OR Zcl_SDE_common=>c_bold.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -2558,7 +2558,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         EXPORTING
           fcode = 'TECH'
           text  = 'Technical name'. "Teхническое имя
-      LOOP AT lcl_appl=>mt_lang INTO DATA(ls_lang).
+      LOOP AT zcl_sde_appl=>mt_lang INTO DATA(ls_lang).
         CALL METHOD e_object->add_function
           EXPORTING
             fcode = CONV #( ls_lang-spras )
@@ -2584,11 +2584,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     CHECK es_row_no-row_id IS NOT INITIAL.
     ASSIGN mr_table->* TO  <f_tab>.
     READ TABLE <f_tab> INDEX es_row_no-row_id ASSIGNING FIELD-SYMBOL(<tab>).
-    lcl_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
+    zcl_sde_plugins=>link( EXPORTING i_str = <tab> i_column = e_column io_viewer = me ).
 
     ASSIGN COMPONENT |{ e_column-fieldname }_REF| OF STRUCTURE <tab> TO FIELD-SYMBOL(<ref>).
     IF sy-subrc = 0.
-      lcl_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
+      zcl_sde_appl=>open_int_table( EXPORTING iv_name = CONV #( e_column-fieldname ) it_ref = <ref> ).
     ENDIF.
   ENDMETHOD.
 
@@ -2605,7 +2605,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     sender->free( ).
 
     "Free Memory
-    LOOP AT lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    LOOP AT zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
       IF <obj>-alv_viewer->mo_box = sender.
         lv_tabix = sy-tabix.
         EXIT.
@@ -2624,7 +2624,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
         ENDLOOP.
       ENDIF.
       FREE <obj>-alv_viewer.
-      DELETE lcl_appl=>mt_obj INDEX lv_tabix.
+      DELETE zcl_sde_appl=>mt_obj INDEX lv_tabix.
     ENDIF.
   ENDMETHOD.
 
@@ -2651,18 +2651,18 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       mo_alv->set_toolbar_interactive( ).
       RETURN.
     ELSEIF e_ucomm = 'PY'.
-      READ TABLE <f_tab> INDEX lcl_alv_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
-      lcl_plugins=>run_hrpy_rgdir( <f_line> ).
+      READ TABLE <f_tab> INDEX Zcl_SDE_common=>get_selected( mo_alv ) ASSIGNING FIELD-SYMBOL(<f_line>).
+      zcl_sde_plugins=>run_hrpy_rgdir( <f_line> ).
     ELSEIF e_ucomm = 'DETAIL'.
       IF m_tabname+0(2) = 'PA'.
-        lcl_plugins=>run_pa20( me ).
+        zcl_sde_plugins=>run_pa20( me ).
       ELSEIF m_tabname+0(3) = 'HRP'.
-        lcl_plugins=>run_pp01( me ).
+        zcl_sde_plugins=>run_pp01( me ).
       ENDIF.
     ELSEIF e_ucomm = 'REFRESH'.
       "CHECK get_where( ) IS NOT INITIAL.
       mo_sel->raise_selection_done( ).
-      IF lcl_sql=>exist_table( m_tabname ) = 1.
+      IF zcl_sde_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
       ENDIF.
     ELSEIF e_ucomm = 'TBAR'.
@@ -2705,8 +2705,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
           WHEN 'TECH'. "technical field name
             <fields>-scrtext_l = <fields>-scrtext_m = <fields>-scrtext_s =  <fields>-reptext = <fields>-fieldname.
           WHEN OTHERS. "header names translation
-            IF line_exists( lcl_appl=>mt_lang[ spras = e_ucomm ] ).
-              lcl_alv_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <fields> ).
+            IF line_exists( zcl_sde_appl=>mt_lang[ spras = e_ucomm ] ).
+              Zcl_SDE_common=>translate_field( EXPORTING i_lang = CONV #( e_ucomm ) CHANGING c_fld = <fields> ).
               IF mo_sel IS BOUND.
                 READ TABLE mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) WITH KEY field_label = <fields>-fieldname.
                 IF sy-subrc = 0.
@@ -2721,7 +2721,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    IF line_exists( lcl_appl=>mt_lang[ spras = e_ucomm ] ).
+    IF line_exists( zcl_sde_appl=>mt_lang[ spras = e_ucomm ] ).
       m_lang = e_ucomm.
       set_header( ).
       update_texts( ).
@@ -2729,12 +2729,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     ENDIF.
 
     CALL METHOD mo_alv->set_frontend_fieldcatalog EXPORTING it_fieldcatalog = it_fields[].
-    lcl_alv_common=>refresh( mo_alv ).
+    Zcl_SDE_common=>refresh( mo_alv ).
     IF mo_sel IS BOUND.
       IF  e_ucomm = 'HIDE' OR e_ucomm = 'SHOW' OR e_ucomm = 'UPDATE' .
         mo_sel->update_sel_tab( ).
       ENDIF.
-      lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
+      Zcl_SDE_common=>refresh( mo_sel->mo_sel_alv ).
     ENDIF.
   ENDMETHOD.                           "handle_user_command
 
@@ -2769,11 +2769,11 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD refresh_table.
-    DATA: ls_row    TYPE lcl_appl=>t_sel_row,
+    DATA: ls_row    TYPE zcl_sde_appl=>t_sel_row,
           lt_filter TYPE lvc_t_filt.
     IF m_is_sql = abap_true.
       DATA(l_where) = get_where( ).
-      lcl_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = gv_rows CHANGING cr_tab =  mr_table c_count = m_count ).
+      zcl_sde_sql=>read_any_table( EXPORTING i_tabname = m_tabname i_where = l_where i_row_count = gv_rows CHANGING cr_tab =  mr_table c_count = m_count ).
       IF l_where IS INITIAL.
         CLEAR m_is_sql.
       ENDIF.
@@ -2803,8 +2803,8 @@ CLASS lcl_table_viewer IMPLEMENTATION.
       EXPORTING
         it_filter = lt_filter.
 
-    lcl_alv_common=>refresh( mo_sel->mo_sel_alv ).
-    lcl_alv_common=>refresh( mo_alv ).
+    Zcl_SDE_common=>refresh( mo_sel->mo_sel_alv ).
+    Zcl_SDE_common=>refresh( mo_alv ).
     mo_sel->mo_viewer->handle_user_command( 'UPDATE' ).
     mo_sel->mo_viewer->handle_user_command( 'HIDE' ).
     LOOP AT mo_column_emitters INTO DATA(l_emit).
@@ -2828,7 +2828,7 @@ CLASS lcl_table_viewer IMPLEMENTATION.
     READ TABLE <text_tab> INDEX 1 ASSIGNING FIELD-SYMBOL(<text_dummy>).
     CHECK sy-subrc = 0.
 
-    READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_texttabname domname = 'SPRAS' INTO DATA(l_texttabfield).
+    READ TABLE Zcl_SDE_common=>mt_tabfields WITH KEY tabname = m_texttabname domname = 'SPRAS' INTO DATA(l_texttabfield).
     IF sy-subrc = 0.
       DATA(l_lang) = l_texttabfield-fieldname.
     ENDIF.
@@ -2838,12 +2838,12 @@ CLASS lcl_table_viewer IMPLEMENTATION.
 
     LOOP AT <f_tab> ASSIGNING FIELD-SYMBOL(<str>).
       CLEAR lv_clause.
-      LOOP AT lcl_alv_common=>mt_tabfields INTO l_texttabfield WHERE tabname = m_texttabname AND keyflag = abap_true.
+      LOOP AT Zcl_SDE_common=>mt_tabfields INTO l_texttabfield WHERE tabname = m_texttabname AND keyflag = abap_true.
         UNASSIGN <check>.
         ASSIGN COMPONENT l_texttabfield-fieldname OF STRUCTURE <str> TO <check>.
         IF sy-subrc NE 0.
-          READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_texttabname fieldname  = l_texttabfield-fieldname INTO DATA(l_texttab).
-          READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = m_tabname domname  = l_texttab-domname INTO DATA(l_maintab).
+          READ TABLE Zcl_SDE_common=>mt_tabfields WITH KEY tabname = m_texttabname fieldname  = l_texttabfield-fieldname INTO DATA(l_texttab).
+          READ TABLE Zcl_SDE_common=>mt_tabfields WITH KEY tabname = m_tabname domname  = l_texttab-domname INTO DATA(l_maintab).
           ASSIGN COMPONENT l_maintab-fieldname OF STRUCTURE <str> TO <check>.
           CLEAR l_maintab.
           IF sy-subrc NE 0.
@@ -2881,24 +2881,24 @@ CLASS lcl_table_viewer IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_sel_opt IMPLEMENTATION.
+CLASS zcl_sde_sel_opt IMPLEMENTATION.
   METHOD constructor.
     DATA: effect     TYPE i,
           handle_alv TYPE i.
 
     mo_viewer = io_viewer.
     mo_sel_alv = NEW #( i_parent = io_container ).
-    CREATE OBJECT lcl_appl=>c_dragdropalv.
+    CREATE OBJECT zcl_sde_appl=>c_dragdropalv.
     effect =  cl_dragdrop=>copy. " + cl_dragdrop=>move.
 
-    CALL METHOD lcl_appl=>c_dragdropalv->add
+    CALL METHOD zcl_sde_appl=>c_dragdropalv->add
       EXPORTING
         flavor     = 'Line'
         dragsrc    = abap_true
         droptarget = abap_true
         effect     = effect.
 
-    CALL METHOD lcl_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
+    CALL METHOD zcl_sde_appl=>c_dragdropalv->get_handle IMPORTING handle = handle_alv.
     ms_layout-s_dragdrop-col_ddid = handle_alv.
     init_fcat( handle_alv ).
     update_sel_tab( ).
@@ -2919,8 +2919,8 @@ CLASS lcl_sel_opt IMPLEMENTATION.
 
     SET HANDLER handle_user_command
                 handle_sel_toolbar
-                lcl_dragdrop=>drag
-                lcl_dragdrop=>drop
+                zcl_sde_dragdrop=>drag
+                zcl_sde_dragdrop=>drop
                 on_data_changed
                 on_data_changed_finished
                 on_grid_button_click
@@ -2964,9 +2964,9 @@ CLASS lcl_sel_opt IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD raise_selection_done.
-    lcl_alv_common=>refresh( mo_sel_alv ).
+    Zcl_SDE_common=>refresh( mo_sel_alv ).
     RAISE EVENT selection_done.
-    DATA: ls_row TYPE lcl_appl=>t_sel_row.
+    DATA: ls_row TYPE zcl_sde_appl=>t_sel_row.
     LOOP AT mt_sel_tab  ASSIGNING FIELD-SYMBOL(<sel>).
       IF <sel>-transmitter IS NOT INITIAL.
         MOVE-CORRESPONDING <sel> TO ls_row.
@@ -2983,7 +2983,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     mo_viewer->mo_alv->get_frontend_fieldcatalog( IMPORTING et_fieldcatalog = mo_viewer->mt_alv_catalog ).
     LOOP AT mo_viewer->mt_alv_catalog INTO DATA(l_catalog) WHERE domname NE 'MANDT'.
       DATA(lv_ind) = sy-tabix.
-      READ TABLE lcl_alv_common=>mt_tabfields WITH KEY tabname = l_catalog-tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
+      READ TABLE Zcl_SDE_common=>mt_tabfields WITH KEY tabname = l_catalog-tabname fieldname = l_catalog-fieldname  INTO DATA(l_tfield).
       IF l_tfield-empty = '' OR mo_viewer->m_show_empty IS NOT INITIAL OR mo_viewer->m_count = 0.
         APPEND INITIAL LINE TO mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel_tab>).
         READ TABLE lt_copy INTO DATA(ls_copy) WITH KEY field_label = l_catalog-fieldname.
@@ -3002,7 +3002,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         <sel_tab>-datatype = l_catalog-datatype.
         <sel_tab>-length = l_catalog-outputlen.
 
-        lcl_alv_common=>translate_field( EXPORTING i_lang = mo_viewer->m_lang CHANGING c_fld = l_catalog ).
+        Zcl_SDE_common=>translate_field( EXPORTING i_lang = mo_viewer->m_lang CHANGING c_fld = l_catalog ).
         <sel_tab>-name = l_catalog-scrtext_l.
 
         IF l_tfield-keyflag = abap_true.
@@ -3019,7 +3019,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
         l_catalog-ref_table = mo_viewer->m_tabname.
         l_catalog-ref_field = l_catalog-fieldname.
 
-        lcl_rtti=>find_drop_down(
+        zcl_sde_rtti=>find_drop_down(
          EXPORTING
           io_grid      = mo_sel_alv
          CHANGING
@@ -3060,7 +3060,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       update_sel_row( CHANGING c_sel_row = <to> ).
     ENDIF.
     IF <to>-transmitter IS BOUND.
-      DATA: ls_row TYPE lcl_appl=>t_sel_row.
+      DATA: ls_row TYPE zcl_sde_appl=>t_sel_row.
       MOVE-CORRESPONDING <to> TO ls_row.
       <to>-transmitter->emit( EXPORTING e_row = ls_row ).
     ENDIF.
@@ -3124,7 +3124,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
     TRY.
-        c_sel_row-option_icon = lcl_appl=>m_option_icons[ sign = c_sel_row-sign option = c_sel_row-opti ]-icon_name.
+        c_sel_row-option_icon = zcl_sde_appl=>m_option_icons[ sign = c_sel_row-sign option = c_sel_row-opti ]-icon_name.
       CATCH cx_sy_itab_line_not_found.                  "#EC NO_HANDLER
     ENDTRY.
 
@@ -3217,7 +3217,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     READ TABLE mt_sel_tab ASSIGNING FIELD-SYMBOL(<sel>) INDEX es_row_no-row_id.
     DATA(l_fname) =  <sel>-field_label.
 
-    lcl_appl=>mt_sel[] = mt_sel_tab[].
+    zcl_sde_appl=>mt_sel[] = mt_sel_tab[].
     IF <sel>-element = 'HROBJID'.
       READ TABLE mt_sel_tab INTO DATA(l_sel) WITH KEY field_label = 'OTYPE'.
       l_otype = l_sel-low.
@@ -3436,7 +3436,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     ENDIF.
 
     update_sel_row( CHANGING c_sel_row = <tab> ).
-    lcl_alv_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
+    Zcl_SDE_common=>refresh( EXPORTING i_obj = mo_sel_alv i_layout = ms_layout  ).
     raise_selection_done( ).
   ENDMETHOD.
 
@@ -3449,7 +3449,7 @@ CLASS lcl_sel_opt IMPLEMENTATION.
     DATA: ls_func TYPE ui_func,
           lt_func TYPE ui_functions.
 
-    DATA(l_index) = lcl_alv_common=>get_selected( mo_sel_alv ).
+    DATA(l_index) = Zcl_SDE_common=>get_selected( mo_sel_alv ).
 
     IF l_index IS NOT INITIAL.
       READ TABLE mt_sel_tab INTO DATA(l_sel) INDEX l_index.
@@ -3525,12 +3525,12 @@ CLASS lcl_sel_opt IMPLEMENTATION.
       RAISE EVENT selection_done.
     ENDIF.
 
-    lcl_alv_common=>refresh( mo_viewer->mo_alv ).
+    Zcl_SDE_common=>refresh( mo_viewer->mo_alv ).
     RAISE EVENT selection_done.
   ENDMETHOD.                           "handle_user_command
 ENDCLASS.
 
-CLASS lcl_appl IMPLEMENTATION.
+CLASS zcl_sde_appl IMPLEMENTATION.
   METHOD init_icons_table.
     m_option_icons = VALUE #(
      ( sign = space option = space  icon_name = icon_led_inactive )
@@ -3584,7 +3584,7 @@ CLASS lcl_appl IMPLEMENTATION.
     ELSE.
       GET REFERENCE OF it_tab INTO r_tab.
     ENDIF.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     <obj>-alv_viewer = NEW #(  i_additional_name = iv_name ir_tab = r_tab ).
     <obj>-alv_viewer->mo_sel->raise_selection_done( ).
 
@@ -3592,7 +3592,7 @@ CLASS lcl_appl IMPLEMENTATION.
 
   METHOD exit.
     DATA: l_answer.
-    DESCRIBE TABLE lcl_appl=>mt_obj.
+    DESCRIBE TABLE zcl_sde_appl=>mt_obj.
     IF sy-tfill NE 0.
       CALL FUNCTION 'POPUP_TO_CONFIRM'
         EXPORTING
@@ -3612,19 +3612,19 @@ CLASS lcl_appl IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-CLASS lcl_dragdrop IMPLEMENTATION.
+CLASS zcl_sde_dragdrop IMPLEMENTATION.
   METHOD drag.
-    DATA(dataobj) = NEW lcl_dd_data( ).
+    DATA(dataobj) = NEW zcl_sde_dd_data( ).
     dataobj->m_row = e_row-index.
     dataobj->m_column = e_column.
     e_dragdropobj->object = dataobj.
   ENDMETHOD.
 
   METHOD drop."It should be refactored someday...
-    DATA: ls_row          TYPE lcl_appl=>t_sel_row,
+    DATA: ls_row          TYPE zcl_sde_appl=>t_sel_row,
           lv_set_receiver.
 
-    LOOP AT lcl_appl=>mt_obj INTO DATA(lo).
+    LOOP AT zcl_sde_appl=>mt_obj INTO DATA(lo).
       "to
       IF e_dragdropobj->droptargetctrl = lo-alv_viewer->mo_sel->mo_sel_alv.
         DATA(lo_to) = lo-alv_viewer->mo_sel.
@@ -3746,7 +3746,7 @@ CLASS lcl_dragdrop IMPLEMENTATION.
 
     IF from_obj NE to_obj.
       DATA(lo_alv) = CAST cl_gui_alv_grid( e_dragdropobj->dragsourcectrl ).
-      lcl_alv_common=>refresh( EXPORTING i_obj = lo_alv i_soft = abap_true ).
+      Zcl_SDE_common=>refresh( EXPORTING i_obj = lo_alv i_soft = abap_true ).
     ENDIF.
 
     lo_alv ?= e_dragdropobj->droptargetctrl.
@@ -3758,9 +3758,9 @@ ENDCLASS.
 INITIALIZATION.
 
 
-  lcl_appl=>init_lang( ).
-  lcl_appl=>init_icons_table( ).
-  lcl_plugins=>init( ).
+  zcl_sde_appl=>init_lang( ).
+  zcl_sde_appl=>init_icons_table( ).
+  zcl_sde_plugins=>init( ).
   sscrfields-functxt_01 = 'Tables'.
   sscrfields-functxt_02 = 'Views'.
   sscrfields-functxt_03 = 'CDS'.
@@ -3770,7 +3770,7 @@ AT SELECTION-SCREEN OUTPUT.
   %_gv_tname_%_app_%-text = 'Enter Table name and hit Enter'.
   %_gv_vname_%_app_%-text = 'Enter View name and hit Enter'.
   %_gv_cds_%_app_%-text = 'Enter CDS name and hit Enter'.
-  lcl_appl=>suppress_run_button( ).
+  zcl_sde_appl=>suppress_run_button( ).
 
   LOOP AT SCREEN.
     IF screen-group1 = 'TAB'.
@@ -3806,7 +3806,7 @@ AT SELECTION-SCREEN OUTPUT.
   ENDLOOP.
 
 AT SELECTION-SCREEN ON EXIT-COMMAND.
-  lcl_appl=>exit( ).
+  zcl_sde_appl=>exit( ).
 
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_cds.
@@ -3826,22 +3826,22 @@ AT SELECTION-SCREEN .
 
   IF g_mode = 1. "table
     CONDENSE gv_tname.
-    CHECK lcl_sql=>exist_table( gv_tname ) = 1.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CHECK zcl_sde_sql=>exist_table( gv_tname ) = 1.
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_tname.
   ENDIF.
 
   IF g_mode = 2. "view
     CONDENSE gv_vname.
-    CHECK lcl_sql=>exist_view( gv_vname ) = 1.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+    CHECK zcl_sde_sql=>exist_view( gv_vname ) = 1.
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_vname i_is_view = abap_true.
   ENDIF.
 
   IF g_mode = 3. "CDS
     CONDENSE gv_cds.
-    CHECK lcl_sql=>exist_cds( gv_cds ) = 1.
-    APPEND INITIAL LINE TO lcl_appl=>mt_obj ASSIGNING <obj>.
+    CHECK zcl_sde_sql=>exist_cds( gv_cds ) = 1.
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING <obj>.
     CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = gv_cds i_is_cds = abap_true.
   ENDIF.
 
@@ -3900,7 +3900,7 @@ FORM callback_f4_sel TABLES record_tab STRUCTURE seahlpres
                    callcontrol LIKE ddshf4ctrl.
 
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE abap_true.
-    READ TABLE lcl_appl=>mt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel).
+    READ TABLE zcl_sde_appl=>mt_sel WITH KEY field_label = <interface>-shlpfield INTO DATA(l_sel).
     IF sy-subrc = 0.
       LOOP AT l_sel-range INTO DATA(l_range).
         APPEND INITIAL LINE TO shlp-selopt ASSIGNING FIELD-SYMBOL(<searchsel>).
