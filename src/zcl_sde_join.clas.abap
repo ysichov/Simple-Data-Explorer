@@ -666,13 +666,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `function mo(e,el,k,p){if(!mk||p!=mp||k==mk)return;mv=true;` &&
       `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mtk=k;` &&
       `el.style.boxShadow='-4px 0 0 0 #d2691e';}` &&
+      "fire via a hidden form post: location.href='SAPEVENT:...' does not navigate from mouseup here
       `document.onmouseup=function(){if(!mk)return;` &&
       `var k=mk,p=mp,t=mtk,ok=mv;mk=null;mp=null;mtk=null;mv=false;` &&
       `if(mt){mt.style.boxShadow='';mt=null;}` &&
-      `if(ok&&t){t=String(t).replace('#','%23');` &&
-      `window.location.href='SAPEVENT:'+p+'?'+k+'__'+t;}};` &&
+      `if(ok&&t){var f=document.getElementById('mf');f.action='SAPEVENT:'+p;` &&
+      `document.getElementById('mv').value=k+'__'+t;f.submit();}};` &&
       `</script>` &&
-      `</head><body onselectstart="return false">`.
+      `</head><body onselectstart="return false">` &&
+      `<form id="mf" method="post" action="SAPEVENT:fmv" style="display:none">` &&
+      `<input type="hidden" name="mv" id="mv"></form>`.
 
     "selected fields in SELECT order: color shows the real source table
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
@@ -1034,21 +1037,21 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           move_table_before( i_from = l_from i_to = l_to ).
           refresh_all( ).
         ENDIF.
-      WHEN 'fmv'. "drag&drop of fields: ALIAS~FIELD__ALIAS~FIELD
-        SPLIT getdata AT '__' INTO l_from l_to.
-        l_from = cl_http_utility=>unescape_url( l_from ).
-        l_to = cl_http_utility=>unescape_url( l_to ).
-        IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
-          move_field_before( i_from = l_from i_to = l_to ).
-          render_flds( ).
-          update_sql_view( ).
+      WHEN 'fmv' OR 'fgmv'. "mouse reorder: field or table group, posted as mv=FROM__TO
+        DATA(l_move) = CONV string( getdata ).
+        IF l_move IS INITIAL. "sent by the hidden form
+          l_post = concat_lines_of( table = postdata ).
+          SPLIT l_post AT '=' INTO l_dummy l_move.
         ENDIF.
-      WHEN 'fgmv'. "drag&drop of all selected fields from one alias before another alias
-        SPLIT getdata AT '__' INTO l_from l_to.
-        l_from = cl_http_utility=>unescape_url( l_from ).
-        l_to = cl_http_utility=>unescape_url( l_to ).
+        REPLACE ALL OCCURRENCES OF '+' IN l_move WITH ` `.
+        l_move = cl_http_utility=>unescape_url( l_move ).
+        SPLIT l_move AT '__' INTO l_from l_to.
         IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
-          move_alias_fields_before( i_from = l_from i_to = l_to ).
+          IF action = 'fmv'.
+            move_field_before( i_from = l_from i_to = l_to ).
+          ELSE.
+            move_alias_fields_before( i_from = l_from i_to = l_to ).
+          ENDIF.
           render_flds( ).
           update_sql_view( ).
         ENDIF.
