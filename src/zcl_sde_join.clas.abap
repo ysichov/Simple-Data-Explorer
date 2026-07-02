@@ -573,6 +573,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `.c6{background:#d9f4ef;border-color:#58a99b;}` &&
       `.key{border-style:double;border-width:3px;}` &&
       `.rm{color:#a00;text-decoration:none;margin-left:4px;}` &&
+      `.tblpill{display:inline-block;border:1px solid #888;border-radius:4px;padding:1px 8px;margin:2px;font-weight:bold;cursor:move;}` &&
       `.zone{display:inline-block;border:1px dashed #bbb;border-radius:10px;color:#999;padding:1px 8px;margin:2px;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
@@ -618,7 +619,21 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     "selected fields in SELECT order: color shows the real source table
     lt_sel = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
     SORT lt_sel BY pos.
-    l_html = l_html && `<div class="tabhdr">SELECT&nbsp;&nbsp;</div>`.
+    l_html = l_html && `<div class="tabhdr">SELECT&nbsp;&nbsp;`.
+    LOOP AT mt_jtabs INTO DATA(ls_order_tab).
+      DATA(l_ord_alias) = condense( CONV string( ls_order_tab-alias ) ).
+      DATA(l_ord_color_idx) = sy-tabix - 1.
+      l_ord_color_idx = l_ord_color_idx MOD 6.
+      l_ord_color_idx = l_ord_color_idx + 1.
+      DATA(l_ord_color) = |c{ l_ord_color_idx }|.
+      l_html = l_html &&
+        |<span class="tblpill { l_ord_color }" draggable="true" ondragstart="ds(event,'{ l_ord_alias }')"| &&
+        | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_ord_alias }','fgmv')">| &&
+        |{ l_ord_alias }</span>|.
+    ENDLOOP.
+    l_html = l_html &&
+      `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fgmv')">&#8677; tables end</span></div>`.
+
     LOOP AT lt_sel INTO DATA(ls_sel).
       DATA(l_alias) = condense( CONV string( ls_sel-alias ) ).
       READ TABLE mt_jtabs TRANSPORTING NO FIELDS WITH KEY alias = ls_sel-alias.
@@ -636,13 +651,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         THEN escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_text )
         ELSE |{ ls_sel-fieldname }| ).
       l_html = l_html &&
-        |<a class="{ l_cls }" href="SAPEVENT:fld?tg_{ l_fkey }"| &&
-        | draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
+        |<span class="{ l_cls }" draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
         | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| &&
         | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
         | onmouseover="pv(event,this,'{ l_fkey }')"| &&
-        | onclick="return pc(event)" title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
-        |{ l_label } <span class="rm">&#10005;</span></a>|.
+        | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
+        |{ l_label } <a class="rm" href="SAPEVENT:fld?tg_{ l_fkey }">&#10005;</a></span>|.
     ENDLOOP.
     l_html = l_html &&
       `<span class="zone" ondragover="return ov(event,this)" ondrop="return dp(event,'#END','fmv')">&#8677; end</span>`.
