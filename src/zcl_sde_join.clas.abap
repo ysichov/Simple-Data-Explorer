@@ -46,24 +46,26 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
           m_sel_count  TYPE i,
           mo_html      TYPE REF TO cl_gui_html_viewer,
           mo_low_split TYPE REF TO cl_gui_splitter_container,
-          mo_tabs_alv  TYPE REF TO cl_gui_alv_grid,
           mo_flds_alv  TYPE REF TO cl_gui_alv_grid,
-          mo_sql_box   TYPE REF TO cl_gui_dialogbox_container,
-          mo_sql_text  TYPE REF TO cl_gui_textedit,
-          mo_sql_tbar  TYPE REF TO cl_gui_toolbar.
+          mo_sql_text  TYPE REF TO cl_gui_textedit.
 
     METHODS:
       find_candidates,
       get_fieldlist IMPORTING i_tabname       TYPE tabname
                     RETURNING VALUE(rt_dfies) TYPE ddfields,
       render_html,
+      show_html IMPORTING io_html TYPE REF TO cl_gui_html_viewer i_html TYPE string,
       add_candidate IMPORTING i_tabname TYPE tabname,
       toggle_candidate IMPORTING i_tabname TYPE tabname,
       rebuild_selection,
-      create_tabs_alv,
+      move_table IMPORTING i_alias TYPE char5 i_dir TYPE i,
+      apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
+      create_sql_view,
+      update_sql_view,
       create_flds_alv,
+      set_marked_rows IMPORTING i_sel TYPE abap_bool,
+      refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
-      show_sql_editor,
       run_select,
       execute_sql IMPORTING i_sql TYPE string,
       upper_outside_quotes IMPORTING i_sql         TYPE string
@@ -73,8 +75,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
         IMPORTING action getdata postdata,
       on_flds_toolbar FOR EVENT toolbar OF cl_gui_alv_grid IMPORTING e_object,
       on_flds_ucomm FOR EVENT user_command OF cl_gui_alv_grid IMPORTING e_ucomm,
-      on_sql_func FOR EVENT function_selected OF cl_gui_toolbar IMPORTING fcode,
-      on_sql_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
+      on_flds_dblclick FOR EVENT double_click OF cl_gui_alv_grid IMPORTING es_row_no.
 ENDCLASS.
 
 
@@ -98,7 +99,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
       EXCEPTIONS
         OTHERS  = 1.
     mo_splitter->set_row_mode( mode = mo_splitter->mode_relative ).
-    mo_splitter->set_row_height( id = 1 height = 40 ).
+    mo_splitter->set_row_height( id = 1 height = 45 ).
 
     mo_splitter->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_top) ).
     mo_splitter->get_container( EXPORTING row = 2 column = 1 RECEIVING container = DATA(lo_bottom) ).
@@ -127,9 +128,10 @@ CLASS zcl_sde_join IMPLEMENTATION.
 
     find_candidates( ).
     rebuild_selection( ).
-    render_html( ).
-    create_tabs_alv( ).
+    create_sql_view( ).
     create_flds_alv( ).
+    render_html( ).
+    update_sql_view( ).
   ENDMETHOD.
 
   METHOD get_fieldlist.
@@ -284,11 +286,15 @@ CLASS zcl_sde_join IMPLEMENTATION.
       <cand>-sel_order = m_sel_count.
     ENDIF.
     rebuild_selection( ).
+    refresh_all( ).
+  ENDMETHOD.
+
+  METHOD refresh_all.
     render_html( ).
-    IF mo_tabs_alv IS BOUND.
-      Zcl_SDE_common=>refresh( mo_tabs_alv ).
+    IF mo_flds_alv IS BOUND.
       Zcl_SDE_common=>refresh( mo_flds_alv ).
     ENDIF.
+    update_sql_view( ).
   ENDMETHOD.
 
   METHOD rebuild_selection.
@@ -327,11 +333,12 @@ CLASS zcl_sde_join IMPLEMENTATION.
         l_cond = |{ l_cond }{ l_alias CASE = LOWER }~{ ls_pair-cand_field } = t0~{ ls_pair-base_field }|.
       ENDLOOP.
       <jtab>-cond = l_cond.
-      "keep user's edits from previous rebuild
+      "keep user's edits from previous rebuild (only while the alias is unchanged,
+      "otherwise the edited condition would reference a wrong alias)
       READ TABLE lt_old_tabs INTO DATA(ls_old_tab) WITH KEY tabname = ls_cand-tabname.
       IF sy-subrc = 0.
         <jtab>-jtype = ls_old_tab-jtype.
-        IF ls_old_tab-cond IS NOT INITIAL.
+        IF ls_old_tab-cond IS NOT INITIAL AND ls_old_tab-alias = <jtab>-alias.
           <jtab>-cond = ls_old_tab-cond.
         ENDIF.
       ENDIF.
@@ -355,9 +362,6 @@ CLASS zcl_sde_join IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD render_html.
-    DATA: lt_html TYPE TABLE OF char255,
-          l_url   TYPE char255.
-
     CHECK mo_html IS BOUND.
 
     DATA(l_html) =
@@ -369,6 +373,12 @@ CLASS zcl_sde_join IMPLEMENTATION.
       `.sel{background:#d3f2d3;border:2px solid #2e8b2e;font-weight:bold;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `form{display:inline-block;margin:3px;}` &&
+      `table.j{border-collapse:collapse;margin-top:6px;background:#fff;border:1px solid #ddd;border-radius:4px;}` &&
+      `table.j td{padding:2px 5px;vertical-align:middle;white-space:nowrap;}` &&
+      `.alias{font-weight:bold;color:#2c5f8a;}` &&
+      `.btn{border:1px solid #bbb;background:#f2f2f2;border-radius:3px;cursor:pointer;font-size:10px;padding:0 4px;}` &&
+      `input.cond{width:380px;font-family:Consolas,monospace;font-size:11px;}` &&
+      `select{font-size:11px;}` &&
       `</style></head><body>` &&
       |<span class="base">{ m_tabname }</span> &#8646; |.
 
@@ -387,18 +397,46 @@ CLASS zcl_sde_join IMPLEMENTATION.
     l_html = l_html &&
       `<form method="post" action="SAPEVENT:addtab">` &&
       `<input type="text" name="newtab" size="16" maxlength="30">` &&
-      `<input type="submit" value="Add table"></form>` &&
-      `</body></html>`.
+      `<input type="submit" value="Add table"></form>`.
 
-    DATA(l_len) = strlen( l_html ).
+    "joined tables: order, join type, ON condition
+    IF lines( mt_jtabs ) > 1.
+      l_html = l_html && `<form method="post" action="SAPEVENT:tabs"><table class="j">`.
+      LOOP AT mt_jtabs INTO DATA(ls_tab) FROM 2.
+        DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
+        DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
+        l_html = l_html &&
+          |<tr><td><button class="btn" type="submit" name="act" value="up_{ ls_tab-alias }">&#9650;</button>| &&
+          |<button class="btn" type="submit" name="act" value="dn_{ ls_tab-alias }">&#9660;</button>| &&
+          |<button class="btn" type="submit" name="act" value="del_{ ls_tab-alias }">&#10005;</button></td>| &&
+          |<td class="alias">{ ls_tab-alias }</td>| &&
+          |<td><b>{ ls_tab-tabname }</b></td>| &&
+          |<td><select name="jt_{ ls_tab-alias }">| &&
+          |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
+          |<td><input class="cond" type="text" name="on_{ ls_tab-alias }" value="{
+             escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
+      ENDLOOP.
+      l_html = l_html &&
+        `</table><button class="btn" type="submit" name="act" value="apply">Apply</button></form>`.
+    ENDIF.
+
+    l_html = l_html && `</body></html>`.
+    show_html( io_html = mo_html i_html = l_html ).
+  ENDMETHOD.
+
+  METHOD show_html.
+    DATA: lt_html TYPE TABLE OF char255,
+          l_url   TYPE char255.
+
+    DATA(l_len) = strlen( i_html ).
     DATA(l_off) = 0.
     WHILE l_off < l_len.
       DATA(l_chunk) = nmin( val1 = 255 val2 = l_len - l_off ).
-      APPEND l_html+l_off(l_chunk) TO lt_html.
+      APPEND i_html+l_off(l_chunk) TO lt_html.
       l_off = l_off + l_chunk.
     ENDWHILE.
 
-    mo_html->load_data(
+    io_html->load_data(
       EXPORTING
         type         = 'text'
         subtype      = 'html'
@@ -409,8 +447,54 @@ CLASS zcl_sde_join IMPLEMENTATION.
       EXCEPTIONS
         OTHERS       = 1 ).
     IF sy-subrc = 0.
-      mo_html->show_url( url = l_url ).
+      io_html->show_url( url = l_url ).
     ENDIF.
+  ENDMETHOD.
+
+  METHOD move_table.
+    READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = i_alias.
+    CHECK sy-subrc = 0.
+    READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_tab-tabname.
+    CHECK sy-subrc = 0 AND <cand>-selected = abap_true.
+
+    "find the neighbour in selection order
+    DATA(l_best) = 0.
+    LOOP AT mt_cand ASSIGNING FIELD-SYMBOL(<other>) WHERE selected = abap_true AND tabname NE <cand>-tabname.
+      IF ( i_dir < 0 AND <other>-sel_order < <cand>-sel_order AND ( l_best = 0 OR <other>-sel_order > l_best ) )
+      OR ( i_dir > 0 AND <other>-sel_order > <cand>-sel_order AND ( l_best = 0 OR <other>-sel_order < l_best ) ).
+        l_best = <other>-sel_order.
+      ENDIF.
+    ENDLOOP.
+    CHECK l_best NE 0.
+    READ TABLE mt_cand ASSIGNING <other> WITH KEY sel_order = l_best selected = abap_true.
+    CHECK sy-subrc = 0.
+    DATA(l_tmp) = <cand>-sel_order.
+    <cand>-sel_order  = <other>-sel_order.
+    <other>-sel_order = l_tmp.
+  ENDMETHOD.
+
+  METHOD apply_postdata.
+    "form fields: act=..., jt_Tn=..., on_Tn=... (url-encoded)
+    DATA(l_post) = concat_lines_of( table = it_postdata ).
+    SPLIT l_post AT '&' INTO TABLE DATA(lt_pairs).
+    LOOP AT lt_pairs INTO DATA(l_pair).
+      SPLIT l_pair AT '=' INTO DATA(l_name) DATA(l_value).
+      REPLACE ALL OCCURRENCES OF '+' IN l_value WITH ` `.
+      l_value = cl_http_utility=>unescape_url( l_value ).
+      IF l_name = 'act'.
+        rv_act = l_value.
+      ELSEIF l_name CP 'jt_*'.
+        READ TABLE mt_jtabs ASSIGNING FIELD-SYMBOL(<jtab>) WITH KEY alias = l_name+3.
+        IF sy-subrc = 0.
+          <jtab>-jtype = l_value.
+        ENDIF.
+      ELSEIF l_name CP 'on_*'.
+        READ TABLE mt_jtabs ASSIGNING <jtab> WITH KEY alias = l_name+3.
+        IF sy-subrc = 0.
+          <jtab>-cond = l_value.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD on_sapevent.
@@ -420,38 +504,45 @@ CLASS zcl_sde_join IMPLEMENTATION.
       WHEN 'addtab'.
         DATA(l_post) = concat_lines_of( table = postdata ).
         SPLIT l_post AT '=' INTO DATA(l_dummy) DATA(l_newtab).
+        REPLACE ALL OCCURRENCES OF '+' IN l_newtab WITH ` `.
+        l_newtab = cl_http_utility=>unescape_url( l_newtab ).
         add_candidate( CONV #( l_newtab ) ).
+      WHEN 'tabs'.
+        DATA(l_act) = apply_postdata( postdata ). "stores jtype/cond edits into mt_jtabs
+        IF strlen( l_act ) > 3.
+          CASE l_act(3).
+            WHEN 'up_'.
+              move_table( i_alias = CONV #( l_act+3 ) i_dir = -1 ).
+              rebuild_selection( ).
+            WHEN 'dn_'.
+              move_table( i_alias = CONV #( l_act+3 ) i_dir = 1 ).
+              rebuild_selection( ).
+            WHEN 'del'. "del_Tn
+              READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_act+4.
+              IF sy-subrc = 0.
+                toggle_candidate( ls_tab-tabname ). "deselects + rebuilds + refreshes
+                RETURN.
+              ENDIF.
+          ENDCASE.
+        ENDIF.
+        refresh_all( ).
     ENDCASE.
   ENDMETHOD.
 
-  METHOD create_tabs_alv.
-    DATA: ls_layout TYPE lvc_s_layo.
-
-    mo_low_split->set_column_width( id = 1 width = 42 ).
+  METHOD create_sql_view.
+    mo_low_split->set_column_width( id = 1 width = 45 ).
     mo_low_split->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_cont) ).
-    mo_tabs_alv = NEW #( i_parent = lo_cont ).
 
-    DATA(lt_fcat) = VALUE lvc_t_fcat(
-      ( fieldname = 'ALIAS'   coltext = 'Alias'     outputlen = 5 )
-      ( fieldname = 'TABNAME' coltext = 'Table'     outputlen = 12 )
-      ( fieldname = 'DDTEXT'  coltext = 'Description' outputlen = 20 )
-      ( fieldname = 'JTYPE'   coltext = 'Join'      outputlen = 10 edit = 'X' drdn_hndl = 1 )
-      ( fieldname = 'COND'    coltext = 'ON condition' outputlen = 45 edit = 'X' ) ).
-
-    mo_tabs_alv->set_drop_down_table(
-      it_drop_down = VALUE lvc_t_drop( ( handle = 1 value = 'INNER' )
-                                       ( handle = 1 value = 'LEFT OUTER' ) ) ).
-
-    ls_layout-cwidth_opt = abap_true.
-    mo_tabs_alv->set_table_for_first_display(
+    CREATE OBJECT mo_sql_text
       EXPORTING
-        is_layout       = ls_layout
-      CHANGING
-        it_outtab       = mt_jtabs
-        it_fieldcatalog = lt_fcat
+        parent = lo_cont
       EXCEPTIONS
-        OTHERS          = 1 ).
-    mo_tabs_alv->set_ready_for_input( 1 ).
+        OTHERS = 1.
+  ENDMETHOD.
+
+  METHOD update_sql_view.
+    CHECK mo_sql_text IS BOUND.
+    mo_sql_text->set_textstream( generate_select( ) ).
   ENDMETHOD.
 
   METHOD create_flds_alv.
@@ -461,7 +552,7 @@ CLASS zcl_sde_join IMPLEMENTATION.
     mo_flds_alv = NEW #( i_parent = lo_cont ).
 
     DATA(lt_fcat) = VALUE lvc_t_fcat(
-      ( fieldname = 'SEL'       coltext = 'Sel'   outputlen = 3 edit = 'X' checkbox = 'X' )
+      ( fieldname = 'SEL'       coltext = 'Sel'   outputlen = 3 checkbox = 'X' )
       ( fieldname = 'ALIAS'     coltext = 'Alias' outputlen = 5 )
       ( fieldname = 'TABNAME'   coltext = 'Table' outputlen = 12 )
       ( fieldname = 'FIELDNAME' coltext = 'Field' outputlen = 15 )
@@ -469,8 +560,10 @@ CLASS zcl_sde_join IMPLEMENTATION.
       ( fieldname = 'DDTEXT'    coltext = 'Description' outputlen = 30 ) ).
 
     ls_layout-cwidth_opt = abap_true.
-    SET HANDLER on_flds_toolbar FOR mo_flds_alv.
-    SET HANDLER on_flds_ucomm   FOR mo_flds_alv.
+    ls_layout-sel_mode   = 'A'. "multi-row selection with Ctrl/Shift
+    SET HANDLER on_flds_toolbar  FOR mo_flds_alv.
+    SET HANDLER on_flds_ucomm    FOR mo_flds_alv.
+    SET HANDLER on_flds_dblclick FOR mo_flds_alv.
 
     mo_flds_alv->set_table_for_first_display(
       EXPORTING
@@ -480,24 +573,37 @@ CLASS zcl_sde_join IMPLEMENTATION.
         it_fieldcatalog = lt_fcat
       EXCEPTIONS
         OTHERS          = 1 ).
-    mo_flds_alv->set_ready_for_input( 1 ).
     mo_flds_alv->set_toolbar_interactive( ).
   ENDMETHOD.
 
   METHOD on_flds_toolbar.
     e_object->mt_toolbar = VALUE ttb_button(
-      ( function = 'SEL_ALL'  icon = icon_select_all   quickinfo = 'Select all fields' )
-      ( function = 'DESEL'    icon = icon_deselect_all quickinfo = 'Deselect all fields' )
-      ( function = 'KEYS'     icon = icon_foreign_key  quickinfo = 'Select key fields only' )
+      ( function = 'MARK'    icon = icon_okay   quickinfo = 'Mark selected rows (Ctrl/Shift+click rows first)' text = 'Mark' )
+      ( function = 'UNMARK'  icon = icon_cancel quickinfo = 'Unmark selected rows' text = 'Unmark' )
       ( butn_type = 3 )
-      ( function = 'RUN'      icon = icon_execute_object quickinfo = 'Run join now' text = 'Run' )
-      ( function = 'GENERATE' icon = icon_generate     quickinfo = 'Show and edit SELECT' text = 'SQL' ) ).
+      ( function = 'SEL_ALL' icon = icon_select_all   quickinfo = 'Select all fields' )
+      ( function = 'DESEL'   icon = icon_deselect_all quickinfo = 'Deselect all fields' )
+      ( function = 'KEYS'    icon = icon_foreign_key  quickinfo = 'Select key fields only' )
+      ( butn_type = 3 )
+      ( function = 'RUN'     icon = icon_execute_object quickinfo = 'Run the SELECT shown on the left' text = 'Run' ) ).
+  ENDMETHOD.
+
+  METHOD set_marked_rows.
+    mo_flds_alv->get_selected_rows( IMPORTING et_index_rows = DATA(lt_rows) ).
+    LOOP AT lt_rows INTO DATA(ls_row).
+      READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) INDEX ls_row-index.
+      IF sy-subrc = 0.
+        <fld>-sel = i_sel.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD on_flds_ucomm.
-    mo_flds_alv->check_changed_data( ).
-    mo_tabs_alv->check_changed_data( ).
     CASE e_ucomm.
+      WHEN 'MARK'.
+        set_marked_rows( abap_true ).
+      WHEN 'UNMARK'.
+        set_marked_rows( abap_false ).
       WHEN 'SEL_ALL'.
         LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
           <fld>-sel = abap_true.
@@ -510,14 +616,22 @@ CLASS zcl_sde_join IMPLEMENTATION.
         LOOP AT mt_jflds ASSIGNING <fld>.
           <fld>-sel = <fld>-keyflag.
         ENDLOOP.
-      WHEN 'RUN'. "run immediately, no SQL editor
-        execute_sql( generate_select( ) ).
+      WHEN 'RUN'. "run whatever is in the SQL view (incl. manual edits)
+        run_select( ).
         RETURN.
-      WHEN 'GENERATE'.
-        show_sql_editor( ).
+      WHEN OTHERS.
         RETURN.
     ENDCASE.
     Zcl_SDE_common=>refresh( mo_flds_alv ).
+    update_sql_view( ).
+  ENDMETHOD.
+
+  METHOD on_flds_dblclick. "double click toggles a single field
+    READ TABLE mt_jflds ASSIGNING FIELD-SYMBOL(<fld>) INDEX es_row_no-row_id.
+    CHECK sy-subrc = 0.
+    <fld>-sel = boolc( <fld>-sel = abap_false ).
+    Zcl_SDE_common=>refresh( mo_flds_alv ).
+    update_sql_view( ).
   ENDMETHOD.
 
   METHOD generate_select.
@@ -556,59 +670,6 @@ CLASS zcl_sde_join IMPLEMENTATION.
 
     DATA(l_rows) = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
     rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } UP TO { l_rows } ROWS|.
-  ENDMETHOD.
-
-  METHOD show_sql_editor.
-    IF mo_sql_box IS BOUND.
-      mo_sql_text->set_textstream( generate_select( ) ).
-      mo_sql_box->set_visible( abap_true ).
-      RETURN.
-    ENDIF.
-
-    mo_sql_box = create( i_width = 700 i_hight = 300 ).
-    mo_sql_box->set_caption( |SELECT: { m_tabname } - edit and run| ).
-    SET HANDLER on_sql_close FOR mo_sql_box.
-
-    DATA(lo_split) = NEW cl_gui_splitter_container(
-        parent  = mo_sql_box
-        rows    = 2
-        columns = 1 ).
-    lo_split->set_row_mode( mode = lo_split->mode_absolute ).
-    lo_split->set_row_height( id = 1 height = 26 ).
-    lo_split->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_tbar_cont) ).
-    lo_split->get_container( EXPORTING row = 2 column = 1 RECEIVING container = DATA(lo_text_cont) ).
-
-    CREATE OBJECT mo_sql_tbar
-      EXPORTING
-        parent  = lo_tbar_cont
-      EXCEPTIONS
-        OTHERS  = 1.
-    mo_sql_tbar->add_button( fcode = 'RUN' icon = icon_execute_object butn_type = 0 text = 'Run' quickinfo = 'Execute SELECT' ).
-    mo_sql_tbar->add_button( fcode = 'REGEN' icon = icon_refresh butn_type = 0 text = 'Regenerate' quickinfo = 'Regenerate from grids' ).
-    mo_sql_tbar->set_registered_events( VALUE #( ( eventid = cl_gui_toolbar=>m_id_function_selected ) ) ).
-    SET HANDLER on_sql_func FOR mo_sql_tbar.
-
-    CREATE OBJECT mo_sql_text
-      EXPORTING
-        parent = lo_text_cont
-      EXCEPTIONS
-        OTHERS = 1.
-    mo_sql_text->set_textstream( generate_select( ) ).
-  ENDMETHOD.
-
-  METHOD on_sql_close.
-    sender->set_visible( abap_false ).
-  ENDMETHOD.
-
-  METHOD on_sql_func.
-    CASE fcode.
-      WHEN 'RUN'.
-        run_select( ).
-      WHEN 'REGEN'.
-        mo_flds_alv->check_changed_data( ).
-        mo_tabs_alv->check_changed_data( ).
-        mo_sql_text->set_textstream( generate_select( ) ).
-    ENDCASE.
   ENDMETHOD.
 
   METHOD run_select.
