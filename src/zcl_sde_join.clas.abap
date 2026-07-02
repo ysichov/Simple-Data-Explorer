@@ -492,7 +492,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
       `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
-      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
+      `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
+      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
       `</script>` &&
       `</head><body>` &&
@@ -586,7 +587,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `function ov(e,el){if(e.preventDefault)e.preventDefault();` &&
       `if(el&&el!==lt){uh();lt=el;el.style.boxShadow='-4px 0 0 0 #d2691e';}return false;}` &&
       `function dp(e,k,p){if(e.preventDefault)e.preventDefault();uh();` &&
-      `if(dk&&dk!=k){window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
+      `if(dk&&dk!=k){k=String(k).replace('#','%23');` &&
+      `window.location.href='SAPEVENT:'+p+'?'+dk+'__'+k;}dk=null;return false;}` &&
       `document.ondragend=function(){uh();};` &&
       "lasso selection: hold the left mouse button and sweep over the chips
       `var pt=false,pks={},pn=0,painted=false;` &&
@@ -653,8 +655,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_html = l_html &&
         |<span class="{ l_cls }" draggable="true" ondragstart="ds(event,'{ l_fkey }')"| &&
         | ondragover="return ov(event,this)" ondrop="return dp(event,'{ l_fkey }','fmv')"| &&
-        | onmousedown="return pd(event,this,'{ l_fkey }')"| &&
-        | onmouseover="pv(event,this,'{ l_fkey }')"| &&
         | title="{ l_fkey } { escape( val = ls_sel-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label } <a class="rm" href="SAPEVENT:fld?tg_{ l_fkey }">&#10005;</a></span>|.
     ENDLOOP.
@@ -1014,6 +1014,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDIF.
       WHEN 'fmv'. "drag&drop of fields: ALIAS~FIELD__ALIAS~FIELD
         SPLIT getdata AT '__' INTO l_from l_to.
+        l_from = cl_http_utility=>unescape_url( l_from ).
+        l_to = cl_http_utility=>unescape_url( l_to ).
         IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
           move_field_before( i_from = l_from i_to = l_to ).
           render_flds( ).
@@ -1021,6 +1023,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDIF.
       WHEN 'fgmv'. "drag&drop of all selected fields from one alias before another alias
         SPLIT getdata AT '__' INTO l_from l_to.
+        l_from = cl_http_utility=>unescape_url( l_from ).
+        l_to = cl_http_utility=>unescape_url( l_to ).
         IF l_from IS NOT INITIAL AND l_to IS NOT INITIAL.
           move_alias_fields_before( i_from = l_from i_to = l_to ).
           render_flds( ).
