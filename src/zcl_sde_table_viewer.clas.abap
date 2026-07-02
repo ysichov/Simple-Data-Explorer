@@ -420,6 +420,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
      ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
      ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
      ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
+     ( function = 'JOIN'     icon = icon_insert_relation quickinfo = 'Join builder' butn_type = 0 )
      ( function = 'TBAR' icon = COND #( WHEN m_std_tbar IS INITIAL THEN icon_column_right ELSE icon_column_left )
         quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
      ( butn_type = 3 ) ).
@@ -663,6 +664,13 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       ENDIF.
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
+    ELSEIF e_ucomm = 'JOIN'.
+      IF m_tabname IS INITIAL OR ( zcl_sde_sql=>exist_table( m_tabname ) NE 1 AND zcl_sde_sql=>exist_view( m_tabname ) NE 1 ).
+        MESSAGE 'Join builder needs a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
+      ELSE.
+        DATA(lo_join) = NEW zcl_sde_join( me ). "kept alive by its GUI event registrations
+      ENDIF.
+      RETURN.
     ELSEIF e_ucomm = 'TABLES'.
       DATA(lt_obj) = VALUE sdg1_obj( (  obj_name = m_tabname type = 'TABL' )  ).
       CALL FUNCTION 'REPOSITORY_STRUCTURE_GRAPH'
