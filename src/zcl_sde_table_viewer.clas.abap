@@ -590,6 +590,12 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         OTHERS          = 1 ).
     set_header( ).
     Zcl_SDE_common=>refresh( mo_alv ).
+
+    "the select-options panel must follow the new field list
+    IF mo_sel IS BOUND.
+      mo_sel->update_sel_tab( ).
+      Zcl_SDE_common=>refresh( mo_sel->mo_sel_alv ).
+    ENDIF.
   ENDMETHOD.
 
   METHOD create_generic_field_cat.

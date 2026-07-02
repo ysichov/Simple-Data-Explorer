@@ -10,6 +10,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
              tabname   TYPE tabname,
              ddtext    TYPE as4text,
              direction TYPE char1, "O-outgoing FK, I-incoming FK, T-text table, M-manual
+             parent    TYPE tabname, "table whose FKs discovered this one; pairs link to it
              pairs     TYPE tt_pairs,
              selected  TYPE abap_bool,
              sel_order TYPE i,
@@ -58,6 +59,7 @@ protected section.
 
     METHODS:
       find_candidates,
+      discover_for IMPORTING i_tabname TYPE tabname,
       get_fieldlist IMPORTING i_tabname       TYPE tabname
                     RETURNING VALUE(rt_dfies) TYPE ddfields,
       render_html,
@@ -187,31 +189,40 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
 
   METHOD find_candidates.
+    discover_for( m_tabname ).
+  ENDMETHOD.
+
+
+  METHOD discover_for.
+    "adds the FK neighbours of i_tabname to the canvas; their ON conditions
+    "will reference i_tabname (the parent), so the graph can be walked deeper
     DATA: lt_dd08l TYPE TABLE OF dd08l,
           lt_keys  TYPE TABLE OF dd05p. "resolved field pairs incl. checkfield
 
-    "Outgoing: foreign keys defined on the base table -> check tables
+    "Outgoing: foreign keys defined on the parent -> check tables
     SELECT * FROM dd08l INTO TABLE lt_dd08l
-      WHERE tabname = m_tabname
+      WHERE tabname = i_tabname
         AND as4local = 'A'.                             "#EC CI_GENBUFF
     LOOP AT lt_dd08l INTO DATA(ls_fk) WHERE checktable IS NOT INITIAL
+                                        AND checktable NE i_tabname
                                         AND checktable NE m_tabname
                                         AND checktable NE '*'.
+      IF line_exists( mt_cand[ tabname = ls_fk-checktable ] ).
+        CONTINUE. "already on the canvas (keep the first parent)
+      ENDIF.
       CLEAR lt_keys.
       CALL FUNCTION 'DD_FORKEY_GET'
         EXPORTING
           feldname  = ls_fk-fieldname
-          tabname   = m_tabname
+          tabname   = i_tabname
         TABLES
           forkeytab = lt_keys
         EXCEPTIONS
           OTHERS    = 4.
       CHECK sy-subrc < 2.
-      READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = ls_fk-checktable.
-      IF sy-subrc NE 0.
-        APPEND VALUE #( tabname = ls_fk-checktable direction = 'O' ) TO mt_cand ASSIGNING <cand>.
-      ENDIF.
-      LOOP AT lt_keys INTO DATA(ls_key) WHERE fortable = m_tabname
+      APPEND VALUE #( tabname = ls_fk-checktable direction = 'O' parent = i_tabname )
+        TO mt_cand ASSIGNING FIELD-SYMBOL(<cand>).
+      LOOP AT lt_keys INTO DATA(ls_key) WHERE fortable = i_tabname
                                           AND checkfield NE 'MANDT'
                                           AND checkfield IS NOT INITIAL.
         IF NOT line_exists( <cand>-pairs[ cand_field = ls_key-checkfield ] ).
@@ -220,14 +231,18 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDLOOP.
     ENDLOOP.
 
-    "Incoming: tables having the base table as check table
+    "Incoming: tables having the parent as check table
     CLEAR lt_dd08l.
     SELECT * FROM dd08l INTO TABLE lt_dd08l UP TO 100 ROWS
-      WHERE checktable = m_tabname
+      WHERE checktable = i_tabname
         AND as4local = 'A'.                             "#EC CI_GENBUFF
-    LOOP AT lt_dd08l INTO ls_fk WHERE tabname NE m_tabname.
-      IF NOT line_exists( mt_cand[ tabname = ls_fk-tabname ] ) AND lines( mt_cand ) >= 30.
-        CONTINUE. "keep the canvas readable
+    LOOP AT lt_dd08l INTO ls_fk WHERE tabname NE i_tabname
+                                  AND tabname NE m_tabname.
+      IF line_exists( mt_cand[ tabname = ls_fk-tabname ] ).
+        CONTINUE.
+      ENDIF.
+      IF lines( mt_cand ) >= 60. "keep the canvas readable
+        CONTINUE.
       ENDIF.
       CLEAR lt_keys.
       CALL FUNCTION 'DD_FORKEY_GET'
@@ -239,10 +254,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         EXCEPTIONS
           OTHERS    = 4.
       CHECK sy-subrc < 2.
-      READ TABLE mt_cand ASSIGNING <cand> WITH KEY tabname = ls_fk-tabname.
-      IF sy-subrc NE 0.
-        APPEND VALUE #( tabname = ls_fk-tabname direction = 'I' ) TO mt_cand ASSIGNING <cand>.
-      ENDIF.
+      APPEND VALUE #( tabname = ls_fk-tabname direction = 'I' parent = i_tabname )
+        TO mt_cand ASSIGNING <cand>.
       LOOP AT lt_keys INTO ls_key WHERE fortable = ls_fk-tabname
                                     AND checkfield NE 'MANDT'
                                     AND checkfield IS NOT INITIAL.
@@ -251,6 +264,19 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ENDIF.
       ENDLOOP.
     ENDLOOP.
+
+    "Text table of the parent
+    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = i_tabname IMPORTING e_tab = DATA(l_texttab) ).
+    IF l_texttab IS NOT INITIAL AND l_texttab NE m_tabname
+       AND NOT line_exists( mt_cand[ tabname = l_texttab ] ).
+      APPEND VALUE #( tabname = l_texttab direction = 'T' parent = i_tabname ) TO mt_cand ASSIGNING <cand>.
+      DATA(lt_parent_keys) = get_fieldlist( i_tabname ).
+      LOOP AT get_fieldlist( l_texttab ) INTO DATA(ls_tf) WHERE keyflag = abap_true.
+        IF line_exists( lt_parent_keys[ fieldname = ls_tf-fieldname keyflag = abap_true ] ).
+          APPEND VALUE #( cand_field = ls_tf-fieldname base_field = ls_tf-fieldname ) TO <cand>-pairs.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
 
     "Keep only real database tables (drop structures and generated maintenance views)
     IF mt_cand IS NOT INITIAL.
@@ -266,18 +292,6 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
-    "Text table
-    zcl_sde_ddic=>get_text_table( EXPORTING i_tname = m_tabname IMPORTING e_tab = DATA(l_texttab) ).
-    IF l_texttab IS NOT INITIAL AND NOT line_exists( mt_cand[ tabname = l_texttab ] ).
-      APPEND VALUE #( tabname = l_texttab direction = 'T' ) TO mt_cand ASSIGNING <cand>.
-      DATA(lt_base_keys) = get_fieldlist( m_tabname ).
-      LOOP AT get_fieldlist( l_texttab ) INTO DATA(ls_tf) WHERE keyflag = abap_true.
-        IF line_exists( lt_base_keys[ fieldname = ls_tf-fieldname keyflag = abap_true ] ).
-          APPEND VALUE #( cand_field = ls_tf-fieldname base_field = ls_tf-fieldname ) TO <cand>-pairs.
-        ENDIF.
-      ENDLOOP.
-    ENDIF.
-
     "Descriptions
     IF mt_cand IS NOT INITIAL.
       SELECT tabname, ddtext FROM dd02t
@@ -285,7 +299,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         FOR ALL ENTRIES IN @mt_cand
         WHERE tabname = @mt_cand-tabname
           AND ddlanguage = @sy-langu.
-      LOOP AT mt_cand ASSIGNING <cand>.
+      LOOP AT mt_cand ASSIGNING <cand> WHERE ddtext IS INITIAL.
         READ TABLE lt_texts INTO DATA(ls_text) WITH KEY tabname = <cand>-tabname.
         IF sy-subrc = 0.
           <cand>-ddtext = ls_text-ddtext.
@@ -308,7 +322,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
     READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = l_tabname.
     IF sy-subrc NE 0.
-      APPEND VALUE #( tabname = l_tabname direction = 'M' ) TO mt_cand ASSIGNING <cand>.
+      APPEND VALUE #( tabname = l_tabname direction = 'M' parent = m_tabname ) TO mt_cand ASSIGNING <cand>.
       SELECT SINGLE ddtext FROM dd02t INTO <cand>-ddtext
         WHERE tabname = l_tabname AND ddlanguage = sy-langu.
       "propose ON condition by matching key field names
@@ -335,6 +349,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       <cand>-selected = abap_true.
       ADD 1 TO m_sel_count.
       <cand>-sel_order = m_sel_count.
+      discover_for( i_tabname ). "expand the canvas with the neighbours of this table
     ENDIF.
     rebuild_selection( ).
     refresh_all( ).
@@ -375,13 +390,22 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       <jtab>-tabname = ls_cand-tabname.
       <jtab>-ddtext  = ls_cand-ddtext.
       <jtab>-jtype   = 'LEFT OUTER'.
+      "the ON condition links to the parent's alias (t0 for the base, tN for a chained table);
+      "parents are always selected before their children, so their alias is already assigned
+      DATA(l_parent_alias) = `t0`.
+      IF ls_cand-parent IS NOT INITIAL AND ls_cand-parent NE m_tabname.
+        READ TABLE mt_jtabs INTO DATA(ls_parent_tab) WITH KEY tabname = ls_cand-parent.
+        IF sy-subrc = 0.
+          l_parent_alias = to_lower( condense( CONV string( ls_parent_tab-alias ) ) ).
+        ENDIF.
+      ENDIF.
       DATA l_cond TYPE string. "build in a string: char field would eat trailing blanks after AND
       CLEAR l_cond.
       LOOP AT ls_cand-pairs INTO DATA(ls_pair).
         IF l_cond IS NOT INITIAL.
           l_cond = |{ l_cond } AND |.
         ENDIF.
-        l_cond = |{ l_cond }{ l_alias CASE = LOWER }~{ ls_pair-cand_field } = t0~{ ls_pair-base_field }|.
+        l_cond = |{ l_cond }{ l_alias CASE = LOWER }~{ ls_pair-cand_field } = { l_parent_alias }~{ ls_pair-base_field }|.
       ENDLOOP.
       <jtab>-cond = l_cond.
       "keep user's edits from previous rebuild (only while the alias is unchanged,
@@ -538,9 +562,11 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
                       WHEN 'I' THEN '&#8592;'   "incoming
                       WHEN 'T' THEN 'TXT'
                       ELSE '+' ).
+      DATA(l_via) = COND string( WHEN ls_cand-parent IS NOT INITIAL AND ls_cand-parent NE m_tabname
+                                 THEN | via { ls_cand-parent }| ).
       l_html = l_html &&
         |<a class="{ l_class }" href="SAPEVENT:toggle?{ ls_cand-tabname }">| &&
-        |{ ls_cand-tabname } <span class="dir">{ l_dir } { escape( val = ls_cand-ddtext format = cl_abap_format=>e_html_text ) }</span></a>|.
+        |{ ls_cand-tabname } <span class="dir">{ l_dir } { escape( val = ls_cand-ddtext format = cl_abap_format=>e_html_text ) }{ l_via }</span></a>|.
     ENDLOOP.
 
     l_html = l_html &&
@@ -1221,7 +1247,14 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     "inherit WHERE from the window selections (visible in the SQL text)
     DATA(l_where) = mo_viewer->get_where( ).
     IF l_where IS NOT INITIAL.
-      IF l_multi = abap_true. "qualify base fields with t0~
+      IF l_multi = abap_true.
+        "after a rebind the sel-options fields are named T0_FIELD/T1_FIELD -> tn~field
+        LOOP AT mt_jflds INTO DATA(ls_jf).
+          DATA(l_qual) = |{ condense( CONV string( ls_jf-alias ) ) }_{ ls_jf-fieldname }|.
+          REPLACE ALL OCCURRENCES OF REGEX |\\b{ l_qual }\\b| IN l_where
+            WITH |{ ls_jf-alias CASE = LOWER }~{ ls_jf-fieldname CASE = LOWER }|.
+        ENDLOOP.
+        "plain base field names (filters set before the first join) -> t0~field
         LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
           REPLACE ALL OCCURRENCES OF REGEX |\\b{ ls_f-fieldname }\\b| IN l_where WITH |t0~{ ls_f-fieldname }|.
         ENDLOOP.
