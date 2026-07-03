@@ -7,6 +7,12 @@ Tools button enables Joins and Pivot tables building along with SQL text.
 
 <img width="1800" height="736" alt="image" src="https://github.com/user-attachments/assets/fa269282-022a-4f01-b3cf-d7cb1088ba19" />
 
+**Join example**
+<img width="1624" height="875" alt="image" src="https://github.com/user-attachments/assets/2434f1d5-11f1-4bd3-915a-69a7f1eb614c" />
+
+
+**Pivot table example**
+<img width="1382" height="563" alt="image" src="https://github.com/user-attachments/assets/22b7fd73-2284-49e5-8a78-be66e8e9732f" />
 
 
 **Old functions:**
