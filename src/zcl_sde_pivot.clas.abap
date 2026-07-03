@@ -63,7 +63,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD has_columns.
-    rv_has = boolc( mt_cols IS NOT INITIAL AND mt_vals IS NOT INITIAL ).
+    rv_has = boolc( mt_cols IS NOT INITIAL ).
   ENDMETHOD.
 
   METHOD get_col_key.
@@ -228,7 +228,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
     "zones: drop targets; when a field is picked the add-buttons appear inside as well
     DATA(l_pick_low) = to_lower( m_pick ).
-    rv_html = rv_html && `<h4>Rows (group by)</h4><div class="zone" onmouseover="zo(event,this,'dr')">`.
+    rv_html = rv_html && `<h4>Dimensions (plain columns)</h4><div class="zone" onmouseover="zo(event,this,'dr')">`.
     LOOP AT mt_rows INTO DATA(l_row).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rr_{ l_row }" title="remove">{ to_lower( l_row ) } &#10005;</a>|.
@@ -237,10 +237,10 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rv_html = rv_html &&
         |<a class="zchip add" href="SAPEVENT:pv?tr">+ { l_pick_low }</a>|.
     ELSEIF mt_rows IS INITIAL.
-      rv_html = rv_html && `<span class="dir">group-by fields go here</span>`.
+      rv_html = rv_html && `<span class="dir">fields kept as regular result columns go here</span>`.
     ENDIF.
 
-    rv_html = rv_html && `</div><h4>Columns (spread by values)</h4><div class="zone" onmouseover="zo(event,this,'dc')">`.
+    rv_html = rv_html && `</div><h4>Spread (values to columns)</h4><div class="zone" onmouseover="zo(event,this,'dc')">`.
     LOOP AT mt_cols INTO DATA(l_col).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rc_{ l_col }" title="remove">{ to_lower( l_col ) } &#10005;</a>|.
@@ -249,10 +249,10 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rv_html = rv_html &&
         |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }</a>|.
     ELSEIF mt_cols IS INITIAL.
-      rv_html = rv_html && `<span class="dir">fields; their value combinations become CASE columns (max 50)</span>`.
+      rv_html = rv_html && `<span class="dir">field values become separate result columns (max 50)</span>`.
     ENDIF.
 
-    rv_html = rv_html && `</div><h4>Values (aggregates at the intersections)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
+    rv_html = rv_html && `</div><h4>Measures (aggregates)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
     LOOP AT mt_vals INTO DATA(ls_val).
       DATA(l_vidx) = sy-tabix.
       rv_html = rv_html && |<span class="zchip">| &&
@@ -275,7 +275,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         |<a class="zchip add" href="SAPEVENT:pv?ag_MAX">+ MAX( { l_pick_low } )</a>| &&
         |<a class="zchip add" href="SAPEVENT:pv?ag_AVG">+ AVG( { l_pick_low } )</a>|.
     ELSEIF mt_vals IS INITIAL.
-      rv_html = rv_html && `<span class="dir">aggregated fields go here</span>`.
+      rv_html = rv_html && `<span class="dir">numeric fields for SUM/COUNT/MIN/MAX/AVG go here</span>`.
     ENDIF.
     rv_html = rv_html && `</div><h4>Available fields</h4>`.
 
@@ -301,7 +301,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   METHOD build_select.
     DATA: l_fields TYPE string,
           l_group  TYPE string,
-          lt_names TYPE tt_keys.
+          lt_names TYPE tt_keys,
+          lt_vals  TYPE tt_vals.
     DATA(l_nl) = cl_abap_char_utilities=>newline.
 
     CHECK has_layout( ) = abap_true.
@@ -318,9 +319,13 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDLOOP.
 
     IF has_columns( ) = abap_true AND it_col_vals IS NOT INITIAL.
+      lt_vals = mt_vals.
+      IF lt_vals IS INITIAL.
+        APPEND VALUE #( key = mt_cols[ 1 ] agg = 'COUNT' ) TO lt_vals.
+      ENDIF.
       "matrix: one CASE bucket per column value and aggregate
       LOOP AT it_col_vals INTO DATA(ls_cv).
-        LOOP AT mt_vals INTO DATA(ls_val).
+        LOOP AT lt_vals INTO DATA(ls_val).
           DATA(l_fq) = qualify( i_key = ls_val-key i_multi = i_multi ).
           DATA(l_cond) = COND string( WHEN ls_cv-cond IS NOT INITIAL
                                       THEN ls_cv-cond

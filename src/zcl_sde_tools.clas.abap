@@ -1592,7 +1592,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           l_text = |{ l_text }/|.
           l_cond = |{ l_cond } AND |.
         ENDIF.
-        l_text = |{ l_text }{ l_txt }|.
+        l_text = |{ l_text }{ COND string( WHEN l_txt IS INITIAL THEN '(empty)' ELSE l_txt ) }|.
         l_cond = |{ l_cond }{ ls_meta-sql } = { l_lit }|.
       ENDLOOP.
 

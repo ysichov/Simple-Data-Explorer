@@ -232,6 +232,12 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         OTHERS  = 1.
     mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_relative ).
     mo_outer_splitter->set_row_height( id = 1 height = 100 ).
+    mo_outer_splitter->set_row_sash( id    = 1
+                                     type  = cl_gui_splitter_container=>type_sashvisible
+                                     value = cl_gui_splitter_container=>false ).
+    mo_outer_splitter->set_row_sash( id    = 1
+                                     type  = cl_gui_splitter_container=>type_movable
+                                     value = cl_gui_splitter_container=>false ).
     mo_outer_splitter->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_main) ).
     mo_outer_splitter->get_container( EXPORTING row = 2 column = 1 RECEIVING container = mo_tools_parent ).
 
@@ -776,12 +782,28 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       ELSEIF mo_tools IS NOT BOUND.
         mo_box->set_height( height = 600 ). "make room
         mo_outer_splitter->set_row_height( id = 1 height = 45 ).
+        mo_outer_splitter->set_row_sash( id    = 1
+                                         type  = cl_gui_splitter_container=>type_sashvisible
+                                         value = cl_gui_splitter_container=>true ).
+        mo_outer_splitter->set_row_sash( id    = 1
+                                         type  = cl_gui_splitter_container=>type_movable
+                                         value = cl_gui_splitter_container=>true ).
         mo_tools = NEW zcl_sde_tools( io_viewer = me io_parent = mo_tools_parent ).
         m_tools_visible = abap_true.
       ELSE. "toggle
         m_tools_visible = boolc( m_tools_visible = abap_false ).
         mo_outer_splitter->set_row_height( id = 1
           height = COND #( WHEN m_tools_visible = abap_true THEN 45 ELSE 100 ) ).
+        mo_outer_splitter->set_row_sash( id    = 1
+                                         type  = cl_gui_splitter_container=>type_sashvisible
+                                         value = COND #( WHEN m_tools_visible = abap_true
+                                                          THEN cl_gui_splitter_container=>true
+                                                          ELSE cl_gui_splitter_container=>false ) ).
+        mo_outer_splitter->set_row_sash( id    = 1
+                                         type  = cl_gui_splitter_container=>type_movable
+                                         value = COND #( WHEN m_tools_visible = abap_true
+                                                          THEN cl_gui_splitter_container=>true
+                                                          ELSE cl_gui_splitter_container=>false ) ).
       ENDIF.
       RETURN.
     ELSEIF e_ucomm = 'TABLES'.
