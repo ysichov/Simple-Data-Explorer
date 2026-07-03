@@ -367,7 +367,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
 
   METHOD set_header.
     DATA: lv_text       TYPE as4text,
-          lv_header     TYPE string.
+          lv_header     TYPE text100.
 
     IF zcl_sde_appl=>gv_vname IS INITIAL.
       SELECT SINGLE ddtext INTO lv_text
