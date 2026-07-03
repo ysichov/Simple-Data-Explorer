@@ -344,9 +344,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         ENDLOOP.
       ENDLOOP.
     ELSE.
-      "no columns: plain aggregates; a column field without values acts as one more dimension
+      "no buckets: plain aggregates; column fields act as dimensions instead of disappearing
       LOOP AT mt_cols INTO DATA(l_col_dim).
-        CHECK mt_vals IS INITIAL.
         DATA(l_cdim) = qualify( i_key = l_col_dim i_multi = i_multi ).
         IF l_fields IS NOT INITIAL.
           l_fields = |{ l_fields },{ l_nl }       |.

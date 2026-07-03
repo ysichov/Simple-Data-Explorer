@@ -1528,7 +1528,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           RETURN.
       ENDTRY.
 
-      APPEND |{ l_col } AS { l_comp }| TO lt_cols.
+      APPEND l_col TO lt_cols.
       APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
       APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field ) TO lt_meta.
     ENDLOOP.
