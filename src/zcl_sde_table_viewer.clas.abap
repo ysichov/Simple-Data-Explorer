@@ -34,9 +34,10 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
                             i_is_view         TYPE boolean OPTIONAL
                             i_is_cds          TYPE boolean OPTIONAL,
       get_where RETURNING VALUE(c_where) TYPE string,
-      rebind IMPORTING ir_tab    TYPE REF TO data
-                       i_name    TYPE string
-                       i_generic TYPE abap_bool DEFAULT abap_false, "replace displayed data (new structure allowed)
+      rebind IMPORTING ir_tab     TYPE REF TO data
+                       i_name     TYPE string
+                       i_generic  TYPE abap_bool DEFAULT abap_false "replace displayed data (new structure allowed)
+                       it_catalog TYPE lvc_t_fcat OPTIONAL,         "ready-made catalog (pivot headers)
       refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
   PRIVATE SECTION.
@@ -569,7 +570,10 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     m_additional_name = i_name.
     ASSIGN mr_table->* TO <f_tab>.
     m_count = lines( <f_tab> ).
-    IF i_generic = abap_true.
+    IF it_catalog IS NOT INITIAL. "caller provides the headers (pivot columns)
+      mt_alv_catalog = it_catalog.
+      m_join_active = abap_true.
+    ELSEIF i_generic = abap_true.
       mt_alv_catalog = create_generic_field_cat( ).
       m_join_active = abap_true.
     ELSE.

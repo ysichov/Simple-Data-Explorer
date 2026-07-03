@@ -5,29 +5,39 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
              agg TYPE string, "SUM/COUNT/MIN/MAX/AVG
            END OF t_val,
            tt_vals TYPE STANDARD TABLE OF t_val WITH DEFAULT KEY,
-           tt_keys TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+           tt_keys TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+
+           BEGIN OF t_colval,
+             text    TYPE string, "display value
+             literal TYPE string, "SQL literal ('USD' or 42)
+           END OF t_colval,
+           tt_colvals TYPE STANDARD TABLE OF t_colval WITH DEFAULT KEY.
 
     METHODS:
       has_layout RETURNING VALUE(rv_has) TYPE abap_bool,
+      has_columns RETURNING VALUE(rv_has) TYPE abap_bool,
+      get_col_key RETURNING VALUE(rv_key) TYPE string,
 
       "HTML for the fields panel: zones + available field chips (SAPEVENT:pv?...)
       render_panel IMPORTING it_fields      TYPE zcl_sde_tools=>tt_jfld
                              i_show_texts   TYPE abap_bool DEFAULT abap_false
                    RETURNING VALUE(rv_html) TYPE string,
 
-      "pv actions: pk_<key> pick, tr add to rows, ag_<AGG> add to values,
-      "rr_<key> remove row, rv_<idx> remove value, CLR clear all
+      "pv actions: pk_<key> pick, tr rows, tc columns, ag_<AGG> values,
+      "rr_<key>/rc_<key>/rv_<idx> remove, CLR clear all
       handle_action IMPORTING i_act TYPE string,
 
-      "GROUP BY statement over the current join configuration
+      "the whole pivot as ONE statement: CASE buckets per column value
       build_select IMPORTING i_from        TYPE string
                              i_where       TYPE string
                              i_multi       TYPE abap_bool
                              i_rows        TYPE i
+                             it_col_vals   TYPE tt_colvals OPTIONAL
                    RETURNING VALUE(rv_sql) TYPE string.
 
   PRIVATE SECTION.
     DATA: mt_rows TYPE tt_keys, "group-by fields in order
+          mt_cols TYPE tt_keys, "column field (max 1 in v1)
           mt_vals TYPE tt_vals, "aggregated fields
           m_pick  TYPE string.  "field picked for zone assignment
 
@@ -37,7 +47,9 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
               RETURNING VALUE(rv_sql) TYPE string,
       comp_name IMPORTING i_key          TYPE string
                           i_prefix       TYPE string OPTIONAL
-                RETURNING VALUE(rv_name) TYPE string.
+                RETURNING VALUE(rv_name) TYPE string,
+      sanitize IMPORTING i_txt          TYPE string
+               RETURNING VALUE(rv_name) TYPE string.
 ENDCLASS.
 
 
@@ -45,7 +57,15 @@ ENDCLASS.
 CLASS zcl_sde_pivot IMPLEMENTATION.
 
   METHOD has_layout.
-    rv_has = boolc( mt_rows IS NOT INITIAL OR mt_vals IS NOT INITIAL ).
+    rv_has = boolc( mt_rows IS NOT INITIAL OR mt_vals IS NOT INITIAL OR mt_cols IS NOT INITIAL ).
+  ENDMETHOD.
+
+  METHOD has_columns.
+    rv_has = boolc( mt_cols IS NOT INITIAL AND mt_vals IS NOT INITIAL ).
+  ENDMETHOD.
+
+  METHOD get_col_key.
+    rv_key = COND #( WHEN mt_cols IS NOT INITIAL THEN mt_cols[ 1 ] ).
   ENDMETHOD.
 
   METHOD qualify.
@@ -64,15 +84,45 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     IF strlen( rv_name ) > 30.
       rv_name = rv_name+0(30).
     ENDIF.
+    rv_name = to_upper( rv_name ).
+  ENDMETHOD.
+
+  METHOD sanitize.
+    "column value -> component name part: A-Z, 0-9, '_' only
+    rv_name = to_upper( i_txt ).
+    DATA(l_len) = strlen( rv_name ).
+    DATA(l_off) = 0.
+    DATA(l_clean) = ``.
+    WHILE l_off < l_len.
+      DATA(l_ch) = rv_name+l_off(1).
+      IF l_ch CA 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
+        l_clean = l_clean && l_ch.
+      ELSE.
+        l_clean = l_clean && '_'.
+      ENDIF.
+      l_off = l_off + 1.
+    ENDWHILE.
+    rv_name = l_clean.
+    IF rv_name IS INITIAL OR rv_name CO '_'.
+      rv_name = 'BLANK'.
+    ENDIF.
+    IF strlen( rv_name ) > 12.
+      rv_name = rv_name+0(12).
+    ENDIF.
   ENDMETHOD.
 
   METHOD handle_action.
     CASE i_act.
       WHEN 'CLR'.
-        CLEAR: mt_rows, mt_vals, m_pick.
+        CLEAR: mt_rows, mt_cols, mt_vals, m_pick.
       WHEN 'tr'. "picked field -> rows
         IF m_pick IS NOT INITIAL AND NOT line_exists( mt_rows[ table_line = m_pick ] ).
           APPEND m_pick TO mt_rows.
+        ENDIF.
+        CLEAR m_pick.
+      WHEN 'tc'. "picked field -> columns (single field in v1)
+        IF m_pick IS NOT INITIAL.
+          mt_cols = VALUE #( ( m_pick ) ).
         ENDIF.
         CLEAR m_pick.
       WHEN OTHERS.
@@ -86,6 +136,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           CLEAR m_pick.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rr_'. "remove from rows
           DELETE mt_rows WHERE table_line = i_act+3.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rc_'. "remove the column field
+          CLEAR mt_cols.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rv_'. "remove from values by index
           DATA(l_idx) = CONV i( i_act+3 ).
           DELETE mt_vals INDEX l_idx.
@@ -110,8 +162,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       `.hint{color:#d2691e;font-weight:bold;}` &&
       `.dir{color:#888;font-size:9px;}` &&
       `</style></head><body>` &&
-      `<h4>PIVOT (no columns yet: groups + totals)&nbsp;&nbsp;` &&
-      `<a class="act" href="SAPEVENT:pv?CLR">clear</a></h4>`.
+      `<h4>PIVOT&nbsp;&nbsp;<a class="act" href="SAPEVENT:pv?CLR">clear</a></h4>`.
 
     IF m_pick IS NOT INITIAL.
       rv_html = rv_html &&
@@ -119,7 +170,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         |(click the field again to cancel)</div>|.
     ELSE.
       rv_html = rv_html &&
-        `<div class="dir">1. click a field below &nbsp; 2. click where to add it (Rows or an aggregate)</div>`.
+        `<div class="dir">1. click a field below &nbsp; 2. click where to add it (Rows, Columns or an aggregate)</div>`.
     ENDIF.
 
     "zones: when a field is picked, the add-buttons appear right inside the zones
@@ -135,7 +186,20 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ELSEIF mt_rows IS INITIAL.
       rv_html = rv_html && `<span class="dir">group-by fields go here</span>`.
     ENDIF.
-    rv_html = rv_html && `</div><h4>Values (aggregates)</h4><div class="zone">`.
+
+    rv_html = rv_html && `</div><h4>Columns (spread by values)</h4><div class="zone">`.
+    LOOP AT mt_cols INTO DATA(l_col).
+      rv_html = rv_html &&
+        |<a class="zchip" href="SAPEVENT:pv?rc_{ l_col }" title="remove">{ to_lower( l_col ) } &#10005;</a>|.
+    ENDLOOP.
+    IF m_pick IS NOT INITIAL.
+      rv_html = rv_html &&
+        |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }{ COND string( WHEN mt_cols IS NOT INITIAL THEN ' (replace)' ) }</a>|.
+    ELSEIF mt_cols IS INITIAL.
+      rv_html = rv_html && `<span class="dir">one field; its values become CASE columns (max 50)</span>`.
+    ENDIF.
+
+    rv_html = rv_html && `</div><h4>Values (aggregates at the intersections)</h4><div class="zone">`.
     LOOP AT mt_vals INTO DATA(ls_val).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rv_{ sy-tabix }" title="remove">| &&
@@ -172,28 +236,66 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
   METHOD build_select.
     DATA: l_fields TYPE string,
-          l_group  TYPE string.
+          l_group  TYPE string,
+          lt_names TYPE tt_keys.
     DATA(l_nl) = cl_abap_char_utilities=>newline.
 
     CHECK has_layout( ) = abap_true.
 
-    LOOP AT mt_rows INTO DATA(l_row).
-      DATA(l_qual) = qualify( i_key = l_row i_multi = i_multi ).
+    "row dimensions
+    LOOP AT mt_rows INTO DATA(l_dim).
+      DATA(l_qual) = qualify( i_key = l_dim i_multi = i_multi ).
       IF l_fields IS NOT INITIAL.
         l_fields = |{ l_fields },{ l_nl }       |.
         l_group  = |{ l_group }, |.
       ENDIF.
-      l_fields = |{ l_fields }{ l_qual } AS { to_lower( comp_name( l_row ) ) }|.
+      l_fields = |{ l_fields }{ l_qual } AS { to_lower( comp_name( l_dim ) ) }|.
       l_group  = |{ l_group }{ l_qual }|.
     ENDLOOP.
 
-    LOOP AT mt_vals INTO DATA(ls_val).
-      IF l_fields IS NOT INITIAL.
-        l_fields = |{ l_fields },{ l_nl }       |.
+    IF has_columns( ) = abap_true AND it_col_vals IS NOT INITIAL.
+      "matrix: one CASE bucket per column value and aggregate
+      DATA(l_colq) = qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ).
+      LOOP AT it_col_vals INTO DATA(ls_cv).
+        LOOP AT mt_vals INTO DATA(ls_val).
+          DATA(l_fq) = qualify( i_key = ls_val-key i_multi = i_multi ).
+          "component: AGG_FIELD_<value>, unique, <= 30
+          DATA(l_sanval) = sanitize( ls_cv-text ).
+          DATA(l_acomp) = comp_name( i_key = ls_val-key i_prefix = ls_val-agg ).
+          DATA(l_base_len) = 29 - strlen( l_sanval ).
+          DATA(l_name) = COND string( WHEN strlen( l_acomp ) > l_base_len
+                                      THEN l_acomp+0(l_base_len) ELSE l_acomp ) && '_' && l_sanval.
+          WHILE line_exists( lt_names[ table_line = l_name ] ).
+            l_name = |{ COND string( WHEN strlen( l_name ) > 28 THEN l_name+0(28) ELSE l_name ) }_{ sy-index }|.
+          ENDWHILE.
+          APPEND l_name TO lt_names.
+          IF l_fields IS NOT INITIAL.
+            l_fields = |{ l_fields },{ l_nl }       |.
+          ENDIF.
+          "no ELSE: other buckets stay NULL and are ignored by the aggregate
+          l_fields = |{ l_fields }{ ls_val-agg }( CASE WHEN { l_colq } = { ls_cv-literal } | &&
+                     |THEN { l_fq } END ) AS { to_lower( l_name ) }|.
+        ENDLOOP.
+      ENDLOOP.
+    ELSE.
+      "no columns: plain aggregates; a column field without values acts as one more dimension
+      IF mt_cols IS NOT INITIAL AND mt_vals IS INITIAL.
+        DATA(l_cdim) = qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ).
+        IF l_fields IS NOT INITIAL.
+          l_fields = |{ l_fields },{ l_nl }       |.
+          l_group  = |{ l_group }, |.
+        ENDIF.
+        l_fields = |{ l_fields }{ l_cdim } AS { to_lower( comp_name( mt_cols[ 1 ] ) ) }|.
+        l_group  = |{ l_group }{ l_cdim }|.
       ENDIF.
-      l_fields = |{ l_fields }{ ls_val-agg }( { qualify( i_key = ls_val-key i_multi = i_multi ) } )| &&
-                 | AS { to_lower( comp_name( i_key = ls_val-key i_prefix = ls_val-agg ) ) }|.
-    ENDLOOP.
+      LOOP AT mt_vals INTO ls_val.
+        IF l_fields IS NOT INITIAL.
+          l_fields = |{ l_fields },{ l_nl }       |.
+        ENDIF.
+        l_fields = |{ l_fields }{ ls_val-agg }( { qualify( i_key = ls_val-key i_multi = i_multi ) } )| &&
+                   | AS { to_lower( comp_name( i_key = ls_val-key i_prefix = ls_val-agg ) ) }|.
+      ENDLOOP.
+    ENDIF.
 
     rv_sql = |SELECT { l_fields }{ l_nl }  FROM { i_from }|.
     IF i_where IS NOT INITIAL.

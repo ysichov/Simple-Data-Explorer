@@ -87,10 +87,15 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
+      get_pivot_col_values RETURNING VALUE(rt_vals) TYPE zcl_sde_pivot=>tt_colvals,
       build_from RETURNING VALUE(rv_from) TYPE string,
       is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
       build_where RETURNING VALUE(rv_where) TYPE string,
       execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
+      fcat_entry IMPORTING i_fieldname   TYPE lvc_fname
+                           io_type       TYPE REF TO cl_abap_datadescr
+                           i_text        TYPE string
+                 RETURNING VALUE(rs_cat) TYPE lvc_s_fcat,
       viewer_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
       on_viewer_sel FOR EVENT selection_done OF zcl_sde_sel_opt,
       upper_outside_quotes IMPORTING i_sql         TYPE string
@@ -1304,10 +1309,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     CHECK mo_sql_html IS BOUND.
     DATA l_sql TYPE string.
     IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
-      l_sql = mo_pivot->build_select( i_from  = build_from( )
-                                      i_where = build_where( )
-                                      i_multi = is_multi( )
-                                      i_rows  = COND #( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ) ).
+      l_sql = mo_pivot->build_select( i_from      = build_from( )
+                                      i_where     = build_where( )
+                                      i_multi     = is_multi( )
+                                      i_rows      = COND #( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 )
+                                      it_col_vals = get_pivot_col_values( ) ).
     ELSE.
       l_sql = generate_select( ).
     ENDIF.
@@ -1411,6 +1417,63 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
   METHOD is_multi.
     rv_multi = boolc( lines( mt_jtabs ) > 1 ).
+  ENDMETHOD.
+
+
+  METHOD get_pivot_col_values.
+    FIELD-SYMBOLS <vals> TYPE STANDARD TABLE.
+
+    CHECK mo_pivot IS BOUND AND mo_pivot->has_columns( ) = abap_true.
+    DATA(l_key) = mo_pivot->get_col_key( ).
+    CHECK l_key IS NOT INITIAL.
+    SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias.
+    CHECK sy-subrc = 0.
+
+    "typed value buffer keeps leading zeros etc. intact
+    DATA lr_vals TYPE REF TO data.
+    DATA(l_typename) = |{ ls_tab-tabname }-{ l_field }|.
+    TRY.
+        CREATE DATA lr_vals TYPE TABLE OF (l_typename).
+      CATCH cx_sy_create_data_error.
+        RETURN.
+    ENDTRY.
+    ASSIGN lr_vals->* TO <vals>.
+
+    DATA(l_col) = COND string( WHEN is_multi( ) = abap_true
+                               THEN |{ to_upper( l_alias ) }~{ l_field }|
+                               ELSE |{ l_field }| ).
+    DATA(l_from) = to_upper( build_from( ) ).
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_from WITH ` `.
+    DATA(l_where) = upper_outside_quotes( build_where( ) ).
+
+    TRY.
+        SELECT DISTINCT (l_col)
+          FROM (l_from)
+          WHERE (l_where)
+          INTO TABLE @<vals>
+          UP TO 50 ROWS.
+      CATCH cx_root.
+        RETURN.
+    ENDTRY.
+    SORT <vals>.
+
+    "SQL literal: unquoted for numeric kinds, quoted (with doubling) otherwise
+    DATA(lo_elem) = CAST cl_abap_elemdescr(
+      CAST cl_abap_tabledescr( cl_abap_typedescr=>describe_by_data( <vals> ) )->get_table_line_type( ) ).
+    DATA(l_numeric) = boolc( lo_elem->type_kind CA 'IbsPFae8' ).
+
+    LOOP AT <vals> ASSIGNING FIELD-SYMBOL(<v>).
+      DATA l_txt TYPE string.
+      l_txt = <v>. "plain assignment: NUMC/DATS keep their raw form
+      CONDENSE l_txt.
+      DATA(l_lit) = l_txt.
+      IF l_numeric = abap_false.
+        REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
+        l_lit = |'{ l_lit }'|.
+      ENDIF.
+      APPEND VALUE #( text = l_txt literal = l_lit ) TO rt_vals.
+    ENDLOOP.
   ENDMETHOD.
 
 
@@ -1556,20 +1619,39 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     ENDIF.
 
     "build result structure from the field list
+    DATA lt_cat TYPE lvc_t_fcat. "per-item headers (pivot CASE buckets)
     SPLIT l_fields AT ',' INTO TABLE DATA(lt_fld_str).
     LOOP AT lt_fld_str INTO DATA(l_fld_str).
       CONDENSE l_fld_str.
       CHECK l_fld_str IS NOT INITIAL.
       DATA(l_fld_up) = to_upper( l_fld_str ).
-      DATA: l_agg TYPE string, l_alias2 TYPE string, l_field TYPE string, l_name TYPE string.
-      CLEAR: l_agg, l_alias2, l_field, l_name.
+      DATA: l_agg TYPE string, l_alias2 TYPE string, l_field TYPE string,
+            l_name TYPE string, l_head TYPE string.
+      CLEAR: l_agg, l_alias2, l_field, l_name, l_head.
       FIND REGEX '^(?:(SUM|COUNT|MIN|MAX|AVG)\s*\(\s*)?(?:(\w+)~)?(\w+|\*)\s*\)?(?:\s+AS\s+(\w+))?$' IN l_fld_up
         SUBMATCHES l_agg l_alias2 l_field l_name.
       IF sy-subrc NE 0.
-        IF i_quiet = abap_false.
-          MESSAGE |Cannot parse field: { l_fld_str }| TYPE 'S' DISPLAY LIKE 'E'.
+        "complex expression, e.g. SUM( CASE WHEN t1~curr = 'USD' THEN t0~price END ) AS name
+        FIND REGEX '^(SUM|COUNT|MIN|MAX|AVG)\s*\(' IN l_fld_up SUBMATCHES l_agg.
+        FIND REGEX '\sAS\s+(\w+)\s*$' IN l_fld_up SUBMATCHES l_name.
+        FIND REGEX 'THEN\s+(?:(\w+)~)?(\w+)' IN l_fld_up SUBMATCHES l_alias2 l_field.
+        IF l_field IS INITIAL.
+          FIND REGEX '(\w+)~(\w+)' IN l_fld_up SUBMATCHES l_alias2 l_field.
         ENDIF.
-        RETURN.
+        IF l_agg IS INITIAL OR l_name IS INITIAL OR l_field IS INITIAL.
+          IF i_quiet = abap_false.
+            MESSAGE |Cannot parse field: { l_fld_str } (expressions need AS name)| TYPE 'S' DISPLAY LIKE 'E'.
+          ENDIF.
+          RETURN.
+        ENDIF.
+        "column header from the WHEN literal of the original (case-preserving) text
+        DATA: l_lit TYPE string, l_litq TYPE string.
+        CLEAR: l_lit, l_litq.
+        FIND REGEX 'WHEN\s+\S+\s*=\s*(?:''([^'']*)''|(\S+))\s+THEN' IN l_fld_str
+          IGNORING CASE SUBMATCHES l_litq l_lit.
+        l_head = COND #( WHEN l_litq IS NOT INITIAL THEN l_litq
+                         WHEN l_lit IS NOT INITIAL THEN l_lit
+                         ELSE l_name ).
       ENDIF.
       IF l_name IS INITIAL.
         l_name = COND #( WHEN l_alias2 IS INITIAL THEN l_field ELSE |{ l_alias2 }_{ l_field }| ).
@@ -1619,6 +1701,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         l_name = |{ COND string( WHEN strlen( l_name ) > 28 THEN l_name+0(28) ELSE l_name ) }_{ sy-index }|.
       ENDWHILE.
       APPEND VALUE #( name = l_name type = lo_type ) TO lt_comp.
+      APPEND fcat_entry( i_fieldname = CONV #( l_name ) io_type = lo_type i_text = l_head ) TO lt_cat.
     ENDLOOP.
 
     IF lt_comp IS INITIAL.
@@ -1628,8 +1711,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    "dynamic Open SQL tokens must be uppercase (keep quoted literals as-is)
-    l_fields = to_upper( l_fields ).
+    "dynamic Open SQL tokens must be uppercase (CASE literals keep their case)
+    l_fields = upper_outside_quotes( l_fields ).
     l_from   = to_upper( l_from ).
     l_where  = upper_outside_quotes( l_where ).
     l_group  = to_upper( l_group ).
@@ -1669,7 +1752,35 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     DATA(l_view_name) = COND #( WHEN l_group IS INITIAL
                                 THEN |JOIN { m_tabname } ({ lines( <result> ) })|
                                 ELSE |PIVOT { m_tabname } ({ lines( <result> ) })| ).
-    mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true ).
+    mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true
+                       it_catalog = lt_cat ).
+  ENDMETHOD.
+
+
+  METHOD fcat_entry.
+    rs_cat-fieldname = i_fieldname.
+    TRY.
+        DATA(lo_elem) = CAST cl_abap_elemdescr( io_type ).
+        IF lo_elem->is_ddic_type( ) = abap_true.
+          DATA(ls_dfies) = lo_elem->get_ddic_field( ).
+          MOVE-CORRESPONDING ls_dfies TO rs_cat.
+          rs_cat-fieldname = i_fieldname.
+          CLEAR: rs_cat-tabname, rs_cat-key.
+        ELSE.
+          rs_cat-inttype  = lo_elem->type_kind.
+          rs_cat-intlen   = lo_elem->length.
+          rs_cat-decimals = lo_elem->decimals.
+        ENDIF.
+      CATCH cx_root.                                    "#EC NO_HANDLER
+    ENDTRY.
+    IF i_text IS NOT INITIAL. "explicit header (pivot bucket value)
+      rs_cat-reptext   = i_text.
+      rs_cat-scrtext_l = i_text.
+      rs_cat-scrtext_m = i_text.
+      rs_cat-scrtext_s = i_text.
+    ELSEIF rs_cat-reptext IS INITIAL AND rs_cat-scrtext_l IS INITIAL.
+      rs_cat-reptext = rs_cat-scrtext_l = rs_cat-scrtext_m = rs_cat-scrtext_s = i_fieldname.
+    ENDIF.
   ENDMETHOD.
 
 
@@ -1707,6 +1818,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       REPLACE ALL OCCURRENCES OF REGEX '\s+(LEFT\s+OUTER\s+JOIN|INNER\s+JOIN)\s+'
         IN l_tail WITH |{ l_nl }  $1 | IGNORING CASE.
       REPLACE FIRST OCCURRENCE OF REGEX '\s+WHERE\s+' IN l_tail WITH |{ l_nl } WHERE | IGNORING CASE.
+      REPLACE FIRST OCCURRENCE OF REGEX '\s+GROUP\s+BY\s+' IN l_tail WITH |{ l_nl } GROUP BY | IGNORING CASE.
       REPLACE FIRST OCCURRENCE OF REGEX '\s+UP\s+TO\s+' IN l_tail WITH |{ l_nl } UP TO | IGNORING CASE.
       rv_sql = |{ l_head }{ l_nl }  { l_tail }|.
     ENDIF.
