@@ -1,8 +1,12 @@
-**It's time to moving forward... Soon....**
+**It's time to moving forward... Meet Selector - Simple Data Explorer v.2 ** 
 
 <img width="595" height="597" alt="image" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
 
-<img width="645" height="500" alt="image" src="https://github.com/user-attachments/assets/c2b222bf-f200-4979-8516-9f2ebee84cf6" />
+Joins and Pivot tables are here including its Select.
+
+<img width="1800" height="736" alt="image" src="https://github.com/user-attachments/assets/fa269282-022a-4f01-b3cf-d7cb1088ba19" />
+
+
 
 
 
