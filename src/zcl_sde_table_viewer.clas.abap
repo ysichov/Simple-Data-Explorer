@@ -781,7 +781,8 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         MESSAGE 'Tools need a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
       ELSEIF mo_tools IS NOT BOUND.
         mo_box->set_height( height = 600 ). "make room
-        mo_outer_splitter->set_row_height( id = 1 height = 45 ).
+        mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_absolute ).
+        mo_outer_splitter->set_row_height( id = 1 height = 155 ).
         mo_outer_splitter->set_row_sash( id    = 1
                                          type  = cl_gui_splitter_container=>type_sashvisible
                                          value = cl_gui_splitter_container=>true ).
@@ -792,8 +793,13 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         m_tools_visible = abap_true.
       ELSE. "toggle
         m_tools_visible = boolc( m_tools_visible = abap_false ).
-        mo_outer_splitter->set_row_height( id = 1
-          height = COND #( WHEN m_tools_visible = abap_true THEN 45 ELSE 100 ) ).
+        IF m_tools_visible = abap_true.
+          mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_absolute ).
+          mo_outer_splitter->set_row_height( id = 1 height = 155 ).
+        ELSE.
+          mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_relative ).
+          mo_outer_splitter->set_row_height( id = 1 height = 100 ).
+        ENDIF.
         mo_outer_splitter->set_row_sash( id    = 1
                                          type  = cl_gui_splitter_container=>type_sashvisible
                                          value = COND #( WHEN m_tools_visible = abap_true
