@@ -1534,7 +1534,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           RETURN.
       ENDTRY.
 
-      APPEND |{ l_col } AS { l_comp }| TO lt_cols.
+      APPEND l_col TO lt_cols.
       APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
       APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field ) TO lt_meta.
     ENDLOOP.
@@ -1599,12 +1599,18 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           l_cond = |{ l_cond } AND |.
         ENDIF.
         l_text = |{ l_text }{ COND string( WHEN l_txt IS INITIAL THEN '(empty)' ELSE l_txt ) }|.
-        l_cond = |{ l_cond }{ ls_meta-sql } = { l_lit }|.
+        IF l_txt IS INITIAL.
+          l_cond = |{ l_cond }( { ls_meta-sql } = { l_lit } OR { ls_meta-sql } IS NULL )|.
+        ELSE.
+          l_cond = |{ l_cond }{ ls_meta-sql } = { l_lit }|.
+        ENDIF.
       ENDLOOP.
 
-      APPEND VALUE #( text    = l_text
-                      literal = COND #( WHEN lines( lt_meta ) = 1 THEN l_lit )
-                      cond    = l_cond ) TO rt_vals.
+      IF NOT line_exists( rt_vals[ text = l_text ] ).
+        APPEND VALUE #( text    = l_text
+                        literal = COND #( WHEN lines( lt_meta ) = 1 THEN l_lit )
+                        cond    = l_cond ) TO rt_vals.
+      ENDIF.
     ENDLOOP.
   ENDMETHOD.
 
