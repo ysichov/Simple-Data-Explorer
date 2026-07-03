@@ -1,4 +1,4 @@
-**It's time to moving forward... Meet Selector - Simple Data Explorer v.2 ** 
+**It's time to moving forward... Meet Selector - Simple Data Explorer v.2** 
 
 <img width="595" height="597" alt="image" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
 
