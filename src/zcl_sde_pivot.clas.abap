@@ -339,8 +339,9 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
             l_fields = |{ l_fields },{ l_nl }       |.
           ENDIF.
           "no ELSE: other buckets stay NULL and are ignored by the aggregate
+          DATA(l_then) = COND string( WHEN ls_val-agg = 'COUNT' THEN `1` ELSE l_fq ).
           l_fields = |{ l_fields }{ ls_val-agg }( CASE WHEN { l_cond } | &&
-                     |THEN { l_fq } END ) AS { to_lower( l_name ) }|.
+                     |THEN { l_then } END ) AS { to_lower( l_name ) }|.
         ENDLOOP.
       ENDLOOP.
     ELSE.
