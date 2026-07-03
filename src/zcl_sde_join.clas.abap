@@ -1258,6 +1258,10 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         parent = lo_cont
       EXCEPTIONS
         OTHERS = 1.
+    IF mo_sql_html IS BOUND. "the edit link and the textarea form fire SAPEVENTs
+      mo_sql_html->set_registered_events( VALUE #( ( eventid = cl_gui_html_viewer=>m_id_sapevent ) ) ).
+      SET HANDLER on_sapevent FOR mo_sql_html.
+    ENDIF.
   ENDMETHOD.
 
 
