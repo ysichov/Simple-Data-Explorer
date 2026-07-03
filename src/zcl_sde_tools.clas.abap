@@ -141,7 +141,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       EXCEPTIONS
         OTHERS  = 1.
     mo_splitter->set_row_mode( mode = mo_splitter->mode_relative ).
-    mo_splitter->set_row_height( id = 1 height = 45 ).
+    mo_splitter->set_row_height( id = 1 height = 22 ).
 
     mo_splitter->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_top) ).
     mo_splitter->get_container( EXPORTING row = 2 column = 1 RECEIVING container = DATA(lo_bottom) ).
