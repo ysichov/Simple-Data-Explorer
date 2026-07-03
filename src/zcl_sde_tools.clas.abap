@@ -1458,20 +1458,15 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     ENDTRY.
     SORT <vals>.
 
-    "SQL literal: unquoted for numeric kinds, quoted (with doubling) otherwise
-    DATA(lo_elem) = CAST cl_abap_elemdescr(
-      CAST cl_abap_tabledescr( cl_abap_typedescr=>describe_by_data( <vals> ) )->get_table_line_type( ) ).
-    DATA(l_numeric) = boolc( lo_elem->type_kind CA 'IbsPFae8' ).
-
+    "SQL literal: always a quoted character literal - ABAP SQL converts it to the
+    "column type itself, while unquoted decimals ('185.00') are a syntax error
     LOOP AT <vals> ASSIGNING FIELD-SYMBOL(<v>).
       DATA l_txt TYPE string.
-      l_txt = <v>. "plain assignment: NUMC/DATS keep their raw form
+      l_txt = <v>. "plain assignment: NUMC/DATS/decimals keep their raw form
       CONDENSE l_txt.
       DATA(l_lit) = l_txt.
-      IF l_numeric = abap_false.
-        REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
-        l_lit = |'{ l_lit }'|.
-      ENDIF.
+      REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
+      l_lit = |'{ l_lit }'|.
       APPEND VALUE #( text = l_txt literal = l_lit ) TO rt_vals.
     ENDLOOP.
   ENDMETHOD.
