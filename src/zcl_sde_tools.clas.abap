@@ -1152,6 +1152,37 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           render_flds( ).
           update_sql_view( ).
         ENDIF.
+      WHEN 'pvdrop'. "field dragged onto a zone: mv=dr_/dc_/dv_<key>
+        IF mo_pivot IS BOUND.
+          DATA(l_drop_post) = concat_lines_of( table = postdata ).
+          SPLIT l_drop_post AT '=' INTO DATA(l_drop_name) DATA(l_drop).
+          REPLACE ALL OCCURRENCES OF '+' IN l_drop WITH ` `.
+          l_drop = cl_http_utility=>unescape_url( l_drop ).
+          IF l_drop IS NOT INITIAL.
+            mo_pivot->handle_action( l_drop ).
+            render_flds( ).
+            update_sql_view( ).
+          ENDIF.
+        ENDIF.
+      WHEN 'pvagg'. "aggregate listbox on a Values chip: idx=n&agg=SUM
+        IF mo_pivot IS BOUND.
+          DATA: l_agg_idx TYPE string, l_agg_new TYPE string.
+          CLEAR: l_agg_idx, l_agg_new.
+          DATA(l_agg_post) = concat_lines_of( table = postdata ).
+          SPLIT l_agg_post AT '&' INTO TABLE DATA(lt_agg_pairs).
+          LOOP AT lt_agg_pairs INTO DATA(l_agg_pair).
+            SPLIT l_agg_pair AT '=' INTO DATA(l_agg_name) DATA(l_agg_val).
+            CASE l_agg_name.
+              WHEN 'idx'. l_agg_idx = l_agg_val.
+              WHEN 'agg'. l_agg_new = l_agg_val.
+            ENDCASE.
+          ENDLOOP.
+          IF l_agg_idx IS NOT INITIAL AND l_agg_new IS NOT INITIAL.
+            mo_pivot->handle_action( |sa_{ l_agg_idx }_{ l_agg_new }| ).
+            render_flds( ).
+            update_sql_view( ).
+          ENDIF.
+        ENDIF.
       WHEN 'toggle'.
         toggle_candidate( CONV #( getdata ) ).
       WHEN 'addtab'.

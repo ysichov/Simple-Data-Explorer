@@ -126,6 +126,31 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         ENDIF.
         CLEAR m_pick.
       WHEN OTHERS.
+        "drag&drop: dr_/dc_/dv_<key> put the field straight into a zone
+        IF strlen( i_act ) > 3 AND i_act(3) = 'dr_'.
+          DATA(l_dkey) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
+          IF NOT line_exists( mt_rows[ table_line = l_dkey ] ).
+            APPEND l_dkey TO mt_rows.
+          ENDIF.
+          CLEAR m_pick.
+          RETURN.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dc_'.
+          mt_cols = VALUE #( ( substring( val = i_act off = 3 len = strlen( i_act ) - 3 ) ) ).
+          CLEAR m_pick.
+          RETURN.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dv_'.
+          APPEND VALUE #( key = substring( val = i_act off = 3 len = strlen( i_act ) - 3 )
+                          agg = 'SUM' ) TO mt_vals.
+          CLEAR m_pick.
+          RETURN.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'sa_'. "sa_<idx>_<AGG>: change aggregate
+          SPLIT i_act+3 AT '_' INTO DATA(l_sidx) DATA(l_sagg).
+          READ TABLE mt_vals ASSIGNING FIELD-SYMBOL(<val>) INDEX CONV i( l_sidx ).
+          IF sy-subrc = 0 AND l_sagg IS NOT INITIAL.
+            <val>-agg = l_sagg.
+          ENDIF.
+          RETURN.
+        ENDIF.
         IF strlen( i_act ) > 3 AND i_act(3) = 'pk_'. "pick a field (or unpick)
           DATA(l_key) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
           m_pick = COND #( WHEN m_pick = l_key THEN `` ELSE l_key ).
@@ -146,6 +171,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD render_panel.
+    DATA(lt_aggs) = VALUE tt_keys( ( `SUM` ) ( `COUNT` ) ( `MIN` ) ( `MAX` ) ( `AVG` ) ).
     rv_html =
       `<html><head><meta charset="utf-8"><style>` &&
       `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#fff;}` &&
@@ -161,7 +187,25 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.hint{color:#d2691e;font-weight:bold;}` &&
       `.dir{color:#888;font-size:9px;}` &&
-      `</style></head><body>` &&
+      `.rmx{color:#a00;text-decoration:none;}` &&
+      `select{font-size:10px;}` &&
+      `</style>` &&
+      "drag a field chip onto a zone (mouse events + hidden form, as elsewhere)
+      `<script>var mk=null,mt=null,mz=null,mv=false;` &&
+      `function md(e,k){mk=k;mv=false;return true;}` &&
+      `function zo(e,el,z){if(!mk)return;mv=true;` &&
+      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mz=z;` &&
+      `el.style.boxShadow='0 0 0 2px #d2691e';}` &&
+      `function cl(e){if(mv){mv=false;if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
+      `document.onmouseup=function(){if(!mk)return;` &&
+      `var k=mk,z=mz,ok=mv;mk=null;mz=null;` &&
+      `if(mt){mt.style.boxShadow='';mt=null;}` &&
+      `if(ok&&z){document.getElementById('pmk').value=z+'_'+k;` &&
+      `document.getElementById('pmf').submit();}};` &&
+      `</script>` &&
+      `</head><body onselectstart="return false">` &&
+      `<form id="pmf" method="post" action="SAPEVENT:pvdrop" style="display:none">` &&
+      `<input type="hidden" name="mv" id="pmk"></form>` &&
       `<h4>PIVOT&nbsp;&nbsp;<a class="act" href="SAPEVENT:pv?CLR">clear</a></h4>`.
 
     IF m_pick IS NOT INITIAL.
@@ -170,12 +214,12 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         |(click the field again to cancel)</div>|.
     ELSE.
       rv_html = rv_html &&
-        `<div class="dir">1. click a field below &nbsp; 2. click where to add it (Rows, Columns or an aggregate)</div>`.
+        `<div class="dir">drag a field into a zone (or: click the field, then click inside the zone)</div>`.
     ENDIF.
 
-    "zones: when a field is picked, the add-buttons appear right inside the zones
+    "zones: drop targets; when a field is picked the add-buttons appear inside as well
     DATA(l_pick_low) = to_lower( m_pick ).
-    rv_html = rv_html && `<h4>Rows (group by)</h4><div class="zone">`.
+    rv_html = rv_html && `<h4>Rows (group by)</h4><div class="zone" onmouseover="zo(event,this,'dr')">`.
     LOOP AT mt_rows INTO DATA(l_row).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rr_{ l_row }" title="remove">{ to_lower( l_row ) } &#10005;</a>|.
@@ -187,7 +231,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rv_html = rv_html && `<span class="dir">group-by fields go here</span>`.
     ENDIF.
 
-    rv_html = rv_html && `</div><h4>Columns (spread by values)</h4><div class="zone">`.
+    rv_html = rv_html && `</div><h4>Columns (spread by values)</h4><div class="zone" onmouseover="zo(event,this,'dc')">`.
     LOOP AT mt_cols INTO DATA(l_col).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rc_{ l_col }" title="remove">{ to_lower( l_col ) } &#10005;</a>|.
@@ -199,11 +243,20 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rv_html = rv_html && `<span class="dir">one field; its values become CASE columns (max 50)</span>`.
     ENDIF.
 
-    rv_html = rv_html && `</div><h4>Values (aggregates at the intersections)</h4><div class="zone">`.
+    rv_html = rv_html && `</div><h4>Values (aggregates at the intersections)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
     LOOP AT mt_vals INTO DATA(ls_val).
+      DATA(l_vidx) = sy-tabix.
+      rv_html = rv_html && |<span class="zchip">| &&
+        |<form style="display:inline" method="post" action="SAPEVENT:pvagg">| &&
+        |<input type="hidden" name="idx" value="{ l_vidx }">| &&
+        |<select name="agg" onchange="this.form.submit()">|.
+      LOOP AT lt_aggs INTO DATA(l_a).
+        rv_html = rv_html &&
+          |<option{ COND string( WHEN ls_val-agg = l_a THEN ' selected' ) }>{ l_a }</option>|.
+      ENDLOOP.
       rv_html = rv_html &&
-        |<a class="zchip" href="SAPEVENT:pv?rv_{ sy-tabix }" title="remove">| &&
-        |<span class="agg">{ ls_val-agg }</span> { to_lower( ls_val-key ) } &#10005;</a>|.
+        |</select> { to_lower( ls_val-key ) }| &&
+        | <a class="rmx" href="SAPEVENT:pv?rv_{ l_vidx }" title="remove">&#10005;</a></form></span>|.
     ENDLOOP.
     IF m_pick IS NOT INITIAL.
       rv_html = rv_html &&
@@ -227,6 +280,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         ELSE |{ ls_fld-fieldname }| ).
       rv_html = rv_html &&
         |<a class="{ l_cls }" href="SAPEVENT:pv?pk_{ l_key }"| &&
+        | draggable="false" ondragstart="return false"| &&
+        | onmousedown="return md(event,'{ l_key }')" onclick="return cl(event)"| &&
         | title="{ l_key } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</a>|.
     ENDLOOP.
