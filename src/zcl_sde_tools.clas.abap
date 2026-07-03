@@ -751,8 +751,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     CHECK mo_flds_html IS BOUND.
 
     IF m_mode = 'P' AND mo_pivot IS BOUND. "pivot zones instead of the SELECT list
+      "the pivot source is what the join selected, not every field of every table
+      DATA(lt_src) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+      SORT lt_src BY pos.
       show_html( io_html = mo_flds_html
-                 i_html  = mo_pivot->render_panel( it_fields = mt_jflds i_show_texts = m_show_texts ) ).
+                 i_html  = mo_pivot->render_panel( it_fields = lt_src i_show_texts = m_show_texts ) ).
       RETURN.
     ENDIF.
 
