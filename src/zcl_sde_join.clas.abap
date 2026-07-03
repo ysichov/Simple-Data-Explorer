@@ -427,18 +427,39 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       <jtab>-tabname = ls_cand-tabname.
       <jtab>-ddtext  = ls_cand-ddtext.
       <jtab>-jtype   = 'LEFT OUTER'.
-      "the ON condition links to the parent's alias (t0 for the base, tN for a chained table);
-      "parents are always selected before their children, so their alias is already assigned
+      "the ON condition links to the parent's alias (t0 for the base, tN for a chained table)
       DATA(l_parent_alias) = `t0`.
+      DATA(l_parent_missing) = abap_false.
       IF ls_cand-parent IS NOT INITIAL AND ls_cand-parent NE m_tabname.
         READ TABLE mt_jtabs INTO DATA(ls_parent_tab) WITH KEY tabname = ls_cand-parent.
         IF sy-subrc = 0.
           l_parent_alias = to_lower( condense( CONV string( ls_parent_tab-alias ) ) ).
+        ELSE.
+          l_parent_missing = abap_true. "parent left the join: anchor to the base table instead
         ENDIF.
       ENDIF.
+
+      DATA(lt_pairs) = ls_cand-pairs.
+      IF l_parent_missing = abap_true.
+        DATA(lt_base_flds) = get_fieldlist( m_tabname ).
+        "keep only pairs whose right side exists in the base table
+        LOOP AT lt_pairs INTO DATA(ls_chk).
+          IF NOT line_exists( lt_base_flds[ fieldname = ls_chk-base_field ] ).
+            DELETE lt_pairs.
+          ENDIF.
+        ENDLOOP.
+        IF lt_pairs IS INITIAL. "no overlap: propose matching key field names
+          LOOP AT get_fieldlist( ls_cand-tabname ) INTO DATA(ls_kf) WHERE keyflag = abap_true.
+            IF line_exists( lt_base_flds[ fieldname = ls_kf-fieldname ] ).
+              APPEND VALUE #( cand_field = ls_kf-fieldname base_field = ls_kf-fieldname ) TO lt_pairs.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+
       DATA l_cond TYPE string. "build in a string: char field would eat trailing blanks after AND
       CLEAR l_cond.
-      LOOP AT ls_cand-pairs INTO DATA(ls_pair).
+      LOOP AT lt_pairs INTO DATA(ls_pair).
         IF l_cond IS NOT INITIAL.
           l_cond = |{ l_cond } AND |.
         ENDIF.
