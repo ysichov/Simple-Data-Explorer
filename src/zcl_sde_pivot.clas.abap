@@ -136,9 +136,18 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD allowed_aggs.
-    rt_aggs = VALUE #( ( `COUNT` ) ( `MIN` ) ( `MAX` ) ).
+    rt_aggs = VALUE #( ( `COUNT` ) ).
     IF is_numeric_field( i_key = i_key it_fields = it_fields ) = abap_true.
       rt_aggs = VALUE #( ( `SUM` ) ( `COUNT` ) ( `MIN` ) ( `MAX` ) ( `AVG` ) ).
+    ELSE.
+      SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+      READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias fieldname = l_field.
+      IF sy-subrc = 0.
+        CASE ls_field-datatype.
+          WHEN 'CHAR' OR 'NUMC' OR 'DATS' OR 'TIMS' OR 'CLNT' OR 'CUKY' OR 'UNIT' OR 'LANG'.
+            rt_aggs = VALUE #( ( `COUNT` ) ( `MIN` ) ( `MAX` ) ).
+        ENDCASE.
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 
