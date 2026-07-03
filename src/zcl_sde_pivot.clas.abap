@@ -167,7 +167,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         ENDIF.
         CLEAR m_pick.
       WHEN 'tc'. "picked field -> columns
-        IF m_pick IS NOT INITIAL AND NOT line_exists( mt_cols[ table_line = m_pick ] ).
+        IF m_pick IS NOT INITIAL AND lines( mt_cols ) < 3 AND NOT line_exists( mt_cols[ table_line = m_pick ] ).
           APPEND m_pick TO mt_cols.
         ENDIF.
         CLEAR m_pick.
@@ -182,7 +182,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           RETURN.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dc_'.
           DATA(l_ckey) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
-          IF NOT line_exists( mt_cols[ table_line = l_ckey ] ).
+          IF lines( mt_cols ) < 3 AND NOT line_exists( mt_cols[ table_line = l_ckey ] ).
             APPEND l_ckey TO mt_cols.
           ENDIF.
           CLEAR m_pick.
@@ -298,6 +298,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }</a>|.
     ELSEIF mt_cols IS INITIAL.
       rv_html = rv_html && `<span class="dir">field values become separate result columns (max 50)</span>`.
+    ELSEIF lines( mt_cols ) >= 3.
+      rv_html = rv_html && `<span class="dir">maximum 3 spread fields</span>`.
     ENDIF.
 
     rv_html = rv_html && `</div><h4>Measures (aggregates)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.

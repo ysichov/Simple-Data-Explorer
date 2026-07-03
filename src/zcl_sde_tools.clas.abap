@@ -1534,7 +1534,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           RETURN.
       ENDTRY.
 
-      APPEND l_col TO lt_cols.
+      APPEND |{ l_col } AS { l_comp }| TO lt_cols.
       APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
       APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field ) TO lt_meta.
     ENDLOOP.
@@ -1795,7 +1795,10 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
                                WHEN l_litq IS NOT INITIAL THEN l_litq
                                WHEN l_lit IS NOT INITIAL AND l_lit NE `''` THEN l_lit
                                ELSE `(empty)` ). "matched an empty '' literal
-        l_head = COND #( WHEN l_head_subrc NE 0 OR l_cond_field IS INITIAL THEN l_head_value
+        l_head = COND #( WHEN l_head_subrc NE 0
+                           OR l_cond_field IS INITIAL
+                           OR ( strlen( l_head_value ) > 2 AND l_head_value NE `(empty)` )
+                         THEN l_head_value
                          ELSE |{ l_cond_field }: { l_head_value }| ).
       ENDIF.
       IF l_name IS INITIAL.
