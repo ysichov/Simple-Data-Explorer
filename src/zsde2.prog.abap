@@ -1,11 +1,8 @@
 *&---------------------------------------------------------------------*
-*& Local classes extracted to global ZCL_SDE_* classes.
-*& See Z_SDE_STANDALONE for the original monolithic (local-class) version.
 *&---------------------------------------------------------------------*
+*& Simple Data Explorer v.2 SelecTor
 *&---------------------------------------------------------------------*
-*& Simple SQL Explorer
-*&---------------------------------------------------------------------*
-*& version: beta 0.7.252.202
+*& version: beta 2.0.0.77
 *& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
 *& AbapGit         https://github.com/ysichov/SDE_abapgit
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/

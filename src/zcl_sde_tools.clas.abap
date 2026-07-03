@@ -1474,7 +1474,49 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   METHOD cache_where_selection.
     CHECK mo_viewer->mo_sel IS BOUND.
 
+    DATA lt_valid TYPE TABLE OF lvc_fname.
+    LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_current).
+      DATA(l_current_label) = condense( CONV string( ls_current-field_label ) ).
+      DATA l_current_alt TYPE lvc_fname.
+      FIND REGEX '^T\d+_' IN l_current_label MATCH LENGTH DATA(l_current_pfx_len).
+      IF sy-subrc = 0.
+        l_current_alt = l_current_label+l_current_pfx_len.
+      ELSE.
+        l_current_alt = |T0_{ l_current_label }|.
+      ENDIF.
+      APPEND ls_current-field_label TO lt_valid.
+      APPEND l_current_alt TO lt_valid.
+    ENDLOOP.
+
+    DATA(l_cache_idx) = lines( mt_where_sel ).
+    WHILE l_cache_idx > 0.
+      READ TABLE mt_where_sel INDEX l_cache_idx INTO DATA(ls_cached).
+      IF NOT line_exists( lt_valid[ table_line = ls_cached-field_label ] ).
+        DELETE mt_where_sel INDEX l_cache_idx.
+      ENDIF.
+      l_cache_idx = l_cache_idx - 1.
+    ENDWHILE.
+
     LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_sel).
+      DATA(l_label) = condense( CONV string( ls_sel-field_label ) ).
+      DATA l_alt TYPE lvc_fname.
+      FIND REGEX '^T\d+_' IN l_label MATCH LENGTH DATA(l_pfx_len).
+      IF sy-subrc = 0.
+        l_alt = l_label+l_pfx_len.
+      ELSE.
+        l_alt = |T0_{ l_label }|.
+      ENDIF.
+
+      IF ls_sel-range IS INITIAL
+         AND ls_sel-low IS INITIAL
+         AND ls_sel-high IS INITIAL
+         AND ls_sel-sign IS INITIAL
+         AND ls_sel-opti IS INITIAL.
+        DELETE mt_where_sel WHERE field_label = ls_sel-field_label
+                               OR field_label = l_alt.
+        CONTINUE.
+      ENDIF.
+
       READ TABLE mt_where_sel ASSIGNING FIELD-SYMBOL(<saved>)
         WITH KEY field_label = ls_sel-field_label.
       IF sy-subrc = 0.
@@ -1482,6 +1524,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       ELSE.
         APPEND ls_sel TO mt_where_sel.
       ENDIF.
+      DELETE mt_where_sel WHERE field_label = l_alt.
     ENDLOOP.
   ENDMETHOD.
 

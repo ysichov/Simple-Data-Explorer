@@ -367,7 +367,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
 
   METHOD set_header.
     DATA: lv_text       TYPE as4text,
-          lv_header(80) TYPE c.
+          lv_header     TYPE string.
 
     IF zcl_sde_appl=>gv_vname IS INITIAL.
       SELECT SINGLE ddtext INTO lv_text
@@ -381,7 +381,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
           AND ddlanguage = m_lang.
     ENDIF.
 
-    lv_header = |{ m_tabname } - { lv_text } ({ m_count }) { m_additional_name }|.
+    lv_header = |Simple Data Explorer v.2 SelecTor - { m_tabname } - { lv_text } ({ m_count }) { m_additional_name }|.
     mo_box->set_caption( lv_header ).
   ENDMETHOD.
 

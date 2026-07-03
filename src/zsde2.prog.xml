@@ -13,15 +13,15 @@
     <TIT>
      <RSMPE_TITT>
       <CODE>SDE</CODE>
-      <TEXT>Simple Data Explorer</TEXT>
+      <TEXT>Simple Data Explorer v.2 SelecTor</TEXT>
      </RSMPE_TITT>
     </TIT>
    </CUA>
    <TPOOL>
     <item>
      <ID>R</ID>
-     <ENTRY>Simple Data Explorer</ENTRY>
-     <LENGTH>20</LENGTH>
+     <ENTRY>Simple Data Explorer v.2 SelecTor</ENTRY>
+     <LENGTH>33</LENGTH>
     </item>
     <item>
      <ID>S</ID>
