@@ -57,6 +57,8 @@ protected section.
           mo_sql_html  TYPE REF TO cl_gui_html_viewer,
           m_ready      TYPE abap_bool,                   "constructor finished: changes go live to the viewer
           m_pick       TYPE string,                     "click-to-move: picked field key or table alias
+          m_sql_edit   TYPE abap_bool,                  "SQL panel in manual edit mode
+          m_sql_manual TYPE string,                     "manually edited statement
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras.                       "language of the field texts
 
@@ -1162,6 +1164,40 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           render_flds( ).
           update_sql_view( ).
         ENDIF.
+      WHEN 'sqledit'. "toggle manual SQL editing
+        IF getdata = 'ON'.
+          m_sql_edit = abap_true.
+          m_sql_manual = generate_select( ).
+        ELSE.
+          CLEAR: m_sql_edit, m_sql_manual.
+        ENDIF.
+        update_sql_view( ).
+      WHEN 'sqlrun'. "posted from the textarea form: sql=...&act=run/back
+        DATA(l_act_sql) = ``.
+        DATA(l_sql_val) = ``.
+        l_post = concat_lines_of( table = postdata ).
+        SPLIT l_post AT '&' INTO TABLE DATA(lt_sql_pairs).
+        LOOP AT lt_sql_pairs INTO DATA(l_sql_pair).
+          SPLIT l_sql_pair AT '=' INTO DATA(l_sql_name) DATA(l_sql_value).
+          REPLACE ALL OCCURRENCES OF '+' IN l_sql_value WITH ` `.
+          l_sql_value = cl_http_utility=>unescape_url( l_sql_value ).
+          CASE l_sql_name.
+            WHEN 'sql'.
+              l_sql_val = l_sql_value.
+            WHEN 'act'.
+              l_act_sql = l_sql_value.
+          ENDCASE.
+        ENDLOOP.
+        IF l_act_sql = 'back'.
+          CLEAR: m_sql_edit, m_sql_manual.
+          update_sql_view( ). "back to auto-generated statement and auto-apply
+        ELSE.
+          m_sql_manual = l_sql_val.
+          IF m_sql_manual IS NOT INITIAL.
+            execute_sql( i_sql = m_sql_manual ). "errors shown in the status bar
+          ENDIF.
+          update_sql_view( ). "stay in edit mode with the manual text
+        ENDIF.
       WHEN 'fpick'. "click-to-move: 1st click picks, 2nd click inserts before the target
         DATA(l_key) = CONV string( getdata ).
         IF m_pick IS INITIAL.
@@ -1228,6 +1264,25 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
   METHOD update_sql_view.
     CHECK mo_sql_html IS BOUND.
     DATA(l_sql) = generate_select( ).
+
+    IF m_sql_edit = abap_true. "manual mode: textarea instead of the highlighted view
+      DATA(l_edit_sql) = COND #( WHEN m_sql_manual IS NOT INITIAL THEN m_sql_manual ELSE l_sql ).
+      DATA(l_edit_html) =
+        `<html><head><meta charset="utf-8"><style>` &&
+        `body{margin:0;background:#fff;font-family:Consolas,monospace;font-size:12px;}` &&
+        `textarea{width:98%;height:220px;font-family:Consolas,monospace;font-size:12px;border:1px solid #ccc;}` &&
+        `.btn{border:1px solid #2e8b2e;background:#2e8b2e;color:#fff;border-radius:3px;padding:2px 12px;cursor:pointer;}` &&
+        `.btn2{border:1px solid #bbb;background:#f2f2f2;border-radius:3px;padding:2px 12px;cursor:pointer;}` &&
+        `</style></head><body>` &&
+        `<form method="post" action="SAPEVENT:sqlrun">` &&
+        |<textarea name="sql">{ escape( val = l_edit_sql format = cl_abap_format=>e_html_text ) }</textarea><br>| &&
+        `<button class="btn" type="submit" name="act" value="run">&#9654; Run</button> ` &&
+        `<button class="btn2" type="submit" name="act" value="back">Back to auto</button>` &&
+        `</form></body></html>`.
+      show_html( io_html = mo_sql_html i_html = l_edit_html ).
+      RETURN. "no auto-execution while editing
+    ENDIF.
+
     DATA(l_sql_html) = escape( val = l_sql format = cl_abap_format=>e_html_text ).
     REPLACE ALL OCCURRENCES OF REGEX '\bSELECT\b' IN l_sql_html WITH '<span class="kw">SELECT</span>'.
     REPLACE ALL OCCURRENCES OF REGEX '\bFROM\b' IN l_sql_html WITH '<span class="kw">FROM</span>'.
@@ -1248,7 +1303,10 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `pre{margin:6px;white-space:pre-wrap;}` &&
       `.kw{color:#0033cc;font-weight:bold;}` &&
       `.kw2{color:#7a3db8;font-weight:bold;}` &&
-      `</style></head><body><pre>` && l_sql_html && `</pre></body></html>`.
+      `.edit{color:#2c5f8a;text-decoration:none;margin:6px;display:inline-block;}` &&
+      `</style></head><body>` &&
+      `<a class="edit" href="SAPEVENT:sqledit?ON">&#9998; edit</a>` &&
+      `<pre>` && l_sql_html && `</pre></body></html>`.
     show_html( io_html = mo_sql_html i_html = l_html ).
 
     "apply every change directly to the original window
