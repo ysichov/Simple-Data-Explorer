@@ -1887,6 +1887,39 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
                                 ELSE |PIVOT { m_tabname } ({ lines( <result> ) })| ).
     mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true
                        it_catalog = lt_cat ).
+    IF mo_viewer->mo_sel IS BOUND.
+      LOOP AT mo_viewer->mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sync_sel>).
+        DATA(l_sync_label) = condense( CONV string( <sync_sel>-field_label ) ).
+        READ TABLE mt_where_sel INTO DATA(ls_sync_saved)
+          WITH KEY field_label = <sync_sel>-field_label.
+        IF sy-subrc NE 0
+           OR ( ls_sync_saved-range IS INITIAL
+                AND ls_sync_saved-low IS INITIAL
+                AND ls_sync_saved-high IS INITIAL
+                AND ls_sync_saved-sign IS INITIAL
+                AND ls_sync_saved-opti IS INITIAL ).
+          DATA l_sync_alt TYPE lvc_fname.
+          FIND REGEX '^T\d+_' IN l_sync_label MATCH LENGTH DATA(l_sync_pfx_len).
+          IF sy-subrc = 0.
+            l_sync_alt = l_sync_label+l_sync_pfx_len.
+          ELSE.
+            l_sync_alt = |T0_{ l_sync_label }|.
+          ENDIF.
+          READ TABLE mt_where_sel INTO ls_sync_saved WITH KEY field_label = l_sync_alt.
+        ENDIF.
+        IF sy-subrc = 0.
+          <sync_sel>-low         = ls_sync_saved-low.
+          <sync_sel>-high        = ls_sync_saved-high.
+          <sync_sel>-sign        = ls_sync_saved-sign.
+          <sync_sel>-opti        = ls_sync_saved-opti.
+          <sync_sel>-range       = ls_sync_saved-range.
+          <sync_sel>-option_icon = ls_sync_saved-option_icon.
+          <sync_sel>-more_icon   = ls_sync_saved-more_icon.
+          mo_viewer->mo_sel->update_sel_row( CHANGING c_sel_row = <sync_sel> ).
+        ENDIF.
+      ENDLOOP.
+      Zcl_SDE_common=>refresh( mo_viewer->mo_sel->mo_sel_alv ).
+    ENDIF.
   ENDMETHOD.
 
 
