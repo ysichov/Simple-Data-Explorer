@@ -1,3 +1,7 @@
+**It's time to moving forward... Soon....**
+
+<img width="595" height="597" alt="image" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
+
 <img width="645" height="500" alt="image" src="https://github.com/user-attachments/assets/c2b222bf-f200-4979-8516-9f2ebee84cf6" />
 
 
@@ -22,8 +26,3 @@ https://github.com/ysichov/SDE_abapgit - 7.50 abapgit version
 HR/HCM version
 https://github.com/ysichov/SDE/blob/master/SDE_750_HR.abap 
   - Infotypes texts - PAXXXX-ITXEX fields 
-
-
-**It's time to moving forward... Soon....**
-
-<img width="595" height="597" alt="image" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
