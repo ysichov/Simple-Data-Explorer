@@ -12,6 +12,7 @@ CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC
              direction TYPE char1, "O-outgoing FK, I-incoming FK, T-text table, M-manual
              parent    TYPE tabname, "table whose FKs discovered this one; pairs link to it
              alias     TYPE char5,   "assigned at first selection, never renumbered
+             checked   TYPE abap_bool, "emptiness check already done
              pairs     TYPE tt_pairs,
              selected  TYPE abap_bool,
              sel_order TYPE i,
@@ -295,6 +296,21 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
 
+    "Drop tables without any data - no point in offering them for a join
+    LOOP AT mt_cand ASSIGNING <cand> WHERE checked = abap_false.
+      <cand>-checked = abap_true.
+      DATA l_has_data TYPE abap_bool.
+      CLEAR l_has_data.
+      TRY.
+          DATA(l_dyntab) = <cand>-tabname.
+          SELECT SINGLE @abap_true FROM (l_dyntab) INTO @l_has_data.
+        CATCH cx_root.                                  "#EC NO_HANDLER
+      ENDTRY.
+      IF l_has_data = abap_false.
+        DELETE mt_cand.
+      ENDIF.
+    ENDLOOP.
+
     "Descriptions
     IF mt_cand IS NOT INITIAL.
       SELECT tabname, ddtext FROM dd02t
@@ -325,7 +341,8 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
     READ TABLE mt_cand ASSIGNING FIELD-SYMBOL(<cand>) WITH KEY tabname = l_tabname.
     IF sy-subrc NE 0.
-      APPEND VALUE #( tabname = l_tabname direction = 'M' parent = m_tabname ) TO mt_cand ASSIGNING <cand>.
+      "manually added: no emptiness check, the user asked for this table explicitly
+      APPEND VALUE #( tabname = l_tabname direction = 'M' parent = m_tabname checked = abap_true ) TO mt_cand ASSIGNING <cand>.
       SELECT SINGLE ddtext FROM dd02t INTO <cand>-ddtext
         WHERE tabname = l_tabname AND ddlanguage = sy-langu.
       "propose ON condition by matching key field names
@@ -616,9 +633,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
           DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
           l_html = l_html &&
-            |<td><select name="jt_{ l_key }">| &&
+            |<td><select name="jt_{ l_key }" onchange="this.form.submit()">| &&
             |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
-            |<td><input class="cond" type="text" name="on_{ l_key }" value="{
+            |<td><input class="cond" type="text" name="on_{ l_key }" onchange="this.form.submit()" value="{
                escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
         ENDIF.
       ENDLOOP.
