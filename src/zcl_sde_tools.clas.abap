@@ -39,7 +39,8 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
            END OF t_jfld,
            tt_jfld TYPE STANDARD TABLE OF t_jfld WITH DEFAULT KEY.
 
-    METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer.
+    METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer
+                                   io_parent TYPE REF TO cl_gui_container OPTIONAL. "docked mode: build inside this container
 
 protected section.
   PRIVATE SECTION.
@@ -118,13 +119,19 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     m_tabname = io_viewer->m_tabname.
     m_fld_lang = sy-langu.
 
-    mo_box = create( i_width = 1000 i_hight = 400 ).
-    mo_box->set_caption( |Tools: { m_tabname }| ).
-    SET HANDLER on_box_close FOR mo_box.
+    DATA lo_parent TYPE REF TO cl_gui_container.
+    IF io_parent IS BOUND. "docked below the data area of the viewer window
+      lo_parent = io_parent.
+    ELSE. "standalone popup
+      mo_box = create( i_width = 1000 i_hight = 400 ).
+      mo_box->set_caption( |Tools: { m_tabname }| ).
+      SET HANDLER on_box_close FOR mo_box.
+      lo_parent = mo_box.
+    ENDIF.
 
     CREATE OBJECT mo_splitter ##FM_SUBRC_OK
       EXPORTING
-        parent  = mo_box
+        parent  = lo_parent
         rows    = 2
         columns = 1
       EXCEPTIONS

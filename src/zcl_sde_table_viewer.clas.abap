@@ -22,6 +22,10 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
           mt_text_components TYPE abap_component_tab,
           mo_column_emitters TYPE TABLE OF t_column_emitter,
           mo_sel_width       TYPE i,
+          mo_outer_splitter  TYPE REF TO cl_gui_splitter_container, "data area / docked tools
+          mo_tools_parent    TYPE REF TO cl_gui_container,
+          mo_tools           TYPE REF TO object, "zcl_sde_tools (untyped to avoid a cycle at activation)
+          m_tools_visible    TYPE abap_bool,
           m_visible,
           m_std_tbar         TYPE x,
           m_show_empty,
@@ -218,9 +222,22 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
   METHOD create_popup.
     mo_box = create( i_width = 800 i_hight = 150 ).
 
-    CREATE OBJECT mo_splitter ##FM_SUBRC_OK
+    "outer split: data area on top, docked tools area below (collapsed until needed)
+    CREATE OBJECT mo_outer_splitter ##FM_SUBRC_OK
       EXPORTING
         parent  = mo_box
+        rows    = 2
+        columns = 1
+      EXCEPTIONS
+        OTHERS  = 1.
+    mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_relative ).
+    mo_outer_splitter->set_row_height( id = 1 height = 100 ).
+    mo_outer_splitter->get_container( EXPORTING row = 1 column = 1 RECEIVING container = DATA(lo_main) ).
+    mo_outer_splitter->get_container( EXPORTING row = 2 column = 1 RECEIVING container = mo_tools_parent ).
+
+    CREATE OBJECT mo_splitter ##FM_SUBRC_OK
+      EXPORTING
+        parent  = lo_main
         rows    = 1
         columns = 2
       EXCEPTIONS
@@ -753,11 +770,18 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       ENDIF.
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
-    ELSEIF e_ucomm = 'TOOLS'.
+    ELSEIF e_ucomm = 'TOOLS'. "dock the tools area below the data
       IF m_tabname IS INITIAL OR ( zcl_sde_sql=>exist_table( m_tabname ) NE 1 AND zcl_sde_sql=>exist_view( m_tabname ) NE 1 ).
         MESSAGE 'Tools need a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
-      ELSE.
-        DATA(lo_tools) = NEW zcl_sde_tools( me ). "kept alive by its GUI event registrations
+      ELSEIF mo_tools IS NOT BOUND.
+        mo_box->set_position( height = 600 width = 1000 top = 20 left = 20 ). "make room
+        mo_outer_splitter->set_row_height( id = 1 height = 45 ).
+        mo_tools = NEW zcl_sde_tools( io_viewer = me io_parent = mo_tools_parent ).
+        m_tools_visible = abap_true.
+      ELSE. "toggle
+        m_tools_visible = boolc( m_tools_visible = abap_false ).
+        mo_outer_splitter->set_row_height( id = 1
+          height = COND #( WHEN m_tools_visible = abap_true THEN 45 ELSE 100 ) ).
       ENDIF.
       RETURN.
     ELSEIF e_ucomm = 'TABLES'.
