@@ -774,7 +774,6 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       IF m_tabname IS INITIAL OR ( zcl_sde_sql=>exist_table( m_tabname ) NE 1 AND zcl_sde_sql=>exist_view( m_tabname ) NE 1 ).
         MESSAGE 'Tools need a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
       ELSEIF mo_tools IS NOT BOUND.
-        mo_box->set_position( height = 600 width = 1000 top = 20 left = 20 ). "make room
         mo_outer_splitter->set_row_height( id = 1 height = 45 ).
         mo_tools = NEW zcl_sde_tools( io_viewer = me io_parent = mo_tools_parent ).
         m_tools_visible = abap_true.
