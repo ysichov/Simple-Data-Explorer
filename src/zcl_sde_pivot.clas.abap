@@ -104,6 +104,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       `.zchip{display:inline-block;border:1px solid #2e8b2e;background:#eef8ee;border-radius:4px;` &&
       `padding:1px 6px;margin:2px;font-family:Consolas,monospace;text-decoration:none;color:#000;}` &&
       `.agg{color:#7a3db8;font-weight:bold;}` &&
+      `.add{border-style:dashed;background:#fff8e6;border-color:#d2691e;color:#d2691e;font-weight:bold;}` &&
       `.pick{outline:2px dashed #d2691e;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
       `.hint{color:#d2691e;font-weight:bold;}` &&
@@ -114,30 +115,42 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
     IF m_pick IS NOT INITIAL.
       rv_html = rv_html &&
-        |<div class="hint">{ m_pick }: add to&nbsp;| &&
-        `<a class="act" href="SAPEVENT:pv?tr">Rows</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_SUM">SUM</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_COUNT">COUNT</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_MIN">MIN</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_MAX">MAX</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_AVG">AVG</a></div>`.
+        |<div class="hint">picked: { to_lower( m_pick ) } - now click a button inside the target zone | &&
+        |(click the field again to cancel)</div>|.
     ELSE.
       rv_html = rv_html &&
-        `<div class="dir">click a field below, then choose the target zone</div>`.
+        `<div class="dir">1. click a field below &nbsp; 2. click where to add it (Rows or an aggregate)</div>`.
     ENDIF.
 
-    "zones
+    "zones: when a field is picked, the add-buttons appear right inside the zones
+    DATA(l_pick_low) = to_lower( m_pick ).
     rv_html = rv_html && `<h4>Rows (group by)</h4><div class="zone">`.
     LOOP AT mt_rows INTO DATA(l_row).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rr_{ l_row }" title="remove">{ to_lower( l_row ) } &#10005;</a>|.
     ENDLOOP.
+    IF m_pick IS NOT INITIAL.
+      rv_html = rv_html &&
+        |<a class="zchip add" href="SAPEVENT:pv?tr">+ { l_pick_low }</a>|.
+    ELSEIF mt_rows IS INITIAL.
+      rv_html = rv_html && `<span class="dir">group-by fields go here</span>`.
+    ENDIF.
     rv_html = rv_html && `</div><h4>Values (aggregates)</h4><div class="zone">`.
     LOOP AT mt_vals INTO DATA(ls_val).
       rv_html = rv_html &&
         |<a class="zchip" href="SAPEVENT:pv?rv_{ sy-tabix }" title="remove">| &&
         |<span class="agg">{ ls_val-agg }</span> { to_lower( ls_val-key ) } &#10005;</a>|.
     ENDLOOP.
+    IF m_pick IS NOT INITIAL.
+      rv_html = rv_html &&
+        |<a class="zchip add" href="SAPEVENT:pv?ag_SUM">+ SUM( { l_pick_low } )</a>| &&
+        |<a class="zchip add" href="SAPEVENT:pv?ag_COUNT">+ COUNT( { l_pick_low } )</a>| &&
+        |<a class="zchip add" href="SAPEVENT:pv?ag_MIN">+ MIN( { l_pick_low } )</a>| &&
+        |<a class="zchip add" href="SAPEVENT:pv?ag_MAX">+ MAX( { l_pick_low } )</a>| &&
+        |<a class="zchip add" href="SAPEVENT:pv?ag_AVG">+ AVG( { l_pick_low } )</a>|.
+    ELSEIF mt_vals IS INITIAL.
+      rv_html = rv_html && `<span class="dir">aggregated fields go here</span>`.
+    ENDIF.
     rv_html = rv_html && `</div><h4>Available fields</h4>`.
 
     "available fields as chips
