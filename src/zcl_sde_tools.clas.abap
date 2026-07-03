@@ -1783,14 +1783,20 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           RETURN.
         ENDIF.
         "column header from the WHEN literal of the original (case-preserving) text
-        DATA: l_lit TYPE string, l_litq TYPE string.
-        CLEAR: l_lit, l_litq.
-        FIND REGEX 'WHEN\s+\S+\s*=\s*(?:''([^'']*)''|(\S+))\s+THEN' IN l_fld_str
-          IGNORING CASE SUBMATCHES l_litq l_lit.
-        l_head = COND #( WHEN sy-subrc NE 0 THEN l_name
-                         WHEN l_litq IS NOT INITIAL THEN l_litq
-                         WHEN l_lit IS NOT INITIAL AND l_lit NE `''` THEN l_lit
-                         ELSE `(empty)` ). "matched an empty '' literal
+        DATA: l_lit TYPE string, l_litq TYPE string,
+              l_cond_alias TYPE string, l_cond_field TYPE string,
+              l_head_value TYPE string,
+              l_head_subrc TYPE sy-subrc.
+        CLEAR: l_lit, l_litq, l_cond_alias, l_cond_field, l_head_value.
+        FIND REGEX 'WHEN\s+(?:(\w+)~)?(\w+)\s*=\s*(?:''([^'']*)''|(\S+))\s+(?:AND|THEN)' IN l_fld_str
+          IGNORING CASE SUBMATCHES l_cond_alias l_cond_field l_litq l_lit.
+        l_head_subrc = sy-subrc.
+        l_head_value = COND #( WHEN l_head_subrc NE 0 THEN l_name
+                               WHEN l_litq IS NOT INITIAL THEN l_litq
+                               WHEN l_lit IS NOT INITIAL AND l_lit NE `''` THEN l_lit
+                               ELSE `(empty)` ). "matched an empty '' literal
+        l_head = COND #( WHEN l_head_subrc NE 0 OR l_cond_field IS INITIAL THEN l_head_value
+                         ELSE |{ l_cond_field }: { l_head_value }| ).
       ENDIF.
       IF l_name IS INITIAL.
         l_name = COND #( WHEN l_alias2 IS INITIAL THEN l_field ELSE |{ l_alias2 }_{ l_field }| ).
