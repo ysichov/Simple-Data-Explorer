@@ -1586,7 +1586,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         CONDENSE l_txt.
         l_lit = l_txt.
         REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
-        l_lit = |'{ l_lit }'|.
+        l_lit = COND #( WHEN l_lit IS INITIAL THEN `' '` ELSE |'{ l_lit }'| ).
 
         IF l_text IS NOT INITIAL.
           l_text = |{ l_text }/|.
