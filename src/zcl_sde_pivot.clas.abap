@@ -9,7 +9,8 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
 
            BEGIN OF t_colval,
              text    TYPE string, "display value
-             literal TYPE string, "SQL literal ('USD' or 42)
+             literal TYPE string, "SQL literal ('USD' or 42), single-column compatibility
+             cond    TYPE string, "SQL condition for multi-column buckets
            END OF t_colval,
            tt_colvals TYPE STANDARD TABLE OF t_colval WITH DEFAULT KEY.
 
@@ -17,6 +18,7 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
       has_layout RETURNING VALUE(rv_has) TYPE abap_bool,
       has_columns RETURNING VALUE(rv_has) TYPE abap_bool,
       get_col_key RETURNING VALUE(rv_key) TYPE string,
+      get_col_keys RETURNING VALUE(rt_keys) TYPE tt_keys,
 
       "HTML for the fields panel: zones + available field chips (SAPEVENT:pv?...)
       render_panel IMPORTING it_fields      TYPE zcl_sde_tools=>tt_jfld
@@ -37,7 +39,7 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
 
   PRIVATE SECTION.
     DATA: mt_rows TYPE tt_keys, "group-by fields in order
-          mt_cols TYPE tt_keys, "column field (max 1 in v1)
+          mt_cols TYPE tt_keys, "column fields in order
           mt_vals TYPE tt_vals, "aggregated fields
           m_pick  TYPE string.  "field picked for zone assignment
 
@@ -66,6 +68,10 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
   METHOD get_col_key.
     rv_key = COND #( WHEN mt_cols IS NOT INITIAL THEN mt_cols[ 1 ] ).
+  ENDMETHOD.
+
+  METHOD get_col_keys.
+    rt_keys = mt_cols.
   ENDMETHOD.
 
   METHOD qualify.
@@ -120,9 +126,9 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           APPEND m_pick TO mt_rows.
         ENDIF.
         CLEAR m_pick.
-      WHEN 'tc'. "picked field -> columns (single field in v1)
-        IF m_pick IS NOT INITIAL.
-          mt_cols = VALUE #( ( m_pick ) ).
+      WHEN 'tc'. "picked field -> columns
+        IF m_pick IS NOT INITIAL AND NOT line_exists( mt_cols[ table_line = m_pick ] ).
+          APPEND m_pick TO mt_cols.
         ENDIF.
         CLEAR m_pick.
       WHEN OTHERS.
@@ -135,7 +141,10 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           CLEAR m_pick.
           RETURN.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dc_'.
-          mt_cols = VALUE #( ( substring( val = i_act off = 3 len = strlen( i_act ) - 3 ) ) ).
+          DATA(l_ckey) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
+          IF NOT line_exists( mt_cols[ table_line = l_ckey ] ).
+            APPEND l_ckey TO mt_cols.
+          ENDIF.
           CLEAR m_pick.
           RETURN.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dv_'.
@@ -161,8 +170,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           CLEAR m_pick.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rr_'. "remove from rows
           DELETE mt_rows WHERE table_line = i_act+3.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rc_'. "remove the column field
-          CLEAR mt_cols.
+        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rc_'. "remove from columns
+          DELETE mt_cols WHERE table_line = i_act+3.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rv_'. "remove from values by index
           DATA(l_idx) = CONV i( i_act+3 ).
           DELETE mt_vals INDEX l_idx.
@@ -238,9 +247,9 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDLOOP.
     IF m_pick IS NOT INITIAL.
       rv_html = rv_html &&
-        |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }{ COND string( WHEN mt_cols IS NOT INITIAL THEN ' (replace)' ) }</a>|.
+        |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }</a>|.
     ELSEIF mt_cols IS INITIAL.
-      rv_html = rv_html && `<span class="dir">one field; its values become CASE columns (max 50)</span>`.
+      rv_html = rv_html && `<span class="dir">fields; their value combinations become CASE columns (max 50)</span>`.
     ENDIF.
 
     rv_html = rv_html && `</div><h4>Values (aggregates at the intersections)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
@@ -310,10 +319,12 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
     IF has_columns( ) = abap_true AND it_col_vals IS NOT INITIAL.
       "matrix: one CASE bucket per column value and aggregate
-      DATA(l_colq) = qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ).
       LOOP AT it_col_vals INTO DATA(ls_cv).
         LOOP AT mt_vals INTO DATA(ls_val).
           DATA(l_fq) = qualify( i_key = ls_val-key i_multi = i_multi ).
+          DATA(l_cond) = COND string( WHEN ls_cv-cond IS NOT INITIAL
+                                      THEN ls_cv-cond
+                                      ELSE |{ qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ) } = { ls_cv-literal }| ).
           "component: AGG_FIELD_<value>, unique, <= 30
           DATA(l_sanval) = sanitize( ls_cv-text ).
           DATA(l_acomp) = comp_name( i_key = ls_val-key i_prefix = ls_val-agg ).
@@ -328,21 +339,22 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
             l_fields = |{ l_fields },{ l_nl }       |.
           ENDIF.
           "no ELSE: other buckets stay NULL and are ignored by the aggregate
-          l_fields = |{ l_fields }{ ls_val-agg }( CASE WHEN { l_colq } = { ls_cv-literal } | &&
+          l_fields = |{ l_fields }{ ls_val-agg }( CASE WHEN { l_cond } | &&
                      |THEN { l_fq } END ) AS { to_lower( l_name ) }|.
         ENDLOOP.
       ENDLOOP.
     ELSE.
       "no columns: plain aggregates; a column field without values acts as one more dimension
-      IF mt_cols IS NOT INITIAL AND mt_vals IS INITIAL.
-        DATA(l_cdim) = qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ).
+      LOOP AT mt_cols INTO DATA(l_col_dim).
+        CHECK mt_vals IS INITIAL.
+        DATA(l_cdim) = qualify( i_key = l_col_dim i_multi = i_multi ).
         IF l_fields IS NOT INITIAL.
           l_fields = |{ l_fields },{ l_nl }       |.
           l_group  = |{ l_group }, |.
         ENDIF.
-        l_fields = |{ l_fields }{ l_cdim } AS { to_lower( comp_name( mt_cols[ 1 ] ) ) }|.
+        l_fields = |{ l_fields }{ l_cdim } AS { to_lower( comp_name( l_col_dim ) ) }|.
         l_group  = |{ l_group }{ l_cdim }|.
-      ENDIF.
+      ENDLOOP.
       LOOP AT mt_vals INTO ls_val.
         IF l_fields IS NOT INITIAL.
           l_fields = |{ l_fields },{ l_nl }       |.

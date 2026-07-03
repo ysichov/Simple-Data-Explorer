@@ -63,7 +63,8 @@ protected section.
           m_sql_edit   TYPE abap_bool,                  "SQL panel in manual edit mode
           m_sql_manual TYPE string,                     "manually edited statement
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
-          m_fld_lang   TYPE spras.                       "language of the field texts
+          m_fld_lang   TYPE spras,                       "language of the field texts
+          mt_where_sel TYPE TABLE OF zcl_sde_appl=>selection_display_s. "ranges before pivot rebind
 
     METHODS:
       find_candidates,
@@ -91,6 +92,7 @@ protected section.
       get_pivot_col_values RETURNING VALUE(rt_vals) TYPE zcl_sde_pivot=>tt_colvals,
       build_from RETURNING VALUE(rv_from) TYPE string,
       is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
+      cache_where_selection,
       build_where RETURNING VALUE(rv_where) TYPE string,
       execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
       fcat_entry IMPORTING i_fieldname   TYPE lvc_fname
@@ -179,6 +181,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     find_candidates( ).
     rebuild_selection( ).
     create_sql_view( ).
+    cache_where_selection( ).
     refresh_all( ).
     m_ready = abap_true. "from now on every change is applied to the original window
     update_sql_view( ).
@@ -190,6 +193,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD on_viewer_sel.
+    cache_where_selection( ).
     update_sql_view( ).
   ENDMETHOD.
 
@@ -1461,39 +1465,105 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD cache_where_selection.
+    CHECK mo_viewer->mo_sel IS BOUND.
+
+    LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_sel).
+      READ TABLE mt_where_sel ASSIGNING FIELD-SYMBOL(<saved>)
+        WITH KEY field_label = ls_sel-field_label.
+      IF sy-subrc = 0.
+        MOVE-CORRESPONDING ls_sel TO <saved>.
+      ELSE.
+        APPEND ls_sel TO mt_where_sel.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+
   METHOD get_pivot_col_values.
-    FIELD-SYMBOLS <vals> TYPE STANDARD TABLE.
+    TYPES: BEGIN OF t_colmeta,
+             key   TYPE string,
+             sql   TYPE string,
+             comp  TYPE string,
+             field TYPE fieldname,
+           END OF t_colmeta.
+
+    FIELD-SYMBOLS: <vals> TYPE STANDARD TABLE,
+                   <row>  TYPE any,
+                   <v>    TYPE any.
+
+    DATA: lt_cols TYPE STANDARD TABLE OF string,
+          lt_meta TYPE STANDARD TABLE OF t_colmeta,
+          lt_comp TYPE abap_component_tab,
+          lr_vals TYPE REF TO data.
 
     CHECK mo_pivot IS BOUND AND mo_pivot->has_columns( ) = abap_true.
-    DATA(l_key) = mo_pivot->get_col_key( ).
-    CHECK l_key IS NOT INITIAL.
-    SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
-    READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias.
-    CHECK sy-subrc = 0.
+    DATA(lt_keys) = mo_pivot->get_col_keys( ).
+    CHECK lt_keys IS NOT INITIAL.
 
-    "typed value buffer keeps leading zeros etc. intact
-    DATA lr_vals TYPE REF TO data.
-    DATA(l_typename) = |{ ls_tab-tabname }-{ l_field }|.
+    DATA(l_col_idx) = 0.
+    LOOP AT lt_keys INTO DATA(l_key).
+      SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
+      READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias.
+      CHECK sy-subrc = 0.
+
+      ADD 1 TO l_col_idx.
+      DATA(l_comp) = |C{ l_col_idx }|.
+      DATA(l_col) = COND string( WHEN is_multi( ) = abap_true
+                                 THEN |{ to_upper( l_alias ) }~{ l_field }|
+                                 ELSE |{ l_field }| ).
+
+      DATA lo_td TYPE REF TO cl_abap_typedescr.
+      DATA lo_type TYPE REF TO cl_abap_datadescr.
+      cl_abap_typedescr=>describe_by_name(
+        EXPORTING  p_name         = |{ ls_tab-tabname }-{ l_field }|
+        RECEIVING  p_descr_ref    = lo_td
+        EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
+      IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
+        RETURN.
+      ENDIF.
+      TRY.
+          lo_type = CAST cl_abap_datadescr( lo_td ).
+        CATCH cx_sy_move_cast_error.
+          RETURN.
+      ENDTRY.
+
+      APPEND |{ l_col } AS { l_comp }| TO lt_cols.
+      APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
+      APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field ) TO lt_meta.
+    ENDLOOP.
+
+    CHECK lt_comp IS NOT INITIAL.
+
     TRY.
-        CREATE DATA lr_vals TYPE TABLE OF (l_typename).
-      CATCH cx_sy_create_data_error.
+        DATA(lo_struct) = cl_abap_structdescr=>create( lt_comp ).
+        DATA(lo_tab) = cl_abap_tabledescr=>create(
+                         p_line_type  = lo_struct
+                         p_table_kind = cl_abap_tabledescr=>tablekind_std
+                         p_unique     = abap_false ).
+        CREATE DATA lr_vals TYPE HANDLE lo_tab.
+      CATCH cx_root.
         RETURN.
     ENDTRY.
     ASSIGN lr_vals->* TO <vals>.
 
-    DATA(l_col) = COND string( WHEN is_multi( ) = abap_true
-                               THEN |{ to_upper( l_alias ) }~{ l_field }|
-                               ELSE |{ l_field }| ).
     DATA(l_from) = to_upper( build_from( ) ).
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_from WITH ` `.
     DATA(l_where) = upper_outside_quotes( build_where( ) ).
 
     TRY.
-        SELECT DISTINCT (l_col)
-          FROM (l_from)
-          WHERE (l_where)
-          INTO TABLE @<vals>
-          UP TO 50 ROWS.
+        IF l_where IS INITIAL.
+          SELECT DISTINCT (lt_cols)
+            FROM (l_from)
+            INTO TABLE @<vals>
+            UP TO 50 ROWS.
+        ELSE.
+          SELECT DISTINCT (lt_cols)
+            FROM (l_from)
+            WHERE (l_where)
+            INTO TABLE @<vals>
+            UP TO 50 ROWS.
+        ENDIF.
       CATCH cx_root.
         RETURN.
     ENDTRY.
@@ -1501,14 +1571,34 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
     "SQL literal: always a quoted character literal - ABAP SQL converts it to the
     "column type itself, while unquoted decimals ('185.00') are a syntax error
-    LOOP AT <vals> ASSIGNING FIELD-SYMBOL(<v>).
-      DATA l_txt TYPE string.
-      l_txt = <v>. "plain assignment: NUMC/DATS/decimals keep their raw form
-      CONDENSE l_txt.
-      DATA(l_lit) = l_txt.
-      REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
-      l_lit = |'{ l_lit }'|.
-      APPEND VALUE #( text = l_txt literal = l_lit ) TO rt_vals.
+    LOOP AT <vals> ASSIGNING <row>.
+      DATA: l_text TYPE string,
+            l_cond TYPE string,
+            l_lit  TYPE string.
+      CLEAR: l_text, l_cond.
+
+      LOOP AT lt_meta INTO DATA(ls_meta).
+        ASSIGN COMPONENT ls_meta-comp OF STRUCTURE <row> TO <v>.
+        CHECK sy-subrc = 0.
+
+        DATA l_txt TYPE string.
+        l_txt = <v>. "plain assignment: NUMC/DATS/decimals keep their raw form
+        CONDENSE l_txt.
+        l_lit = l_txt.
+        REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
+        l_lit = |'{ l_lit }'|.
+
+        IF l_text IS NOT INITIAL.
+          l_text = |{ l_text }/|.
+          l_cond = |{ l_cond } AND |.
+        ENDIF.
+        l_text = |{ l_text }{ l_txt }|.
+        l_cond = |{ l_cond }{ ls_meta-sql } = { l_lit }|.
+      ENDLOOP.
+
+      APPEND VALUE #( text    = l_text
+                      literal = COND #( WHEN lines( lt_meta ) = 1 THEN l_lit )
+                      cond    = l_cond ) TO rt_vals.
     ENDLOOP.
   ENDMETHOD.
 
@@ -1531,14 +1621,20 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
   METHOD build_where.
     DATA: lt_where TYPE rsds_twhere,
-          lt_range TYPE rsds_trange.
+          lt_range TYPE rsds_trange,
+          lt_sel   TYPE TABLE OF zcl_sde_appl=>selection_display_s.
 
     CHECK mo_viewer->mo_sel IS BOUND.
     DATA(l_multi) = boolc( lines( mt_jtabs ) > 1 ).
 
+    lt_sel = mt_where_sel.
+    IF lt_sel IS INITIAL.
+      lt_sel = mo_viewer->mo_sel->mt_sel_tab.
+    ENDIF.
+
     APPEND INITIAL LINE TO lt_range ASSIGNING FIELD-SYMBOL(<tabl>).
     <tabl>-tablename = m_tabname.
-    LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
+    LOOP AT lt_sel INTO DATA(ls_tab) WHERE range IS NOT INITIAL.
       "panel label (CARRID or T1_CONNID) -> alias + field
       DATA(l_label) = condense( CONV string( ls_tab-field_label ) ).
       DATA(l_alias) = `T0`.
