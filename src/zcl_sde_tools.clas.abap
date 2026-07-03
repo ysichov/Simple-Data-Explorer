@@ -1510,19 +1510,21 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     DATA(l_col_idx) = 0.
     LOOP AT lt_keys INTO DATA(l_key).
       SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
-      READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias.
+      DATA(l_alias_up) = to_upper( l_alias ).
+      DATA(l_field_up) = to_upper( l_field ).
+      READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias_up.
       CHECK sy-subrc = 0.
 
       ADD 1 TO l_col_idx.
       DATA(l_comp) = |C{ l_col_idx }|.
       DATA(l_col) = COND string( WHEN is_multi( ) = abap_true
-                                 THEN |{ to_upper( l_alias ) }~{ l_field }|
-                                 ELSE |{ l_field }| ).
+                                 THEN |{ l_alias_up }~{ l_field_up }|
+                                 ELSE |{ l_field_up }| ).
 
       DATA lo_td TYPE REF TO cl_abap_typedescr.
       DATA lo_type TYPE REF TO cl_abap_datadescr.
       cl_abap_typedescr=>describe_by_name(
-        EXPORTING  p_name         = |{ ls_tab-tabname }-{ l_field }|
+        EXPORTING  p_name         = |{ ls_tab-tabname }-{ l_field_up }|
         RECEIVING  p_descr_ref    = lo_td
         EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
       IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
@@ -1536,7 +1538,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
       APPEND l_col TO lt_cols.
       APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
-      APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field ) TO lt_meta.
+      APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field_up ) TO lt_meta.
     ENDLOOP.
 
     CHECK lt_comp IS NOT INITIAL.

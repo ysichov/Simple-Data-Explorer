@@ -129,7 +129,9 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
   METHOD is_numeric_field.
     SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
-    READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias fieldname = l_field.
+    DATA(l_alias_up) = to_upper( l_alias ).
+    DATA(l_field_up) = to_upper( l_field ).
+    READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias_up fieldname = l_field_up.
     IF sy-subrc = 0.
       rv_ok = boolc( ls_field-inttype CA 'b8sIPFaSe' ).
     ENDIF.
@@ -141,7 +143,9 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rt_aggs = VALUE #( ( `SUM` ) ( `COUNT` ) ( `MIN` ) ( `MAX` ) ( `AVG` ) ).
     ELSE.
       SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
-      READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias fieldname = l_field.
+      DATA(l_alias_up) = to_upper( l_alias ).
+      DATA(l_field_up) = to_upper( l_field ).
+      READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias_up fieldname = l_field_up.
       IF sy-subrc = 0.
         CASE ls_field-datatype.
           WHEN 'CHAR' OR 'NUMC' OR 'DATS' OR 'TIMS' OR 'CLNT' OR 'CUKY' OR 'UNIT' OR 'LANG'.
