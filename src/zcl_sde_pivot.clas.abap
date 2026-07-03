@@ -28,6 +28,7 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
       "pv actions: pk_<key> pick, tr rows, tc columns, ag_<AGG> values,
       "rr_<key>/rc_<key>/rv_<idx> remove, CLR clear all
       handle_action IMPORTING i_act TYPE string,
+      normalize_aggs IMPORTING it_fields TYPE zcl_sde_tools=>tt_jfld,
 
       "the whole pivot as ONE statement: CASE buckets per column value
       build_select IMPORTING i_from        TYPE string
@@ -51,7 +52,16 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
                           i_prefix       TYPE string OPTIONAL
                 RETURNING VALUE(rv_name) TYPE string,
       sanitize IMPORTING i_txt          TYPE string
-               RETURNING VALUE(rv_name) TYPE string.
+               RETURNING VALUE(rv_name) TYPE string,
+      is_numeric_field IMPORTING i_key        TYPE string
+                                 it_fields    TYPE zcl_sde_tools=>tt_jfld
+                       RETURNING VALUE(rv_ok) TYPE abap_bool,
+      allowed_aggs IMPORTING i_key         TYPE string
+                              it_fields    TYPE zcl_sde_tools=>tt_jfld
+                    RETURNING VALUE(rt_aggs) TYPE tt_keys,
+      default_agg IMPORTING i_key         TYPE string
+                              it_fields    TYPE zcl_sde_tools=>tt_jfld
+                    RETURNING VALUE(rv_agg) TYPE string.
 ENDCLASS.
 
 
@@ -117,6 +127,27 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+  METHOD is_numeric_field.
+    SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    READ TABLE it_fields INTO DATA(ls_field) WITH KEY alias = l_alias fieldname = l_field.
+    IF sy-subrc = 0.
+      rv_ok = boolc( ls_field-inttype CA 'b8sIPFaSe' ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD allowed_aggs.
+    rt_aggs = VALUE #( ( `COUNT` ) ( `MIN` ) ( `MAX` ) ).
+    IF is_numeric_field( i_key = i_key it_fields = it_fields ) = abap_true.
+      rt_aggs = VALUE #( ( `SUM` ) ( `COUNT` ) ( `MIN` ) ( `MAX` ) ( `AVG` ) ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD default_agg.
+    rv_agg = COND #( WHEN is_numeric_field( i_key = i_key it_fields = it_fields ) = abap_true
+                     THEN `SUM`
+                     ELSE `COUNT` ).
+  ENDMETHOD.
+
   METHOD handle_action.
     CASE i_act.
       WHEN 'CLR'.
@@ -149,7 +180,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
           RETURN.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dv_'.
           APPEND VALUE #( key = substring( val = i_act off = 3 len = strlen( i_act ) - 3 )
-                          agg = 'SUM' ) TO mt_vals.
+                          agg = 'COUNT' ) TO mt_vals.
           CLEAR m_pick.
           RETURN.
         ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'sa_'. "sa_<idx>_<AGG>: change aggregate
@@ -179,8 +210,16 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDCASE.
   ENDMETHOD.
 
+  METHOD normalize_aggs.
+    LOOP AT mt_vals ASSIGNING FIELD-SYMBOL(<val>).
+      DATA(lt_allowed) = allowed_aggs( i_key = <val>-key it_fields = it_fields ).
+      IF NOT line_exists( lt_allowed[ table_line = <val>-agg ] ).
+        <val>-agg = default_agg( i_key = <val>-key it_fields = it_fields ).
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
   METHOD render_panel.
-    DATA(lt_aggs) = VALUE tt_keys( ( `SUM` ) ( `COUNT` ) ( `MIN` ) ( `MAX` ) ( `AVG` ) ).
     rv_html =
       `<html><head><meta charset="utf-8"><style>` &&
       `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#fff;}` &&
@@ -255,6 +294,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     rv_html = rv_html && `</div><h4>Measures (aggregates)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
     LOOP AT mt_vals INTO DATA(ls_val).
       DATA(l_vidx) = sy-tabix.
+      DATA(lt_aggs) = allowed_aggs( i_key = ls_val-key it_fields = it_fields ).
       rv_html = rv_html && |<span class="zchip">| &&
         |<form style="display:inline" method="post" action="SAPEVENT:pvagg">| &&
         |<input type="hidden" name="idx" value="{ l_vidx }">| &&
@@ -268,12 +308,10 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         | <a class="rmx" href="SAPEVENT:pv?rv_{ l_vidx }" title="remove">&#10005;</a></form></span>|.
     ENDLOOP.
     IF m_pick IS NOT INITIAL.
-      rv_html = rv_html &&
-        |<a class="zchip add" href="SAPEVENT:pv?ag_SUM">+ SUM( { l_pick_low } )</a>| &&
-        |<a class="zchip add" href="SAPEVENT:pv?ag_COUNT">+ COUNT( { l_pick_low } )</a>| &&
-        |<a class="zchip add" href="SAPEVENT:pv?ag_MIN">+ MIN( { l_pick_low } )</a>| &&
-        |<a class="zchip add" href="SAPEVENT:pv?ag_MAX">+ MAX( { l_pick_low } )</a>| &&
-        |<a class="zchip add" href="SAPEVENT:pv?ag_AVG">+ AVG( { l_pick_low } )</a>|.
+      LOOP AT allowed_aggs( i_key = m_pick it_fields = it_fields ) INTO DATA(l_add_agg).
+        rv_html = rv_html &&
+          |<a class="zchip add" href="SAPEVENT:pv?ag_{ l_add_agg }">+ { l_add_agg }( { l_pick_low } )</a>|.
+      ENDLOOP.
     ELSEIF mt_vals IS INITIAL.
       rv_html = rv_html && `<span class="dir">numeric fields for SUM/COUNT/MIN/MAX/AVG go here</span>`.
     ENDIF.

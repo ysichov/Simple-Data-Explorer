@@ -36,6 +36,8 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
              fieldname TYPE fieldname,
              keyflag   TYPE keyflag,
              ddtext    TYPE reptext,
+             datatype  TYPE c LENGTH 30,
+             inttype   TYPE c LENGTH 1,
            END OF t_jfld,
            tt_jfld TYPE STANDARD TABLE OF t_jfld WITH DEFAULT KEY.
 
@@ -437,7 +439,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
       APPEND VALUE #( sel = abap_true alias = 'T0' tabname = m_tabname "the window opened with all fields
                       fieldname = ls_f-fieldname keyflag = ls_f-keyflag
-                      ddtext = ls_f-fieldtext ) TO mt_jflds.
+                      ddtext = ls_f-fieldtext datatype = ls_f-datatype inttype = ls_f-inttype ) TO mt_jflds.
     ENDLOOP.
 
     lt_sorted = VALUE #( FOR wa IN mt_cand WHERE ( selected = abap_true ) ( wa ) ).
@@ -505,7 +507,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         DATA(l_dupe) = boolc( line_exists( mt_jflds[ fieldname = ls_f-fieldname sel = abap_true ] ) ).
         APPEND VALUE #( alias = l_alias tabname = ls_cand-tabname
                         fieldname = ls_f-fieldname keyflag = ls_f-keyflag
-                        ddtext = ls_f-fieldtext
+                        ddtext = ls_f-fieldtext datatype = ls_f-datatype inttype = ls_f-inttype
                         sel = boolc( ls_f-keyflag = abap_true AND l_dupe = abap_false )
                       ) TO mt_jflds.
       ENDLOOP.
@@ -758,6 +760,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       "the pivot source is what the join selected, not every field of every table
       DATA(lt_src) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
       SORT lt_src BY pos.
+      mo_pivot->normalize_aggs( lt_src ).
       show_html( io_html = mo_flds_html
                  i_html  = mo_pivot->render_panel( it_fields = lt_src i_show_texts = m_show_texts ) ).
       RETURN.
@@ -1354,6 +1357,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     CHECK mo_sql_html IS BOUND.
     DATA l_sql TYPE string.
     IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
+      DATA(lt_src) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+      SORT lt_src BY pos.
+      mo_pivot->normalize_aggs( lt_src ).
       l_sql = mo_pivot->build_select( i_from      = build_from( )
                                       i_where     = build_where( )
                                       i_multi     = is_multi( )
