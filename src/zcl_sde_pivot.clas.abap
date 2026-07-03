@@ -120,7 +120,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
         `<a class="act" href="SAPEVENT:pv?ag_COUNT">COUNT</a>` &&
         `<a class="act" href="SAPEVENT:pv?ag_MIN">MIN</a>` &&
         `<a class="act" href="SAPEVENT:pv?ag_MAX">MAX</a>` &&
-        `<a class="act" href="SAPEVENT:pv?ag_AVG">AVG</a></div>|.
+        `<a class="act" href="SAPEVENT:pv?ag_AVG">AVG</a></div>`.
     ELSE.
       rv_html = rv_html &&
         `<div class="dir">click a field below, then choose the target zone</div>`.
