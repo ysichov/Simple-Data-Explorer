@@ -3,9 +3,9 @@
  <asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
   <asx:values>
    <VSEOCLASS>
-    <CLSNAME>ZCL_SDE_JOIN</CLSNAME>
+    <CLSNAME>ZCL_SDE_TOOLS</CLSNAME>
     <LANGU>E</LANGU>
-    <DESCRIPT>SDE join builder</DESCRIPT>
+    <DESCRIPT>SDE tools: join, pivot</DESCRIPT>
     <STATE>1</STATE>
     <CLSCCINCL>X</CLSCCINCL>
     <FIXPT>X</FIXPT>

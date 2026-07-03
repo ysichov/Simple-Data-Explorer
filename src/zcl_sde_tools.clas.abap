@@ -1,4 +1,4 @@
-CLASS zcl_sde_join DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC.
+CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLIC.
   PUBLIC SECTION.
     TYPES: BEGIN OF t_pair,
              cand_field TYPE fieldname,
@@ -56,6 +56,8 @@ protected section.
           mo_flds_html TYPE REF TO cl_gui_html_viewer,
           mo_sql_html  TYPE REF TO cl_gui_html_viewer,
           m_ready      TYPE abap_bool,                   "constructor finished: changes go live to the viewer
+          m_mode       TYPE char1,                      "active tool: ' ' none, J join, P pivot
+          mo_pivot     TYPE REF TO zcl_sde_pivot,
           m_pick       TYPE string,                     "click-to-move: picked field key or table alias
           m_sql_edit   TYPE abap_bool,                  "SQL panel in manual edit mode
           m_sql_manual TYPE string,                     "manually edited statement
@@ -85,6 +87,8 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
+      build_from RETURNING VALUE(rv_from) TYPE string,
+      is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
       build_where RETURNING VALUE(rv_where) TYPE string,
       execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
       viewer_alive RETURNING VALUE(rv_alive) TYPE abap_bool,
@@ -100,7 +104,7 @@ ENDCLASS.
 
 
 
-CLASS ZCL_SDE_JOIN IMPLEMENTATION.
+CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
 
   METHOD constructor.
@@ -110,7 +114,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     m_fld_lang = sy-langu.
 
     mo_box = create( i_width = 1000 i_hight = 400 ).
-    mo_box->set_caption( |Join builder: { m_tabname }| ).
+    mo_box->set_caption( |Tools: { m_tabname }| ).
     SET HANDLER on_box_close FOR mo_box.
 
     CREATE OBJECT mo_splitter ##FM_SUBRC_OK
@@ -615,8 +619,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       `</head><body>` &&
       `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
       `<input type="hidden" name="keys" id="pk"></form>` &&
-      |<span class="base">{ m_tabname }</span> &#8646; |.
+      |<span class="base">{ m_tabname }</span>| &&
+      |<a class="card{ COND string( WHEN m_mode = 'J' THEN ' sel' ) }" href="SAPEVENT:mode?J">&#128279; Join</a>| &&
+      |<a class="card{ COND string( WHEN m_mode = 'P' THEN ' sel' ) }" href="SAPEVENT:mode?P">&#8862; Pivot table</a>|.
 
+    IF m_mode = 'J'. "join tool: candidate canvas + join configuration
+    l_html = l_html && ` &#8646; `.
     LOOP AT mt_cand INTO DATA(ls_cand).
       DATA(l_class) = COND string( WHEN ls_cand-selected = abap_true THEN 'card sel' ELSE 'card' ).
       DATA(l_dir) = SWITCH string( ls_cand-direction
@@ -667,7 +675,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_html = l_html &&
         `</table><button class="btn" type="submit" name="act" value="apply">Apply</button></form>`.
     ENDIF.
+    ENDIF. "m_mode = 'J'
 
+    IF m_mode NE 'P'. "in pivot mode the field zones live in the right panel
     l_html = l_html &&
       `<div class="tabhdr">FIELDS&nbsp;&nbsp;` &&
       `<a class="act" href="SAPEVENT:fld?ALL">select all</a>` &&
@@ -716,6 +726,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           |{ l_pick_label }</a>|.
       ENDLOOP.
     ENDLOOP.
+    ENDIF. "m_mode NE 'P'
 
     l_html = l_html && `</body></html>`.
     show_html( io_html = mo_html i_html = l_html ).
@@ -726,6 +737,12 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     DATA lt_sel TYPE tt_jfld.
 
     CHECK mo_flds_html IS BOUND.
+
+    IF m_mode = 'P' AND mo_pivot IS BOUND. "pivot zones instead of the SELECT list
+      show_html( io_html = mo_flds_html
+                 i_html  = mo_pivot->render_panel( it_fields = mt_jflds i_show_texts = m_show_texts ) ).
+      RETURN.
+    ENDIF.
 
     DATA(l_html) =
       `<html><head><meta charset="utf-8"><style>` &&
@@ -1114,6 +1131,22 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
   METHOD on_sapevent.
     CASE action.
+      WHEN 'mode'. "tool selection: J join, P pivot (click again = off)
+        IF m_mode = getdata.
+          CLEAR m_mode.
+        ELSE.
+          m_mode = getdata.
+          IF m_mode = 'P' AND mo_pivot IS NOT BOUND.
+            mo_pivot = NEW #( ).
+          ENDIF.
+        ENDIF.
+        refresh_all( ).
+      WHEN 'pv'. "pivot zone actions
+        IF mo_pivot IS BOUND.
+          mo_pivot->handle_action( CONV #( getdata ) ).
+          render_flds( ).
+          update_sql_view( ).
+        ENDIF.
       WHEN 'toggle'.
         toggle_candidate( CONV #( getdata ) ).
       WHEN 'addtab'.
@@ -1269,7 +1302,15 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
   METHOD update_sql_view.
     CHECK mo_sql_html IS BOUND.
-    DATA(l_sql) = generate_select( ).
+    DATA l_sql TYPE string.
+    IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
+      l_sql = mo_pivot->build_select( i_from  = build_from( )
+                                      i_where = build_where( )
+                                      i_multi = is_multi( )
+                                      i_rows  = COND #( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ) ).
+    ELSE.
+      l_sql = generate_select( ).
+    ENDIF.
 
     IF m_sql_edit = abap_true. "manual mode: textarea instead of the highlighted view
       DATA(l_edit_sql) = COND #( WHEN m_sql_manual IS NOT INITIAL THEN m_sql_manual ELSE l_sql ).
@@ -1351,17 +1392,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       l_fields = COND #( WHEN l_multi = abap_true THEN 't0~*' ELSE '*' ).
     ENDIF.
 
-    LOOP AT mt_jtabs INTO DATA(ls_tab).
-      IF sy-tabix = 1.
-        IF l_multi = abap_true.
-          l_from = |{ ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER }|.
-        ELSE.
-          l_from = |{ ls_tab-tabname CASE = LOWER }|.
-        ENDIF.
-      ELSE.
-        l_from = |{ l_from }{ cl_abap_char_utilities=>newline }  { ls_tab-jtype } JOIN { ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER } ON { ls_tab-cond }|.
-      ENDIF.
-    ENDLOOP.
+    l_from = build_from( ).
 
     rv_sql = |SELECT { l_fields }{ cl_abap_char_utilities=>newline }| &&
              |  FROM { l_from }|.
@@ -1375,6 +1406,27 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
     DATA(l_rows) = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
     rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } UP TO { l_rows } ROWS|.
+  ENDMETHOD.
+
+
+  METHOD is_multi.
+    rv_multi = boolc( lines( mt_jtabs ) > 1 ).
+  ENDMETHOD.
+
+
+  METHOD build_from.
+    DATA(l_multi) = is_multi( ).
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      IF sy-tabix = 1.
+        IF l_multi = abap_true.
+          rv_from = |{ ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER }|.
+        ELSE.
+          rv_from = |{ ls_tab-tabname CASE = LOWER }|.
+        ENDIF.
+      ELSE.
+        rv_from = |{ rv_from }{ cl_abap_char_utilities=>newline }  { ls_tab-jtype } JOIN { ls_tab-tabname CASE = LOWER } AS { ls_tab-alias CASE = LOWER } ON { ls_tab-cond }|.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
 
@@ -1452,6 +1504,16 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       REPLACE SECTION OFFSET l_off LENGTH l_len OF l_upper WITH ``.
     ENDIF.
 
+    "cut out GROUP BY <g> (comes after WHERE in the generated statement)
+    DATA(l_group) = ``.
+    FIND REGEX '\sGROUP\s+BY\s' IN l_upper MATCH OFFSET DATA(l_grp_off) MATCH LENGTH DATA(l_grp_len).
+    IF sy-subrc = 0.
+      DATA(l_grp_val_off) = l_grp_off + l_grp_len.
+      l_group = condense( substring( val = l_sql off = l_grp_val_off len = strlen( l_sql ) - l_grp_val_off ) ).
+      l_sql   = l_sql+0(l_grp_off).
+      l_upper = l_upper+0(l_grp_off).
+    ENDIF.
+
     "split into SELECT <fields> FROM <from> [WHERE <where>]
     FIND REGEX '^\s*SELECT\s' IN l_upper MATCH LENGTH DATA(l_sel_len).
     IF sy-subrc NE 0.
@@ -1499,10 +1561,10 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       CONDENSE l_fld_str.
       CHECK l_fld_str IS NOT INITIAL.
       DATA(l_fld_up) = to_upper( l_fld_str ).
-      DATA: l_alias2 TYPE string, l_field TYPE string, l_name TYPE string.
-      CLEAR: l_alias2, l_field, l_name.
-      FIND REGEX '^(?:(\w+)~)?(\w+)(?:\s+AS\s+(\w+))?$' IN l_fld_up
-        SUBMATCHES l_alias2 l_field l_name.
+      DATA: l_agg TYPE string, l_alias2 TYPE string, l_field TYPE string, l_name TYPE string.
+      CLEAR: l_agg, l_alias2, l_field, l_name.
+      FIND REGEX '^(?:(SUM|COUNT|MIN|MAX|AVG)\s*\(\s*)?(?:(\w+)~)?(\w+|\*)\s*\)?(?:\s+AS\s+(\w+))?$' IN l_fld_up
+        SUBMATCHES l_agg l_alias2 l_field l_name.
       IF sy-subrc NE 0.
         IF i_quiet = abap_false.
           MESSAGE |Cannot parse field: { l_fld_str }| TYPE 'S' DISPLAY LIKE 'E'.
@@ -1511,6 +1573,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
       ENDIF.
       IF l_name IS INITIAL.
         l_name = COND #( WHEN l_alias2 IS INITIAL THEN l_field ELSE |{ l_alias2 }_{ l_field }| ).
+        IF l_agg IS NOT INITIAL.
+          l_name = |{ l_agg }_{ COND #( WHEN l_field = '*' THEN 'ROWS' ELSE l_name ) }|.
+        ENDIF.
       ENDIF.
       IF strlen( l_name ) > 30.
         l_name = l_name+0(30).
@@ -1521,26 +1586,33 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         READ TABLE lt_alias INTO ls_alias INDEX 1.
       ENDIF.
 
-      "describe_by_name raises a CLASSIC exception - a TRY/CATCH would dump here
-      DATA lo_td TYPE REF TO cl_abap_typedescr.
-      cl_abap_typedescr=>describe_by_name(
-        EXPORTING  p_name         = |{ ls_alias-tabname }-{ l_field }|
-        RECEIVING  p_descr_ref    = lo_td
-        EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
-      IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
-        IF i_quiet = abap_false.
-          MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
-        ENDIF.
-        RETURN.
-      ENDIF.
-      TRY.
-          DATA(lo_type) = CAST cl_abap_datadescr( lo_td ).
-        CATCH cx_sy_move_cast_error.
+      DATA lo_type TYPE REF TO cl_abap_datadescr.
+      IF l_agg = 'COUNT'. "COUNT( field ) / COUNT( * ): integer result
+        lo_type = cl_abap_elemdescr=>get_int8( ).
+      ELSEIF l_agg = 'AVG'. "AVG returns a decimal regardless of the field type
+        lo_type = cl_abap_elemdescr=>get_p( p_length = 16 p_decimals = 3 ).
+      ELSE. "plain field or SUM/MIN/MAX: the field's own type
+        "describe_by_name raises a CLASSIC exception - a TRY/CATCH would dump here
+        DATA lo_td TYPE REF TO cl_abap_typedescr.
+        cl_abap_typedescr=>describe_by_name(
+          EXPORTING  p_name         = |{ ls_alias-tabname }-{ l_field }|
+          RECEIVING  p_descr_ref    = lo_td
+          EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
+        IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
           IF i_quiet = abap_false.
-            MESSAGE |{ ls_alias-tabname }-{ l_field } is not a data type| TYPE 'S' DISPLAY LIKE 'E'.
+            MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
           ENDIF.
           RETURN.
-      ENDTRY.
+        ENDIF.
+        TRY.
+            lo_type = CAST cl_abap_datadescr( lo_td ).
+          CATCH cx_sy_move_cast_error.
+            IF i_quiet = abap_false.
+              MESSAGE |{ ls_alias-tabname }-{ l_field } is not a data type| TYPE 'S' DISPLAY LIKE 'E'.
+            ENDIF.
+            RETURN.
+        ENDTRY.
+      ENDIF.
 
       "keep names unique
       WHILE line_exists( lt_comp[ name = l_name ] ).
@@ -1560,6 +1632,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
     l_fields = to_upper( l_fields ).
     l_from   = to_upper( l_from ).
     l_where  = upper_outside_quotes( l_where ).
+    l_group  = to_upper( l_group ).
 
     TRY.
         DATA(lo_struct) = cl_abap_structdescr=>create( lt_comp ).
@@ -1571,11 +1644,20 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         ASSIGN lr_table->* TO <result>.
 
         "new strict-mode Open SQL: dynamic tokens with AS aliases are supported here
-        SELECT (l_fields)
-          FROM (l_from)
-          WHERE (l_where)
-          INTO CORRESPONDING FIELDS OF TABLE @<result>
-          UP TO @l_rows ROWS.
+        IF l_group IS INITIAL.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            INTO CORRESPONDING FIELDS OF TABLE @<result>
+            UP TO @l_rows ROWS.
+        ELSE.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            GROUP BY (l_group)
+            INTO CORRESPONDING FIELDS OF TABLE @<result>
+            UP TO @l_rows ROWS.
+        ENDIF.
 
       CATCH cx_root INTO DATA(lx).
         IF i_quiet = abap_false.
@@ -1584,7 +1666,9 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         RETURN.
     ENDTRY.
 
-    DATA(l_view_name) = |JOIN { m_tabname } ({ lines( <result> ) })|.
+    DATA(l_view_name) = COND #( WHEN l_group IS INITIAL
+                                THEN |JOIN { m_tabname } ({ lines( <result> ) })|
+                                ELSE |PIVOT { m_tabname } ({ lines( <result> ) })| ).
     mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true ).
   ENDMETHOD.
 
