@@ -91,6 +91,8 @@ protected section.
       on_viewer_sel FOR EVENT selection_done OF zcl_sde_sel_opt,
       upper_outside_quotes IMPORTING i_sql         TYPE string
                            RETURNING VALUE(rv_sql) TYPE string,
+      format_sql IMPORTING i_sql         TYPE string
+                 RETURNING VALUE(rv_sql) TYPE string,
 
       on_sapevent FOR EVENT sapevent OF cl_gui_html_viewer
         IMPORTING action getdata postdata.
@@ -1192,7 +1194,7 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
           CLEAR: m_sql_edit, m_sql_manual.
           update_sql_view( ). "back to auto-generated statement and auto-apply
         ELSE.
-          m_sql_manual = l_sql_val.
+          m_sql_manual = format_sql( l_sql_val ). "the form transport eats line breaks
           IF m_sql_manual IS NOT INITIAL.
             execute_sql( i_sql = m_sql_manual ). "errors shown in the status bar
           ENDIF.
@@ -1519,12 +1521,23 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
         READ TABLE lt_alias INTO ls_alias INDEX 1.
       ENDIF.
 
+      "describe_by_name raises a CLASSIC exception - a TRY/CATCH would dump here
+      DATA lo_td TYPE REF TO cl_abap_typedescr.
+      cl_abap_typedescr=>describe_by_name(
+        EXPORTING  p_name         = |{ ls_alias-tabname }-{ l_field }|
+        RECEIVING  p_descr_ref    = lo_td
+        EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
+      IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
+        IF i_quiet = abap_false.
+          MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
+        ENDIF.
+        RETURN.
+      ENDIF.
       TRY.
-          DATA(lo_type) = CAST cl_abap_datadescr(
-            cl_abap_typedescr=>describe_by_name( |{ ls_alias-tabname }-{ l_field }| ) ).
-        CATCH cx_root.
+          DATA(lo_type) = CAST cl_abap_datadescr( lo_td ).
+        CATCH cx_sy_move_cast_error.
           IF i_quiet = abap_false.
-            MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
+            MESSAGE |{ ls_alias-tabname }-{ l_field } is not a data type| TYPE 'S' DISPLAY LIKE 'E'.
           ENDIF.
           RETURN.
       ENDTRY.
@@ -1573,6 +1586,46 @@ CLASS ZCL_SDE_JOIN IMPLEMENTATION.
 
     DATA(l_view_name) = |JOIN { m_tabname } ({ lines( <result> ) })|.
     mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true ).
+  ENDMETHOD.
+
+
+  METHOD format_sql.
+    DATA(l_nl) = cl_abap_char_utilities=>newline.
+
+    "normalize whitespace outside quoted literals, keep literals intact
+    SPLIT i_sql AT '''' INTO TABLE DATA(lt_parts).
+    DATA(l_n) = lines( lt_parts ).
+    LOOP AT lt_parts INTO DATA(l_part).
+      DATA(l_i) = sy-tabix.
+      IF l_i MOD 2 = 1. "outside quotes
+        REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf   IN l_part WITH ` `.
+        REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_part WITH ` `.
+        CONDENSE l_part.
+        IF l_i > 1.
+          rv_sql = |{ rv_sql } |. "space after a closing quote
+        ENDIF.
+        rv_sql = rv_sql && l_part.
+        IF l_i < l_n.
+          rv_sql = |{ rv_sql } '|. "space before an opening quote
+        ENDIF.
+      ELSE. "literal
+        rv_sql = rv_sql && l_part && `'`.
+      ENDIF.
+    ENDLOOP.
+
+    "layout: field list with line breaks, keywords on own lines
+    FIND REGEX '\sFROM\s' IN rv_sql IGNORING CASE MATCH OFFSET DATA(l_off).
+    IF sy-subrc = 0.
+      DATA(l_head) = rv_sql+0(l_off).
+      DATA(l_tail_off) = l_off + 1.
+      DATA(l_tail) = rv_sql+l_tail_off. "starts with FROM ...
+      REPLACE ALL OCCURRENCES OF `,` IN l_head WITH |,{ l_nl }       |.
+      REPLACE ALL OCCURRENCES OF REGEX '\s+(LEFT\s+OUTER\s+JOIN|INNER\s+JOIN)\s+'
+        IN l_tail WITH |{ l_nl }  $1 | IGNORING CASE.
+      REPLACE FIRST OCCURRENCE OF REGEX '\s+WHERE\s+' IN l_tail WITH |{ l_nl } WHERE | IGNORING CASE.
+      REPLACE FIRST OCCURRENCE OF REGEX '\s+UP\s+TO\s+' IN l_tail WITH |{ l_nl } UP TO | IGNORING CASE.
+      rv_sql = |{ l_head }{ l_nl }  { l_tail }|.
+    ENDIF.
   ENDMETHOD.
 
 
