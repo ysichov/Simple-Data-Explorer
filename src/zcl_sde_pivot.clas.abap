@@ -73,7 +73,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD has_columns.
-    rv_has = boolc( mt_cols IS NOT INITIAL AND mt_vals IS NOT INITIAL ).
+    rv_has = boolc( mt_cols IS NOT INITIAL ).
   ENDMETHOD.
 
   METHOD get_col_key.
@@ -297,7 +297,7 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
       rv_html = rv_html &&
         |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }</a>|.
     ELSEIF mt_cols IS INITIAL.
-      rv_html = rv_html && `<span class="dir">with measures: values become columns; without measures: plain dimensions</span>`.
+      rv_html = rv_html && `<span class="dir">field values become separate result columns (max 50)</span>`.
     ENDIF.
 
     rv_html = rv_html && `</div><h4>Measures (aggregates)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
@@ -348,7 +348,8 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
   METHOD build_select.
     DATA: l_fields TYPE string,
           l_group  TYPE string,
-          lt_names TYPE tt_keys.
+          lt_names TYPE tt_keys,
+          lt_vals  TYPE tt_vals.
     DATA(l_nl) = cl_abap_char_utilities=>newline.
 
     CHECK has_layout( ) = abap_true.
@@ -365,9 +366,13 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDLOOP.
 
     IF has_columns( ) = abap_true AND it_col_vals IS NOT INITIAL.
+      lt_vals = mt_vals.
+      IF lt_vals IS INITIAL.
+        APPEND VALUE #( key = mt_cols[ 1 ] agg = 'COUNT' ) TO lt_vals.
+      ENDIF.
       "matrix: one CASE bucket per column value and aggregate
       LOOP AT it_col_vals INTO DATA(ls_cv).
-        LOOP AT mt_vals INTO DATA(ls_val).
+        LOOP AT lt_vals INTO DATA(ls_val).
           DATA(l_fq) = qualify( i_key = ls_val-key i_multi = i_multi ).
           DATA(l_cond) = COND string( WHEN ls_cv-cond IS NOT INITIAL
                                       THEN ls_cv-cond
