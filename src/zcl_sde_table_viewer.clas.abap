@@ -44,6 +44,7 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
                        it_catalog TYPE lvc_t_fcat OPTIONAL,         "ready-made catalog (pivot headers)
       refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
+protected section.
   PRIVATE SECTION.
     METHODS:
       create_popup,
@@ -69,7 +70,10 @@ CLASS zcl_sde_table_viewer DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREAT
       on_table_close FOR EVENT close OF cl_gui_dialogbox_container IMPORTING sender.
 ENDCLASS.
 
-CLASS zcl_sde_table_viewer IMPLEMENTATION.
+
+
+CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
+
 
   METHOD constructor.
 
@@ -219,6 +223,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     mo_alv->set_focus( mo_alv ).
   ENDMETHOD.
 
+
   METHOD create_popup.
     mo_box = create( i_width = 800 i_hight = 150 ).
 
@@ -268,6 +273,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
 
     SET HANDLER on_box_close FOR mo_box.
   ENDMETHOD.
+
 
   METHOD create_alv.
     DATA: ls_layout TYPE lvc_s_layo,
@@ -347,6 +353,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     mo_alv->set_toolbar_interactive( ).
   ENDMETHOD.
 
+
   METHOD create_sel_alv.
     IF mo_sel IS INITIAL.
       mo_sel     = NEW #( io_viewer = me io_container = mo_sel_parent ).
@@ -355,6 +362,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       mo_sel->update_sel_tab( ).
     ENDIF.
   ENDMETHOD.
+
 
   METHOD read_text_table.
     FIELD-SYMBOLS: <f_tab> TYPE ANY TABLE.
@@ -365,9 +373,10 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     SELECT * FROM (l_tab) INTO TABLE <f_tab> ORDER BY PRIMARY KEY.
   ENDMETHOD.
 
+
   METHOD set_header.
     DATA: lv_text       TYPE as4text,
-          lv_header     TYPE text100.
+          lv_header     TYPE text200.
 
     IF zcl_sde_appl=>gv_vname IS INITIAL.
       SELECT SINGLE ddtext INTO lv_text
@@ -382,8 +391,9 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDIF.
 
     lv_header = |Simple Data Explorer v.2 SelecTor - { m_tabname } - { lv_text } ({ m_count }) { m_additional_name }|.
-    mo_box->set_caption( lv_header ).
+    mo_box->set_caption(  lv_header  ).
   ENDMETHOD.
+
 
   METHOD on_f4.
     FIELD-SYMBOLS: <tab> TYPE STANDARD TABLE.
@@ -404,6 +414,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         no_values_found   = 4
         OTHERS            = 5.
   ENDMETHOD.
+
 
   METHOD on_menu_request.
     DATA: l_smenu TYPE REF TO cl_ctmenu.
@@ -439,6 +450,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         text = 'Data Driven Jumps'.
   ENDMETHOD.
 
+
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
       DATA(lt_toolbar) = VALUE ttb_button(
@@ -462,6 +474,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
     ENDIF.
   ENDMETHOD.
+
 
   METHOD get_field_info.
     DATA: lv_clause      TYPE string,
@@ -533,6 +546,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+
   METHOD create_field_cat.
     DATA: lr_struc       TYPE REF TO data,
           lr_table_descr TYPE REF TO cl_abap_structdescr,
@@ -584,6 +598,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+
   METHOD rebind.
     DATA ls_layout TYPE lvc_s_layo.
     FIELD-SYMBOLS <f_tab> TYPE STANDARD TABLE.
@@ -625,6 +640,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD create_generic_field_cat.
     FIELD-SYMBOLS <tab> TYPE STANDARD TABLE.
 
@@ -660,6 +676,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+
   METHOD handle_menu_button.
     CALL METHOD cl_gui_cfw=>flush.
     IF e_ucomm = 'LANGUAGE'.
@@ -685,6 +702,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD handle_doubleclick.
     DATA: lo_table_descr TYPE REF TO cl_tpda_script_tabledescr,
           table_clone    TYPE REF TO data.
@@ -701,6 +719,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+
   METHOD before_user_command.
     CASE e_ucomm.
       WHEN '&INFO'.
@@ -708,6 +727,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
         CALL FUNCTION 'CALL_BROWSER' EXPORTING url = l_url.
     ENDCASE.
   ENDMETHOD.
+
 
   METHOD on_table_close.
     DATA: lv_tabix LIKE sy-tabix.
@@ -736,6 +756,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       DELETE zcl_sde_appl=>mt_obj INDEX lv_tabix.
     ENDIF.
   ENDMETHOD.
+
 
   METHOD handle_user_command.
     DATA:
@@ -883,6 +904,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.                           "handle_user_command
 
+
   METHOD get_where."dynamic where clause
     DATA: lt_where TYPE rsds_twhere,
           lt_range TYPE rsds_trange.
@@ -912,6 +934,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       ENDLOOP.
     ENDIF.
   ENDMETHOD.
+
 
   METHOD refresh_table.
     DATA: ls_row    TYPE zcl_sde_appl=>t_sel_row,
@@ -957,6 +980,7 @@ CLASS zcl_sde_table_viewer IMPLEMENTATION.
       l_emit-emitter->emit_col( l_emit-column ).
     ENDLOOP.
   ENDMETHOD.
+
 
   METHOD update_texts.
     DATA: l_text_field TYPE fieldname,
