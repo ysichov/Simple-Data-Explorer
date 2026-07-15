@@ -7,12 +7,7 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
            tt_vals TYPE STANDARD TABLE OF t_val WITH DEFAULT KEY,
            tt_keys TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
 
-           BEGIN OF t_colval,
-             text    TYPE string, "display value
-             literal TYPE string, "SQL literal ('USD' or 42), single-column compatibility
-             cond    TYPE string, "SQL condition for multi-column buckets
-           END OF t_colval,
-           tt_colvals TYPE STANDARD TABLE OF t_colval WITH DEFAULT KEY.
+           tt_colvals TYPE zif_sde_pivot_types=>tt_colvals. "shared with zcl_sde_tools, see zif_sde_pivot_types
 
     METHODS:
       has_layout RETURNING VALUE(rv_has) TYPE abap_bool,
@@ -21,14 +16,14 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
       get_col_keys RETURNING VALUE(rt_keys) TYPE tt_keys,
 
       "HTML for the fields panel: zones + available field chips (SAPEVENT:pv?...)
-      render_panel IMPORTING it_fields      TYPE zcl_sde_tools=>tt_jfld
+      render_panel IMPORTING it_fields      TYPE zif_sde_pivot_types=>tt_jfld
                              i_show_texts   TYPE abap_bool DEFAULT abap_false
                    RETURNING VALUE(rv_html) TYPE string,
 
       "pv actions: pk_<key> pick, tr rows, tc columns, ag_<AGG> values,
       "rr_<key>/rc_<key>/rv_<idx> remove, CLR clear all
       handle_action IMPORTING i_act TYPE string,
-      normalize_aggs IMPORTING it_fields TYPE zcl_sde_tools=>tt_jfld,
+      normalize_aggs IMPORTING it_fields TYPE zif_sde_pivot_types=>tt_jfld,
 
       "the whole pivot as ONE statement: CASE buckets per column value
       build_select IMPORTING i_from        TYPE string
@@ -54,13 +49,13 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
       sanitize IMPORTING i_txt          TYPE string
                RETURNING VALUE(rv_name) TYPE string,
       is_numeric_field IMPORTING i_key        TYPE string
-                                 it_fields    TYPE zcl_sde_tools=>tt_jfld
+                                 it_fields    TYPE zif_sde_pivot_types=>tt_jfld
                        RETURNING VALUE(rv_ok) TYPE abap_bool,
       allowed_aggs IMPORTING i_key         TYPE string
-                              it_fields    TYPE zcl_sde_tools=>tt_jfld
+                              it_fields    TYPE zif_sde_pivot_types=>tt_jfld
                     RETURNING VALUE(rt_aggs) TYPE tt_keys,
       default_agg IMPORTING i_key         TYPE string
-                              it_fields    TYPE zcl_sde_tools=>tt_jfld
+                              it_fields    TYPE zif_sde_pivot_types=>tt_jfld
                     RETURNING VALUE(rv_agg) TYPE string.
 ENDCLASS.
 

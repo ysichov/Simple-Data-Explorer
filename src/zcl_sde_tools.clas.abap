@@ -28,18 +28,7 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
            END OF t_jtab,
            tt_jtab TYPE STANDARD TABLE OF t_jtab WITH DEFAULT KEY,
 
-           BEGIN OF t_jfld,
-             sel       TYPE abap_bool,
-             pos       TYPE i, "order in the SELECT list (only when sel = X)
-             alias     TYPE char5,
-             tabname   TYPE tabname,
-             fieldname TYPE fieldname,
-             keyflag   TYPE keyflag,
-             ddtext    TYPE reptext,
-             datatype  TYPE c LENGTH 30,
-             inttype   TYPE c LENGTH 1,
-           END OF t_jfld,
-           tt_jfld TYPE STANDARD TABLE OF t_jfld WITH DEFAULT KEY.
+           tt_jfld TYPE zif_sde_pivot_types=>tt_jfld. "shared with zcl_sde_pivot, see zif_sde_pivot_types
 
     METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer
                                    io_parent TYPE REF TO cl_gui_container OPTIONAL. "docked mode: build inside this container
@@ -91,7 +80,7 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
-      get_pivot_col_values RETURNING VALUE(rt_vals) TYPE zcl_sde_pivot=>tt_colvals,
+      get_pivot_col_values RETURNING VALUE(rt_vals) TYPE zif_sde_pivot_types=>tt_colvals,
       build_from RETURNING VALUE(rv_from) TYPE string,
       is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
       cache_where_selection,

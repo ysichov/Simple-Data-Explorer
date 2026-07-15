@@ -200,10 +200,12 @@ FORM callback_f4_tab TABLES record_tab STRUCTURE seahlpres
           CHANGING shlp TYPE shlp_descr
                    callcontrol LIKE ddshf4ctrl.
 
-  FIELD-SYMBOLS: <field> TYPE any.
+  FIELD-SYMBOLS: <field> TYPE any,
+                 <row>   TYPE any.
   CHECK zcl_sde_appl=>gr_current_row IS BOUND.
+  ASSIGN zcl_sde_appl=>gr_current_row->* TO <row>. "7.50: can't deref a generic ref inline in ASSIGN COMPONENT
   LOOP AT shlp-interface ASSIGNING FIELD-SYMBOL(<interface>) WHERE f4field NE abap_true.
-    ASSIGN COMPONENT <interface>-shlpfield OF STRUCTURE zcl_sde_appl=>gr_current_row->* TO <field>.
+    ASSIGN COMPONENT <interface>-shlpfield OF STRUCTURE <row> TO <field>.
     IF sy-subrc = 0.
       APPEND VALUE #( sign = 'I' option = 'EQ' low = <field> shlpfield = <interface>-shlpfield  ) TO shlp-selopt.
     ENDIF.
