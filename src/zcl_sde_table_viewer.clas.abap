@@ -520,20 +520,17 @@ CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
         MOVE-CORRESPONDING lt_field_info[ 1 ] TO ls_tf.
 
         "check empty field
+        "skip string / rawstring (LOB): WHERE on these types is not allowed
         IF l_exist = 1 AND l_count < 10000.
-          IF ls_tf-rollname IS NOT INITIAL.
+          IF ls_tf-rollname IS NOT INITIAL
+             AND ls_tf-datatype NE 'STRG'   "string
+             AND ls_tf-datatype NE 'RSTR'   "rawstring
+             AND ls_tf-inttype  NE 'g'      "string  (LOB)
+             AND ls_tf-inttype  NE 'y'.     "rawstring/xstring (LOB)
             CREATE DATA dref TYPE (ls_tf-rollname).
             ASSIGN dref->* TO FIELD-SYMBOL(<field>).
             lv_clause = |{ ls_tf-fieldname } NE ''|.
             SELECT SINGLE (ls_tf-fieldname) INTO @<field>
-              FROM (i_tab)
-             WHERE (lv_clause).
-            IF sy-subrc NE 0.
-              ls_tf-empty = abap_true.
-            ENDIF.
-          ELSEIF ls_tf-datatype = 'RAWSTRING'.
-            lv_clause = |{ ls_tf-fieldname } NE ''|.
-            SELECT SINGLE (ls_tf-fieldname) INTO @l_x
               FROM (i_tab)
              WHERE (lv_clause).
             IF sy-subrc NE 0.
