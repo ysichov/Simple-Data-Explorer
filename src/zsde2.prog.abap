@@ -32,6 +32,8 @@ PARAMETERS: gv_tname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT dd_bastab_f
 PARAMETERS: gv_vname TYPE tabname VISIBLE LENGTH 15 MATCHCODE OBJECT viewmaint MODIF ID vie.
 PARAMETERS: gv_cds   TYPE tabname VISIBLE LENGTH 15 MODIF ID cds.
 PARAMETERS: gv_rows  TYPE i DEFAULT 500.
+"folder on the frontend where the join builder saves/loads its layouts
+PARAMETERS: gv_path  TYPE string LOWER CASE VISIBLE LENGTH 40 DEFAULT 'C:\temp\sde\'.
 "selection-screen end of screen 101.
 
 
@@ -51,6 +53,7 @@ AT SELECTION-SCREEN OUTPUT.
   %_gv_tname_%_app_%-text = 'Enter Table name and hit Enter'.
   %_gv_vname_%_app_%-text = 'Enter View name and hit Enter'.
   %_gv_cds_%_app_%-text = 'Enter CDS name and hit Enter'.
+  %_gv_path_%_app_%-text = 'Folder for saved joins'.
   zcl_sde_appl=>suppress_run_button( ).
 
   LOOP AT SCREEN.
@@ -93,9 +96,20 @@ AT SELECTION-SCREEN ON EXIT-COMMAND.
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_cds.
   PERFORM search_cds.
 
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR gv_path.
+  DATA l_chosen_path TYPE string.
+  cl_gui_frontend_services=>directory_browse(
+    EXPORTING  initial_folder  = gv_path
+    CHANGING   selected_folder = l_chosen_path
+    EXCEPTIONS OTHERS          = 1 ).
+  IF l_chosen_path IS NOT INITIAL.
+    gv_path = l_chosen_path.
+  ENDIF.
+
 AT SELECTION-SCREEN .
   zcl_sde_appl=>gv_rows  = gv_rows.
   zcl_sde_appl=>gv_vname = gv_vname.
+  zcl_sde_appl=>gv_path  = gv_path.
 
   CASE sy-ucomm.
     WHEN 'FC01'.

@@ -50,6 +50,9 @@ protected section.
       create_popup,
       create_alv,
       create_sel_alv,
+      "dock the join/pivot builder below the data; i_visible = false builds it
+      "collapsed (loading a layout does not mean the user wants to edit it)
+      open_tools IMPORTING i_visible TYPE abap_bool DEFAULT abap_true,
       set_header,
       read_text_table,
       update_texts,
@@ -451,6 +454,32 @@ CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD open_tools.
+    IF i_visible = abap_true.
+      mo_box->set_height( height = 600 ). "make room
+      mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_absolute ).
+      mo_outer_splitter->set_row_height( id = 1 height = 155 ).
+    ELSE. "built but folded away: the panel is only needed to hold the layout
+      mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_relative ).
+      mo_outer_splitter->set_row_height( id = 1 height = 100 ).
+    ENDIF.
+    DATA(l_sash) = COND i( WHEN i_visible = abap_true
+                           THEN cl_gui_splitter_container=>true
+                           ELSE cl_gui_splitter_container=>false ).
+    mo_outer_splitter->set_row_sash( id    = 1
+                                     type  = cl_gui_splitter_container=>type_sashvisible
+                                     value = l_sash ).
+    mo_outer_splitter->set_row_sash( id    = 1
+                                     type  = cl_gui_splitter_container=>type_movable
+                                     value = l_sash ).
+    mo_tools = NEW zcl_sde_tools( io_viewer = me io_parent = mo_tools_parent ).
+    m_tools_visible = i_visible.
+    IF mo_sel IS BOUND. "its toolbar was built inside the constructor, when mo_tools was still empty
+      mo_sel->mo_sel_alv->set_toolbar_interactive( ).
+    ENDIF.
+  ENDMETHOD.
+
+
   METHOD handle_tab_toolbar.
     IF m_visible IS INITIAL.
       DATA(lt_toolbar) = VALUE ttb_button(
@@ -460,10 +489,14 @@ CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
 
     lt_toolbar = VALUE ttb_button( BASE lt_toolbar
      ( function = 'REFRESH'  icon = icon_refresh quickinfo = 'Refresh' butn_type = 0 )
+     ( function = 'SEL_LOAD' icon = icon_delivery    quickinfo = 'Load join layout from a file' butn_type = 0 )
+     ( function = 'SEL_SAVE' icon = icon_system_save quickinfo = 'Save join layout to a file' butn_type = 0 )
      ( function = 'LANGUAGE' icon = icon_foreign_trade quickinfo = 'Languages' butn_type = 2 )
      ( function = 'OPTIONS'  icon = icon_list          quickinfo = 'Empty columns options'   butn_type = 2 )
      ( function = 'TABLES'   icon = icon_net_graphic   quickinfo = 'Table links'   butn_type = 0 )
      ( function = 'TOOLS'    icon = icon_tools quickinfo = 'Tools: join, pivot' butn_type = 0 )
+     ( function = 'SORT_ASC' icon = icon_sort_up   quickinfo = 'Sort ascending (ORDER BY)' butn_type = 0 )
+     ( function = 'SORT_DSC' icon = icon_sort_down quickinfo = 'Sort descending (ORDER BY)' butn_type = 0 )
      ( function = 'TBAR' icon = COND #( WHEN m_std_tbar IS INITIAL THEN icon_column_right ELSE icon_column_left )
         quickinfo = COND #( WHEN m_std_tbar IS INITIAL THEN 'Show standard ALV function'  ELSE 'Hide standard ALV function') )
      ( butn_type = 3 ) ).
@@ -471,6 +504,8 @@ CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
     IF m_std_tbar IS INITIAL.
       e_object->mt_toolbar =  lt_toolbar.
     ELSE.
+      "the standard sort buttons sort the fetched page only - ours drive ORDER BY
+      DELETE e_object->mt_toolbar WHERE function CS 'SORT'.
       e_object->mt_toolbar =  lt_toolbar = VALUE ttb_button( BASE lt_toolbar ( LINES OF e_object->mt_toolbar ) ).
     ENDIF.
   ENDMETHOD.
@@ -792,23 +827,55 @@ CLASS ZCL_SDE_TABLE_VIEWER IMPLEMENTATION.
       IF zcl_sde_sql=>exist_table( m_tabname ) = 1.
         m_is_sql = 'X'.
       ENDIF.
+    ELSEIF e_ucomm = 'SEL_SAVE' OR e_ucomm = 'SEL_LOAD'. "join layout file dialogs
+      IF mo_tools IS NOT BOUND. "the layout lives in the join builder: open it first
+        IF m_tabname IS INITIAL OR ( zcl_sde_sql=>exist_table( m_tabname ) NE 1 AND zcl_sde_sql=>exist_view( m_tabname ) NE 1 ).
+          MESSAGE 'Tools need a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
+          RETURN.
+        ENDIF.
+        "Load just applies a stored layout - do not push the builder into the face
+        open_tools( i_visible = boolc( e_ucomm = 'SEL_SAVE' ) ).
+      ENDIF.
+      CHECK mo_tools IS BOUND.
+      "mo_tools is REF TO object (the viewer must not depend on zcl_sde_tools at activation)
+      DATA(l_layout_meth) = COND string( WHEN e_ucomm = 'SEL_SAVE'
+                                         THEN `SAVE_LAYOUT_DIALOG` ELSE `LOAD_LAYOUT_DIALOG` ).
+      CALL METHOD mo_tools->(l_layout_meth).
+      RETURN.
+    ELSEIF e_ucomm = 'SORT_ASC' OR e_ucomm = 'SORT_DSC'.
+      "sorting has to happen in the database: a frontend sort would only reorder
+      "the rows that made it through UP TO n ROWS
+      IF mo_tools IS NOT BOUND.
+        MESSAGE 'Open Tools first: sorting is done by ORDER BY' TYPE 'S' DISPLAY LIKE 'W'.
+        RETURN.
+      ENDIF.
+      mo_alv->get_selected_columns( IMPORTING et_index_columns = DATA(lt_cols) ).
+      DATA lt_sort_flds TYPE lvc_t_fnam.
+      LOOP AT lt_cols INTO DATA(ls_col).
+        APPEND ls_col-fieldname TO lt_sort_flds.
+      ENDLOOP.
+      IF lt_sort_flds IS INITIAL. "nothing marked: take the column of the current cell
+        mo_alv->get_current_cell( IMPORTING es_col_id = DATA(ls_cur_col) ).
+        IF ls_cur_col-fieldname IS NOT INITIAL.
+          APPEND ls_cur_col-fieldname TO lt_sort_flds.
+        ENDIF.
+      ENDIF.
+      IF lt_sort_flds IS INITIAL.
+        MESSAGE 'Select a column to sort by' TYPE 'S' DISPLAY LIKE 'W'.
+        RETURN.
+      ENDIF.
+      CALL METHOD mo_tools->('SORT_BY')
+        EXPORTING
+          it_cols = lt_sort_flds
+          i_desc  = boolc( e_ucomm = 'SORT_DSC' ).
+      RETURN.
     ELSEIF e_ucomm = 'TBAR'.
       m_std_tbar = BIT-NOT  m_std_tbar.
     ELSEIF e_ucomm = 'TOOLS'. "dock the tools area below the data
       IF m_tabname IS INITIAL OR ( zcl_sde_sql=>exist_table( m_tabname ) NE 1 AND zcl_sde_sql=>exist_view( m_tabname ) NE 1 ).
         MESSAGE 'Tools need a database table or view' TYPE 'S' DISPLAY LIKE 'E'.
       ELSEIF mo_tools IS NOT BOUND.
-        mo_box->set_height( height = 600 ). "make room
-        mo_outer_splitter->set_row_mode( mode = mo_outer_splitter->mode_absolute ).
-        mo_outer_splitter->set_row_height( id = 1 height = 155 ).
-        mo_outer_splitter->set_row_sash( id    = 1
-                                         type  = cl_gui_splitter_container=>type_sashvisible
-                                         value = cl_gui_splitter_container=>true ).
-        mo_outer_splitter->set_row_sash( id    = 1
-                                         type  = cl_gui_splitter_container=>type_movable
-                                         value = cl_gui_splitter_container=>true ).
-        mo_tools = NEW zcl_sde_tools( io_viewer = me io_parent = mo_tools_parent ).
-        m_tools_visible = abap_true.
+        open_tools( ).
       ELSE. "toggle
         m_tools_visible = boolc( m_tools_visible = abap_false ).
         IF m_tools_visible = abap_true.

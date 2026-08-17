@@ -31,7 +31,11 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
            tt_jfld TYPE zif_sde_pivot_types=>tt_jfld. "shared with zcl_sde_pivot, see zif_sde_pivot_types
 
     METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer
-                                   io_parent TYPE REF TO cl_gui_container OPTIONAL. "docked mode: build inside this container
+                                   io_parent TYPE REF TO cl_gui_container OPTIONAL, "docked mode: build inside this container
+      "called from the toolbars (dynamically, the viewer holds us as REF TO object)
+      save_layout_dialog,
+      load_layout_dialog,
+      sort_by IMPORTING it_cols TYPE lvc_t_fnam i_desc TYPE abap_bool DEFAULT abap_false.
 
 protected section.
   PRIVATE SECTION.
@@ -53,6 +57,8 @@ protected section.
           m_pick       TYPE string,                     "click-to-move: picked field key or table alias
           m_sql_edit   TYPE abap_bool,                  "SQL panel in manual edit mode
           m_sql_manual TYPE string,                     "manually edited statement
+          m_order      TYPE string,                      "ORDER BY set from the sort buttons
+          m_loading    TYPE abap_bool,                   "a layout is being applied: do not re-cache filters
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras,                       "language of the field texts
           mt_where_sel TYPE TABLE OF zcl_sde_appl=>selection_display_s. "ranges before pivot rebind
@@ -74,7 +80,18 @@ protected section.
       move_field_before IMPORTING i_from TYPE string i_to TYPE string,
       move_alias_fields_before IMPORTING i_from TYPE string i_to TYPE string,
       handle_fld_action IMPORTING i_act TYPE string,
+      build_on_picker IMPORTING i_alias        TYPE string
+                                it_prev        TYPE string_table
+                                i_input_id     TYPE string
+                      RETURNING VALUE(rv_html) TYPE string,
       reload_field_texts,
+      fill_sel_extras,
+      drop_stale_order,
+      cfg_dir RETURNING VALUE(rv_dir) TYPE string,
+      cfg_name IMPORTING i_name        TYPE string
+               RETURNING VALUE(rv_file) TYPE string,
+      save_config IMPORTING i_name TYPE string,
+      load_config IMPORTING i_name TYPE string,
       apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
       create_sql_view,
       update_sql_view,
@@ -472,6 +489,29 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         ENDIF.
       ENDIF.
 
+      IF lt_pairs IS INITIAL.
+        "no foreign key at all: an empty ON dumps the statement right away, so
+        "link on the first field name the two tables have in common - keys first
+        DATA(l_anchor) = COND tabname( WHEN l_parent_missing = abap_true OR ls_cand-parent IS INITIAL
+                                       THEN m_tabname ELSE ls_cand-parent ).
+        DATA(lt_anchor_flds) = get_fieldlist( l_anchor ).
+        DATA(lt_cand_flds)   = get_fieldlist( ls_cand-tabname ).
+        LOOP AT lt_cand_flds INTO DATA(ls_cf) WHERE keyflag = abap_true.
+          IF line_exists( lt_anchor_flds[ fieldname = ls_cf-fieldname ] ).
+            APPEND VALUE #( cand_field = ls_cf-fieldname base_field = ls_cf-fieldname ) TO lt_pairs.
+          ENDIF.
+        ENDLOOP.
+        IF lt_pairs IS INITIAL. "the other way round: a key of the anchor table
+          LOOP AT lt_cand_flds INTO ls_cf WHERE fieldname NE 'MANDT'.
+            IF line_exists( lt_anchor_flds[ fieldname = ls_cf-fieldname keyflag = abap_true ] ).
+              APPEND VALUE #( cand_field = ls_cf-fieldname base_field = ls_cf-fieldname ) TO lt_pairs.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+        "no key matches at all: leave it empty rather than invent a link on a
+        "random common column - the panel asks for the condition instead
+      ENDIF.
+
       DATA l_cond TYPE string. "build in a string: char field would eat trailing blanks after AND
       CLEAR l_cond.
       LOOP AT lt_pairs INTO DATA(ls_pair).
@@ -584,6 +624,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       `.grip{cursor:move;color:#888;font-weight:bold;}` &&
       `input.cond{width:380px;font-family:Consolas,monospace;font-size:11px;}` &&
       `select{font-size:11px;}` &&
+      `.onp{margin-top:2px;font-size:10px;}` &&
+      `.onp select{max-width:170px;}` &&
       `.tabhdr{margin:6px 0 2px 0;font-weight:bold;color:#2c5f8a;}` &&
       `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
       `.chip:hover{border-color:#2c5f8a;}` &&
@@ -622,6 +664,17 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       `if(pn>1){var a=[];for(var k in pks)a.push(k);` &&
       `var f=document.getElementById('pf');f.action='SAPEVENT:fsel'+pm;` &&
       `document.getElementById('pk').value=a.join(';');f.submit();}};` &&
+      "ON condition helpers: append a ready pair / a hand-picked pair, or clear
+      `function oadd(id,t){if(!t)return;var i=document.getElementById(id);` &&
+      `var v=i.value.replace(/^\s+|\s+$/g,'');` &&
+      `i.value=v?v+' AND '+t:t;i.form.submit();}` &&
+      "picking a ready pair replaces the condition - repeating the choice must
+      "not pile up another AND term on top of the previous one
+      `function oq(s,id){var t=s.value;s.selectedIndex=0;if(!t)return;` &&
+      `var i=document.getElementById(id);i.value=t;i.form.submit();}` &&
+      `function op(id,a,b){var l=document.getElementById(a),r=document.getElementById(b);` &&
+      `if(!l.value||!r.value)return;oadd(id,l.value+' = '+r.value);}` &&
+      `function ocl(id){var i=document.getElementById(id);i.value='';i.form.submit();}` &&
       `</script>` &&
       `</head><body>` &&
       `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
@@ -651,9 +704,13 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       `<input type="text" name="newtab" size="16" maxlength="30">` &&
       `<input type="submit" value="Add table"></form>`.
 
+    "saving/loading the layout lives on the selection panel toolbar, not here
+
     "joined tables: order (the first one is FROM), join type, ON condition
     IF lines( mt_jtabs ) > 1.
       l_html = l_html && `<form method="post" action="SAPEVENT:tabs"><table class="j">`.
+      DATA lt_prev TYPE string_table. "aliases rendered so far (join order)
+      CLEAR lt_prev.
       LOOP AT mt_jtabs INTO DATA(ls_tab).
         DATA(l_idx) = sy-tabix.
         DATA(l_key) = condense( CONV string( ls_tab-alias ) ).
@@ -672,12 +729,16 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         ELSE.
           DATA(l_inner) = COND string( WHEN ls_tab-jtype = 'INNER' THEN ' selected' ).
           DATA(l_left)  = COND string( WHEN ls_tab-jtype NE 'INNER' THEN ' selected' ).
+          DATA(l_oid) = |oi_{ l_key }|. "id of this row's ON input, used by the helper controls
           l_html = l_html &&
             |<td><select name="jt_{ l_key }" onchange="this.form.submit()">| &&
             |<option{ l_inner }>INNER</option><option{ l_left }>LEFT OUTER</option></select> JOIN ON</td>| &&
-            |<td><input class="cond" type="text" name="on_{ l_key }" onchange="this.form.submit()" value="{
-               escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }"></td></tr>|.
+            |<td><input class="cond" type="text" id="{ l_oid }" name="on_{ l_key }" onchange="this.form.submit()" value="{
+               escape( val = CONV string( ls_tab-cond ) format = cl_abap_format=>e_html_attr ) }">| &&
+            build_on_picker( i_alias = l_key it_prev = lt_prev i_input_id = l_oid ) &&
+            |</td></tr>|.
         ENDIF.
+        APPEND l_key TO lt_prev. "only tables already joined may appear on the right side of ON
       ENDLOOP.
       l_html = l_html &&
         `</table><button class="btn" type="submit" name="act" value="apply">Apply</button></form>`.
@@ -1102,6 +1163,444 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD build_on_picker.
+    "helper controls under an ON condition: ready-made same-name pairs and a
+    "free field-to-field picker, so the condition never has to be typed by hand
+    DATA: l_same TYPE string, "options of the "same name" listbox
+          l_left TYPE string, "fields of the joined table
+          l_right TYPE string. "fields of the tables joined before it
+
+    CHECK it_prev IS NOT INITIAL.
+    DATA(l_lo) = to_lower( i_alias ).
+
+    LOOP AT mt_jflds INTO DATA(ls_fld) WHERE alias = i_alias.
+      DATA(l_qual) = |{ l_lo }~{ to_lower( ls_fld-fieldname ) }|.
+      l_left = l_left && |<option value="{ l_qual }">{ ls_fld-fieldname }</option>|.
+      "the same field name in an already joined table is the usual link
+      LOOP AT it_prev INTO DATA(l_prev).
+        READ TABLE mt_jflds TRANSPORTING NO FIELDS
+          WITH KEY alias = l_prev fieldname = ls_fld-fieldname.
+        CHECK sy-subrc = 0.
+        DATA(l_pair) = |{ l_qual } = { to_lower( l_prev ) }~{ to_lower( ls_fld-fieldname ) }|.
+        DATA(l_mark) = COND string( WHEN ls_fld-keyflag = abap_true THEN ` (key)` ).
+        l_same = l_same && |<option value="{ l_pair }">{ l_pair }{ l_mark }</option>|.
+      ENDLOOP.
+    ENDLOOP.
+
+    LOOP AT it_prev INTO l_prev.
+      l_right = l_right && |<optgroup label="{ l_prev }">|.
+      LOOP AT mt_jflds INTO ls_fld WHERE alias = l_prev.
+        l_right = l_right &&
+          |<option value="{ to_lower( l_prev ) }~{ to_lower( ls_fld-fieldname ) }">{ ls_fld-fieldname }</option>|.
+      ENDLOOP.
+      l_right = l_right && `</optgroup>`.
+    ENDLOOP.
+
+    rv_html = |<div class="onp">|.
+    IF l_same IS NOT INITIAL.
+      rv_html = rv_html &&
+        |<select onchange="oq(this,'{ i_input_id }')">| &&
+        |<option value="">&#43; same name&hellip;</option>{ l_same }</select> |.
+    ENDIF.
+    "empty first entry: the listboxes build a new pair, they do not mirror the
+    "condition above - without it the browser shows the first field as "selected"
+    rv_html = rv_html &&
+      |<select id="ol_{ i_alias }"><option value="">&#8212; field &#8212;</option>{ l_left }</select> = | &&
+      |<select id="or_{ i_alias }"><option value="">&#8212; field &#8212;</option>{ l_right }</select> | &&
+      |<button class="btn" type="button" onclick="op('{ i_input_id }','ol_{ i_alias }','or_{ i_alias }')">&#43; add</button> | &&
+      |<a class="act" href="#" onclick="ocl('{ i_input_id }');return false;">clear</a></div>|.
+  ENDMETHOD.
+
+
+  METHOD cfg_dir.
+    "folder from the selection screen; empty falls back to a fixed temp folder
+    rv_dir = condense( zcl_sde_appl=>gv_path ).
+    IF rv_dir IS INITIAL.
+      rv_dir = 'C:\temp\sde\'.
+    ENDIF.
+    IF substring( val = rv_dir off = strlen( rv_dir ) - 1 len = 1 ) NE '\'.
+      rv_dir = |{ rv_dir }\\|.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD drop_stale_order.
+    "terms of tables that left the join would fail as "table T2 is unknown"
+    CHECK m_order IS NOT INITIAL.
+    DATA(l_kept) = ``.
+    SPLIT m_order AT ',' INTO TABLE DATA(lt_terms).
+    LOOP AT lt_terms INTO DATA(l_term).
+      DATA(l_trim) = condense( l_term ).
+      CHECK l_trim IS NOT INITIAL.
+      FIND REGEX '^(\w+)~' IN l_trim SUBMATCHES DATA(l_alias).
+      IF sy-subrc = 0 AND NOT line_exists( mt_jtabs[ alias = to_upper( l_alias ) ] ).
+        CONTINUE.
+      ENDIF.
+      IF l_kept IS NOT INITIAL.
+        l_kept = |{ l_kept }, |.
+      ENDIF.
+      l_kept = |{ l_kept }{ l_trim }|.
+    ENDLOOP.
+    m_order = l_kept.
+  ENDMETHOD.
+
+
+  METHOD sort_by.
+    "the sort buttons of the data grid drive ORDER BY instead of a frontend sort:
+    "sorting only the fetched rows would sort the wrong 500 rows
+    CLEAR m_order.
+    DATA(l_dir) = COND string( WHEN i_desc = abap_true THEN ` DESCENDING` ELSE `` ).
+    DATA(l_multi) = is_multi( ).
+
+    LOOP AT it_cols INTO DATA(l_col).
+      DATA(l_name) = condense( CONV string( l_col ) ).
+      CHECK l_name IS NOT INITIAL.
+      "grid column T1_STATUS belongs to alias T1, field STATUS
+      DATA(l_sql_fld) = to_lower( l_name ).
+      IF l_multi = abap_true.
+        FIND REGEX '^(T\d+)_(.+)$' IN l_name SUBMATCHES DATA(l_alias) DATA(l_field).
+        IF sy-subrc = 0 AND line_exists( mt_jflds[ alias = l_alias fieldname = l_field ] ).
+          l_sql_fld = |{ to_lower( l_alias ) }~{ to_lower( l_field ) }|.
+        ENDIF.
+      ENDIF.
+      IF m_order IS NOT INITIAL.
+        m_order = |{ m_order }, |.
+      ENDIF.
+      m_order = |{ m_order }{ l_sql_fld }{ l_dir }|.
+    ENDLOOP.
+
+    update_sql_view( ).
+  ENDMETHOD.
+
+
+  METHOD save_layout_dialog.
+    DATA: l_file   TYPE string,
+          l_path   TYPE string,
+          l_full   TYPE string,
+          l_action TYPE i.
+
+    DATA(l_def) = condense( CONV string( m_tabname ) ).
+    REPLACE ALL OCCURRENCES OF '/' IN l_def WITH '_'.
+    cl_gui_frontend_services=>file_save_dialog(
+      EXPORTING  window_title         = 'Save join layout'
+                 default_extension    = 'sdj'
+                 default_file_name    = |{ l_def }.sdj|
+                 initial_directory    = cfg_dir( )
+                 file_filter          = 'Join layouts (*.sdj)|*.sdj|All files (*.*)|*.*|'
+      CHANGING   filename             = l_file
+                 path                 = l_path
+                 fullpath             = l_full
+                 user_action          = l_action
+      EXCEPTIONS OTHERS               = 1 ).
+    CHECK sy-subrc = 0 AND l_action = cl_gui_frontend_services=>action_ok AND l_full IS NOT INITIAL.
+    save_config( l_full ).
+  ENDMETHOD.
+
+
+  METHOD load_layout_dialog.
+    DATA: lt_files  TYPE filetable,
+          l_rc      TYPE i,
+          l_action  TYPE i.
+
+    cl_gui_frontend_services=>file_open_dialog(
+      EXPORTING  window_title            = 'Load join layout'
+                 default_extension       = 'sdj'
+                 initial_directory       = cfg_dir( )
+                 file_filter             = 'Join layouts (*.sdj)|*.sdj|All files (*.*)|*.*|'
+                 multiselection          = abap_false
+      CHANGING   file_table              = lt_files
+                 rc                      = l_rc
+                 user_action             = l_action
+      EXCEPTIONS OTHERS                  = 1 ).
+    CHECK sy-subrc = 0 AND l_action = cl_gui_frontend_services=>action_ok AND lt_files IS NOT INITIAL.
+    load_config( CONV string( lt_files[ 1 ]-filename ) ).
+  ENDMETHOD.
+
+
+  METHOD cfg_name.
+    "a layout name is a plain file name: namespace slashes would break the path
+    DATA(l_name) = condense( i_name ).
+    IF l_name IS INITIAL.
+      l_name = m_tabname.
+    ENDIF.
+    IF l_name CA '\:'. "the file dialogs hand over a full path - take it as it is
+      rv_file = l_name.
+      RETURN.
+    ENDIF.
+    REPLACE ALL OCCURRENCES OF REGEX '[\\/:*?"<>|]' IN l_name WITH '_'.
+    IF NOT l_name CP '*.sdj'.
+      l_name = |{ l_name }.sdj|.
+    ENDIF.
+    rv_file = |{ cfg_dir( ) }{ l_name }|.
+  ENDMETHOD.
+
+
+  METHOD save_config.
+    "tab separated text: readable in any editor, trivial to parse back
+    DATA: lt_lines TYPE string_table,
+          l_tab    TYPE c LENGTH 1.
+
+    l_tab = cl_abap_char_utilities=>horizontal_tab.
+    APPEND |SDE-JOIN{ l_tab }1| TO lt_lines.
+    APPEND |BASE{ l_tab }{ m_tabname }| TO lt_lines.
+    APPEND |BASEPOS{ l_tab }{ m_base_pos }| TO lt_lines.
+    APPEND |MODE{ l_tab }{ m_mode }| TO lt_lines.
+    IF m_order IS NOT INITIAL.
+      APPEND |ORD{ l_tab }{ m_order }| TO lt_lines.
+    ENDIF.
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      APPEND |TAB{ l_tab }{ ls_tab-alias }{ l_tab }{ ls_tab-tabname }{ l_tab }{ ls_tab-jtype }{ l_tab }{ ls_tab-cond }|
+        TO lt_lines.
+    ENDLOOP.
+    LOOP AT mt_jflds INTO DATA(ls_fld) WHERE sel = abap_true.
+      APPEND |FLD{ l_tab }{ ls_fld-alias }{ l_tab }{ ls_fld-fieldname }{ l_tab }{ ls_fld-pos }| TO lt_lines.
+    ENDLOOP.
+    "filters: the row values plus every line of a multi-range
+    cache_where_selection( ). "pull what is currently typed in the selection panel
+    LOOP AT mt_where_sel INTO DATA(ls_sel).
+      CHECK ls_sel-low IS NOT INITIAL OR ls_sel-high IS NOT INITIAL
+         OR ls_sel-sign IS NOT INITIAL OR ls_sel-range IS NOT INITIAL.
+      APPEND |SEL{ l_tab }{ ls_sel-field_label }{ l_tab }{ ls_sel-sign }{ l_tab }{ ls_sel-opti }{
+                 l_tab }{ ls_sel-low }{ l_tab }{ ls_sel-high }| TO lt_lines.
+      LOOP AT ls_sel-range INTO DATA(ls_range).
+        APPEND |SELR{ l_tab }{ ls_sel-field_label }{ l_tab }{ ls_range-sign }{ l_tab }{ ls_range-opti }{
+                   l_tab }{ ls_range-low }{ l_tab }{ ls_range-high }| TO lt_lines.
+      ENDLOOP.
+    ENDLOOP.
+
+    IF m_sql_edit = abap_true AND m_sql_manual IS NOT INITIAL.
+      "one line: newlines would break the line-based format
+      DATA(l_flat) = m_sql_manual.
+      REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf   IN l_flat WITH ` `.
+      REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_flat WITH ` `.
+      APPEND |SQL{ l_tab }{ l_flat }| TO lt_lines.
+    ENDIF.
+
+    DATA(l_file) = cfg_name( i_name ).
+    cl_gui_frontend_services=>gui_download(
+      EXPORTING  filename = l_file
+                 filetype = 'ASC'
+      CHANGING   data_tab = lt_lines
+      EXCEPTIONS OTHERS   = 1 ).
+    IF sy-subrc = 0.
+      MESSAGE |Layout saved: { l_file }| TYPE 'S'.
+    ELSE.
+      MESSAGE |Cannot write { l_file }| TYPE 'S' DISPLAY LIKE 'E'.
+    ENDIF.
+  ENDMETHOD.
+
+
+  METHOD load_config.
+    DATA: lt_lines TYPE string_table,
+          lt_part  TYPE string_table.
+
+    DATA(l_file) = cfg_name( i_name ).
+    cl_gui_frontend_services=>gui_upload(
+      EXPORTING  filename = l_file
+                 filetype = 'ASC'
+      CHANGING   data_tab = lt_lines
+      EXCEPTIONS OTHERS   = 1 ).
+    IF sy-subrc NE 0 OR lt_lines IS INITIAL.
+      MESSAGE |Cannot read { l_file }| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    "first pass: header check - a layout only fits the table it was built on
+    TYPES: BEGIN OF t_saved_tab,
+             alias   TYPE char5,
+             tabname TYPE tabname,
+             jtype   TYPE char10,
+             cond    TYPE c LENGTH 255,
+           END OF t_saved_tab,
+           BEGIN OF t_saved_fld,
+             alias     TYPE char5,
+             fieldname TYPE fieldname,
+             pos       TYPE i,
+           END OF t_saved_fld.
+    DATA: lt_stabs TYPE TABLE OF t_saved_tab,
+          lt_sflds TYPE TABLE OF t_saved_fld,
+          lt_wsel  TYPE TABLE OF zcl_sde_appl=>selection_display_s,
+          l_base   TYPE tabname,
+          l_pos    TYPE i,
+          l_mode   TYPE char1,
+          l_sql    TYPE string.
+
+    m_loading = abap_true. "every refresh from here on must not touch the filter cache
+    CLEAR m_order. "a file without ORD means: no sorting
+    LOOP AT lt_lines INTO DATA(l_line).
+      CLEAR lt_part.
+      SPLIT l_line AT cl_abap_char_utilities=>horizontal_tab INTO TABLE lt_part.
+      CHECK lines( lt_part ) >= 2.
+      CASE lt_part[ 1 ].
+        WHEN 'BASE'.    l_base = lt_part[ 2 ].
+        WHEN 'BASEPOS'. l_pos  = lt_part[ 2 ].
+        WHEN 'MODE'.    l_mode = lt_part[ 2 ].
+        WHEN 'SQL'.     l_sql  = lt_part[ 2 ].
+        WHEN 'ORD'.     m_order = lt_part[ 2 ].
+        WHEN 'TAB'.
+          CHECK lines( lt_part ) >= 3.
+          APPEND VALUE #( alias   = lt_part[ 2 ]
+                          tabname = lt_part[ 3 ]
+                          jtype   = COND #( WHEN lines( lt_part ) >= 4 THEN lt_part[ 4 ] )
+                          cond    = COND #( WHEN lines( lt_part ) >= 5 THEN lt_part[ 5 ] ) ) TO lt_stabs.
+        WHEN 'FLD'.
+          CHECK lines( lt_part ) >= 4.
+          APPEND VALUE #( alias = lt_part[ 2 ] fieldname = lt_part[ 3 ] pos = lt_part[ 4 ] ) TO lt_sflds.
+        WHEN 'SEL' OR 'SELR'. "filter of one field / one line of a multi-range
+          "an empty HIGH loses its trailing tab on the way through the file,
+          "so everything past the field name is optional
+          CHECK lines( lt_part ) >= 4.
+          DATA(l_f_sign) = CONV string( lt_part[ 3 ] ).
+          DATA(l_f_opti) = CONV string( lt_part[ 4 ] ).
+          DATA(l_f_low)  = COND string( WHEN lines( lt_part ) >= 5 THEN lt_part[ 5 ] ).
+          DATA(l_f_high) = COND string( WHEN lines( lt_part ) >= 6 THEN lt_part[ 6 ] ).
+          READ TABLE lt_wsel ASSIGNING FIELD-SYMBOL(<wsel>) WITH KEY field_label = lt_part[ 2 ].
+          IF sy-subrc NE 0.
+            APPEND INITIAL LINE TO lt_wsel ASSIGNING <wsel>.
+            <wsel>-field_label = lt_part[ 2 ].
+          ENDIF.
+          IF lt_part[ 1 ] = 'SEL'.
+            <wsel>-sign = l_f_sign.
+            <wsel>-opti = l_f_opti.
+            <wsel>-low  = l_f_low.
+            <wsel>-high = l_f_high.
+          ELSE.
+            APPEND VALUE #( sign = l_f_sign
+                            opti = l_f_opti
+                            low  = l_f_low
+                            high = l_f_high ) TO <wsel>-range.
+          ENDIF.
+      ENDCASE.
+    ENDLOOP.
+
+    IF l_base NE m_tabname.
+      CLEAR m_loading.
+      MESSAGE |Layout belongs to { l_base }, not to { m_tabname }| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    "start from an empty join: aliases are handed out again in the saved order
+    LOOP AT mt_cand ASSIGNING FIELD-SYMBOL(<cand>).
+      CLEAR: <cand>-selected, <cand>-sel_order, <cand>-alias.
+    ENDLOOP.
+    CLEAR: m_sel_count, m_alias_count.
+
+    LOOP AT lt_stabs INTO DATA(ls_stab) WHERE tabname NE m_tabname.
+      add_candidate( ls_stab-tabname ). "selects it and rebuilds the join
+      READ TABLE mt_cand ASSIGNING <cand> WITH KEY tabname = ls_stab-tabname.
+      IF sy-subrc = 0.
+        <cand>-alias = ls_stab-alias. "keep the alias the saved ON conditions refer to
+      ENDIF.
+    ENDLOOP.
+    "aliases were overwritten: continue numbering above the highest one in use
+    LOOP AT mt_cand INTO DATA(ls_cnt) WHERE alias IS NOT INITIAL.
+      DATA(l_num) = CONV i( ls_cnt-alias+1 ).
+      IF l_num > m_alias_count.
+        m_alias_count = l_num.
+      ENDIF.
+    ENDLOOP.
+
+    m_base_pos = COND #( WHEN l_pos > 0 THEN l_pos ELSE 1 ).
+    rebuild_selection( ).
+
+    LOOP AT mt_jtabs ASSIGNING FIELD-SYMBOL(<jtab>).
+      READ TABLE lt_stabs INTO ls_stab WITH KEY alias = <jtab>-alias.
+      CHECK sy-subrc = 0.
+      IF ls_stab-jtype IS NOT INITIAL.
+        <jtab>-jtype = ls_stab-jtype.
+      ENDIF.
+      <jtab>-cond = ls_stab-cond.
+    ENDLOOP.
+
+    LOOP AT mt_jflds ASSIGNING FIELD-SYMBOL(<fld>).
+      CLEAR: <fld>-sel, <fld>-pos.
+    ENDLOOP.
+    LOOP AT lt_sflds INTO DATA(ls_sfld).
+      READ TABLE mt_jflds ASSIGNING <fld>
+        WITH KEY alias = ls_sfld-alias fieldname = ls_sfld-fieldname.
+      CHECK sy-subrc = 0.
+      <fld>-sel = abap_true.
+      <fld>-pos = ls_sfld-pos.
+    ENDLOOP.
+    normalize_pos( ). "pos drives the SELECT order, mt_jflds keeps its per-table grouping
+
+    IF l_mode IS NOT INITIAL AND l_mode NE 'P'. "pivot layouts are not part of the file
+      m_mode = l_mode.
+    ENDIF.
+    IF l_sql IS NOT INITIAL.
+      m_sql_manual = l_sql.
+    ENDIF.
+
+    "build_where only looks at RANGE, so a row without SELR lines needs one
+    LOOP AT lt_wsel ASSIGNING <wsel> WHERE range IS INITIAL AND sign IS NOT INITIAL.
+      APPEND VALUE #( sign = <wsel>-sign opti = <wsel>-opti
+                      low  = <wsel>-low  high = <wsel>-high ) TO <wsel>-range.
+    ENDLOOP.
+
+    "filters: into the cache AND straight into the panel rows - a refresh of the
+    "panel during the rebuild would otherwise re-cache them away as empty
+    mt_where_sel = lt_wsel.
+    IF mo_viewer->mo_sel IS BOUND.
+      LOOP AT mo_viewer->mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<panel>).
+        DATA(l_lbl) = condense( CONV string( <panel>-field_label ) ).
+        READ TABLE lt_wsel INTO DATA(ls_wsel) WITH KEY field_label = <panel>-field_label.
+        IF sy-subrc NE 0. "the base table is listed as CARRID or as T0_CARRID
+          DATA l_wsel_alt TYPE lvc_fname.
+          FIND REGEX '^T\d+_' IN l_lbl MATCH LENGTH DATA(l_wsel_pfx).
+          IF sy-subrc = 0.
+            l_wsel_alt = l_lbl+l_wsel_pfx.
+          ELSE.
+            l_wsel_alt = |T0_{ l_lbl }|.
+          ENDIF.
+          READ TABLE lt_wsel INTO ls_wsel WITH KEY field_label = l_wsel_alt.
+        ENDIF.
+        CHECK sy-subrc = 0.
+        <panel>-low   = ls_wsel-low.
+        <panel>-high  = ls_wsel-high.
+        <panel>-sign  = ls_wsel-sign.
+        <panel>-opti  = ls_wsel-opti.
+        <panel>-range = ls_wsel-range.
+        mo_viewer->mo_sel->update_sel_row( CHANGING c_sel_row = <panel> ).
+      ENDLOOP.
+      Zcl_SDE_common=>refresh( mo_viewer->mo_sel->mo_sel_alv ).
+    ENDIF.
+
+    refresh_all( ).
+    CLEAR m_loading. "from now on panel edits are cached again as usual
+    MESSAGE |Layout loaded: { l_file }| TYPE 'S'.
+  ENDMETHOD.
+
+
+  METHOD fill_sel_extras.
+    "every field of every joined table, in the label form the selection panel
+    "uses (T1_CONNID). Fields already in the SELECT are skipped there, so the
+    "panel keeps them once and only gains the ones left out of the field list.
+    CHECK mo_viewer->mo_sel IS BOUND.
+    CLEAR mo_viewer->mo_sel->mt_extra_flds.
+    DATA(l_multi) = is_multi( ).
+
+    LOOP AT mt_jtabs INTO DATA(ls_tab).
+      DATA(l_alias) = condense( CONV string( ls_tab-alias ) ).
+      LOOP AT get_fieldlist( ls_tab-tabname ) INTO DATA(ls_f).
+        CHECK ls_f-fieldname NE 'MANDT'.
+        APPEND VALUE #(
+          field_label = COND lvc_fname( WHEN l_multi = abap_true
+                                        THEN |{ l_alias }_{ ls_f-fieldname }|
+                                        ELSE ls_f-fieldname )
+          name        = ls_f-fieldtext
+          int_type    = ls_f-inttype
+          datatype    = ls_f-datatype
+          element     = ls_f-rollname
+          domain      = ls_f-domname
+          length      = ls_f-outputlen
+          style       = COND #( WHEN ls_f-keyflag = abap_true
+                                THEN VALUE #( ( fieldname = 'FIELD_LABEL' style = '00000020' ) ) )
+        ) TO mo_viewer->mo_sel->mt_extra_flds.
+      ENDLOOP.
+    ENDLOOP.
+  ENDMETHOD.
+
+
   METHOD reload_field_texts.
     LOOP AT mt_jtabs INTO DATA(ls_tab).
       LOOP AT get_fieldlist( ls_tab-tabname ) INTO DATA(ls_f). "uses m_fld_lang
@@ -1133,7 +1632,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       ELSEIF l_name CP 'on_*'.
         READ TABLE mt_jtabs ASSIGNING <jtab> WITH KEY alias = l_name+3.
         IF sy-subrc = 0.
-          <jtab>-cond = l_value.
+          "a term glued to the previous one (..._idAND t4~...) would not parse
+          REPLACE ALL OCCURRENCES OF REGEX '(\w)AND\s' IN l_value WITH '$1 AND '.
+          <jtab>-cond = condense( l_value ).
         ENDIF.
       ENDIF.
     ENDLOOP.
@@ -1387,6 +1888,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     REPLACE ALL OCCURRENCES OF REGEX '\bON\b' IN l_sql_html WITH '<span class="kw">ON</span>'.
     REPLACE ALL OCCURRENCES OF REGEX '\bAS\b' IN l_sql_html WITH '<span class="kw2">AS</span>'.
     REPLACE ALL OCCURRENCES OF REGEX '\bAND\b' IN l_sql_html WITH '<span class="kw2">AND</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bORDER BY\b' IN l_sql_html WITH '<span class="kw">ORDER BY</span>'.
+    REPLACE ALL OCCURRENCES OF REGEX '\bDESCENDING\b' IN l_sql_html WITH '<span class="kw2">DESCENDING</span>'.
     REPLACE ALL OCCURRENCES OF REGEX '\bUP TO\b' IN l_sql_html WITH '<span class="kw">UP TO</span>'.
     REPLACE ALL OCCURRENCES OF REGEX '\bROWS\b' IN l_sql_html WITH '<span class="kw">ROWS</span>'.
 
@@ -1401,6 +1904,12 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       `<a class="edit" href="SAPEVENT:sqledit?ON">&#9998; edit</a>` &&
       `<pre>` && l_sql_html && `</pre></body></html>`.
     show_html( io_html = mo_sql_html i_html = l_html ).
+
+    "a join without ON cannot be executed - say so instead of letting the DB fail
+    LOOP AT mt_jtabs INTO DATA(ls_chk_tab) FROM 2 WHERE cond IS INITIAL.
+      MESSAGE |Set the ON condition for { ls_chk_tab-alias } { ls_chk_tab-tabname }| TYPE 'S' DISPLAY LIKE 'W'.
+      RETURN.
+    ENDLOOP.
 
     "apply every change directly to the original window
     IF m_ready = abap_true AND viewer_alive( ) = abap_true.
@@ -1450,6 +1959,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } WHERE { l_where }|.
     ENDIF.
 
+    drop_stale_order( ). "a removed table must not stay behind in ORDER BY
+    IF m_order IS NOT INITIAL.
+      rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } ORDER BY { m_order }|.
+    ENDIF.
+
     DATA(l_rows) = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
     rv_sql = |{ rv_sql }{ cl_abap_char_utilities=>newline } UP TO { l_rows } ROWS|.
   ENDMETHOD.
@@ -1462,6 +1976,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
   METHOD cache_where_selection.
     CHECK mo_viewer->mo_sel IS BOUND.
+    "while a layout is applied the panel is still empty: caching it now would
+    "delete the very filters that were just read from the file
+    CHECK m_loading = abap_false.
 
     DATA lt_valid TYPE TABLE OF lvc_fname.
     LOOP AT mo_viewer->mo_sel->mt_sel_tab INTO DATA(ls_current).
@@ -1670,11 +2187,13 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           lt_range TYPE rsds_trange,
           lt_sel   TYPE TABLE OF zcl_sde_appl=>selection_display_s.
 
-    CHECK mo_viewer->mo_sel IS BOUND.
     DATA(l_multi) = boolc( lines( mt_jtabs ) > 1 ).
 
+    "the cache alone is enough: filters loaded from a file exist before the
+    "selection panel is even created (it is built on demand, SEL_ON)
     lt_sel = mt_where_sel.
     IF lt_sel IS INITIAL.
+      CHECK mo_viewer->mo_sel IS BOUND.
       lt_sel = mo_viewer->mo_sel->mt_sel_tab.
     ENDIF.
 
@@ -1745,6 +2264,16 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       REPLACE SECTION OFFSET l_off LENGTH l_len OF l_upper WITH ``.
     ENDIF.
 
+    "cut out ORDER BY <o> (the last clause before UP TO, so it goes first)
+    DATA(l_order) = ``.
+    FIND REGEX '\sORDER\s+BY\s' IN l_upper MATCH OFFSET DATA(l_ord_off) MATCH LENGTH DATA(l_ord_len).
+    IF sy-subrc = 0.
+      DATA(l_ord_val_off) = l_ord_off + l_ord_len.
+      l_order = condense( substring( val = l_sql off = l_ord_val_off len = strlen( l_sql ) - l_ord_val_off ) ).
+      l_sql   = l_sql+0(l_ord_off).
+      l_upper = l_upper+0(l_ord_off).
+    ENDIF.
+
     "cut out GROUP BY <g> (comes after WHERE in the generated statement)
     DATA(l_group) = ``.
     FIND REGEX '\sGROUP\s+BY\s' IN l_upper MATCH OFFSET DATA(l_grp_off) MATCH LENGTH DATA(l_grp_len).
@@ -1785,7 +2314,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     "alias -> table map from the FROM clause
     TYPES: BEGIN OF t_alias, alias TYPE string, tabname TYPE tabname, END OF t_alias.
     DATA lt_alias TYPE TABLE OF t_alias.
-    FIND ALL OCCURRENCES OF REGEX '(\w+)\s+AS\s+(\w+)' IN to_upper( l_from ) RESULTS DATA(lt_matches).
+    "[\w/] - table name may carry a namespace prefix, e.g. /CLIN/RGR_TCG
+    FIND ALL OCCURRENCES OF REGEX '([\w/]+)\s+AS\s+(\w+)' IN to_upper( l_from ) RESULTS DATA(lt_matches).
     LOOP AT lt_matches INTO DATA(ls_match).
       DATA(l_tab)   = to_upper( substring( val = l_from off = ls_match-submatches[ 1 ]-offset len = ls_match-submatches[ 1 ]-length ) ).
       DATA(l_alias) = to_upper( substring( val = l_from off = ls_match-submatches[ 2 ]-offset len = ls_match-submatches[ 2 ]-length ) ).
@@ -1904,6 +2434,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     l_from   = to_upper( l_from ).
     l_where  = upper_outside_quotes( l_where ).
     l_group  = to_upper( l_group ).
+    l_order  = to_upper( l_order ).
 
     TRY.
         DATA(lo_struct) = cl_abap_structdescr=>create( lt_comp ).
@@ -1915,10 +2446,24 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         ASSIGN lr_table->* TO <result>.
 
         "new strict-mode Open SQL: dynamic tokens with AS aliases are supported here
-        IF l_group IS INITIAL.
+        IF l_group IS INITIAL AND l_order IS INITIAL.
           SELECT (l_fields)
             FROM (l_from)
             WHERE (l_where)
+            INTO CORRESPONDING FIELDS OF TABLE @<result>
+            UP TO @l_rows ROWS.
+        ELSEIF l_group IS INITIAL.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            ORDER BY (l_order)
+            INTO CORRESPONDING FIELDS OF TABLE @<result>
+            UP TO @l_rows ROWS.
+        ELSEIF l_order IS INITIAL.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            GROUP BY (l_group)
             INTO CORRESPONDING FIELDS OF TABLE @<result>
             UP TO @l_rows ROWS.
         ELSE.
@@ -1926,6 +2471,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
             FROM (l_from)
             WHERE (l_where)
             GROUP BY (l_group)
+            ORDER BY (l_order)
             INTO CORRESPONDING FIELDS OF TABLE @<result>
             UP TO @l_rows ROWS.
         ENDIF.
@@ -1943,6 +2489,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true
                        it_catalog = lt_cat ).
     IF mo_viewer->mo_sel IS BOUND.
+      fill_sel_extras( ). "unselected join fields stay filterable behind the toolbar toggle
+      mo_viewer->mo_sel->update_sel_tab( ).
       LOOP AT mo_viewer->mo_sel->mt_sel_tab ASSIGNING FIELD-SYMBOL(<sync_sel>).
         DATA(l_sync_label) = condense( CONV string( <sync_sel>-field_label ) ).
         READ TABLE mt_where_sel INTO DATA(ls_sync_saved)
@@ -2040,6 +2588,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         IN l_tail WITH |{ l_nl }  $1 | IGNORING CASE.
       REPLACE FIRST OCCURRENCE OF REGEX '\s+WHERE\s+' IN l_tail WITH |{ l_nl } WHERE | IGNORING CASE.
       REPLACE FIRST OCCURRENCE OF REGEX '\s+GROUP\s+BY\s+' IN l_tail WITH |{ l_nl } GROUP BY | IGNORING CASE.
+      REPLACE FIRST OCCURRENCE OF REGEX '\s+ORDER\s+BY\s+' IN l_tail WITH |{ l_nl } ORDER BY | IGNORING CASE.
       REPLACE FIRST OCCURRENCE OF REGEX '\s+UP\s+TO\s+' IN l_tail WITH |{ l_nl } UP TO | IGNORING CASE.
       rv_sql = |{ l_head }{ l_nl }  { l_tail }|.
     ENDIF.

@@ -63,6 +63,7 @@ CLASS zcl_sde_appl DEFINITION PUBLIC CREATE PUBLIC.
     "so that global classes (which cannot see report-local data) can read them.
     CLASS-DATA: gv_rows         TYPE i,
                 gv_vname        TYPE tabname,
+                gv_path         TYPE string, "frontend folder for saved join layouts
                 gr_current_row TYPE REF TO data.
 
     CLASS-METHODS:

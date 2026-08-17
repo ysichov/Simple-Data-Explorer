@@ -4,6 +4,10 @@ CLASS zcl_sde_sel_opt DEFINITION PUBLIC CREATE PUBLIC.
           mo_sel_alv TYPE REF TO cl_gui_alv_grid,
           mt_fcat    TYPE lvc_t_fcat,
           mt_sel_tab TYPE TABLE OF zcl_sde_appl=>selection_display_s,
+          "fields of the joined tables that are not in the SELECT list: the join
+          "builder fills them, the toolbar toggle decides whether they are shown
+          mt_extra_flds TYPE TABLE OF zcl_sde_appl=>selection_display_s,
+          m_show_all TYPE abap_bool,
           ms_layout  TYPE lvc_s_layo.
 
     EVENTS: selection_done.
@@ -191,11 +195,44 @@ CLASS zcl_sde_sel_opt IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDLOOP.
+
+    "joined fields left out of the SELECT: filterable, but only on demand
+    IF m_show_all = abap_true.
+      LOOP AT mt_extra_flds INTO DATA(ls_extra).
+        CHECK NOT line_exists( mt_sel_tab[ field_label = ls_extra-field_label ] ).
+        APPEND INITIAL LINE TO mt_sel_tab ASSIGNING <sel_tab>.
+        <sel_tab> = ls_extra.
+        READ TABLE lt_copy INTO ls_copy WITH KEY field_label = ls_extra-field_label.
+        IF sy-subrc = 0.
+          <sel_tab>-low   = ls_copy-low.
+          <sel_tab>-high  = ls_copy-high.
+          <sel_tab>-sign  = ls_copy-sign.
+          <sel_tab>-opti  = ls_copy-opti.
+          <sel_tab>-range = ls_copy-range.
+          <sel_tab>-option_icon = ls_copy-option_icon.
+          <sel_tab>-more_icon   = ls_copy-more_icon.
+        ELSE.
+          <sel_tab>-option_icon = icon_led_inactive.
+          <sel_tab>-more_icon   = icon_enter_more.
+        ENDIF.
+        <sel_tab>-ind = lines( mt_sel_tab ).
+      ENDLOOP.
+    ENDIF.
   ENDMETHOD.
   METHOD handle_sel_toolbar.
     e_object->mt_toolbar[] = VALUE #( butn_type = 0 disabled = ''
      ( function = 'SEL_OFF' icon = icon_arrow_right    quickinfo = 'Hide' )
      ( function = 'SEL_CLEAR' icon = icon_delete_row    quickinfo = 'Clear Select-Options' ) ).
+    IF mt_extra_flds IS NOT INITIAL. "join mode: switch between selected and all fields
+      APPEND VALUE #( butn_type = 0
+                      function  = 'SEL_ALLF'
+                      icon      = COND #( WHEN m_show_all = abap_true
+                                          THEN icon_select_block ELSE icon_select_all )
+                      quickinfo = COND #( WHEN m_show_all = abap_true
+                                          THEN 'Show selected fields only'
+                                          ELSE 'Show all fields of the joined tables' )
+                    ) TO e_object->mt_toolbar.
+    ENDIF.
   ENDMETHOD.
 
   METHOD set_value.
@@ -664,6 +701,14 @@ CLASS zcl_sde_sel_opt IMPLEMENTATION.
           id    = 1
           width = lv_sel_width.
       mo_viewer->mo_alv->set_toolbar_interactive( ).
+      RETURN.
+    ENDIF.
+
+    IF e_ucomm = 'SEL_ALLF'. "toggle: only the selected fields / every field of the join
+      m_show_all = boolc( m_show_all = abap_false ).
+      update_sel_tab( ).
+      Zcl_SDE_common=>refresh( mo_sel_alv ).
+      mo_sel_alv->set_toolbar_interactive( ).
       RETURN.
     ENDIF.
 
