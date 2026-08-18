@@ -613,6 +613,11 @@ CLASS zcl_sde_table_viewer DEFINITION INHERITING FROM zcl_sde_popup CREATE PUBLI
                        i_name     TYPE string
                        i_generic  TYPE abap_bool DEFAULT abap_false "replace displayed data (new structure allowed)
                        it_catalog TYPE lvc_t_fcat OPTIONAL,         "ready-made catalog (pivot headers)
+      "dock the join/pivot builder below the data; i_visible = false builds it
+      "collapsed (loading a layout does not mean the user wants to edit it).
+      "Public because a layout of another table opens its own window and has to
+      "attach the builder there (zcl_sde_tools=>open_layout_for)
+      open_tools IMPORTING i_visible TYPE abap_bool DEFAULT abap_true,
       refresh_table FOR EVENT selection_done OF zcl_sde_sel_opt.
 
 protected section.
@@ -621,9 +626,6 @@ protected section.
       create_popup,
       create_alv,
       create_sel_alv,
-      "dock the join/pivot builder below the data; i_visible = false builds it
-      "collapsed (loading a layout does not mean the user wants to edit it)
-      open_tools IMPORTING i_visible TYPE abap_bool DEFAULT abap_true,
       set_header,
       read_text_table,
       update_texts,
@@ -7847,8 +7849,8 @@ ENDFORM.
 
 ****************************************************
 INTERFACE lif_abapmerge_marker.
-* abapmerge 0.16.7 - 2026-08-18T17:47:25.310Z
-  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:47:25.310Z`.
+* abapmerge 0.16.7 - 2026-08-18T17:50:28.488Z
+  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:50:28.488Z`.
   CONSTANTS c_abapmerge_version TYPE string VALUE `0.16.7`.
 ENDINTERFACE.
 ****************************************************
