@@ -756,6 +756,8 @@ protected section.
                RETURNING VALUE(rv_file) TYPE string,
       save_config IMPORTING i_name TYPE string,
       load_config IMPORTING i_name TYPE string,
+      open_layout_for IMPORTING i_base TYPE tabname
+                                i_file TYPE string,
       apply_postdata IMPORTING it_postdata TYPE cnht_post_data_tab RETURNING VALUE(rv_act) TYPE string,
       create_sql_view,
       update_sql_view,
@@ -2078,6 +2080,23 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       MESSAGE |Cannot write { l_file }| TYPE 'S' DISPLAY LIKE 'E'.
     ENDIF.
   ENDMETHOD.
+  METHOD open_layout_for.
+    "a saved layout always belongs to one table; loading it for a different
+    "table means opening a window for THAT table, the same way every other
+    "table switch in this app works (foreign-key double-click, "open" by name)
+    IF zcl_sde_sql=>exist_table( i_base ) NE 1 AND zcl_sde_sql=>exist_view( i_base ) NE 1.
+      MESSAGE |{ i_base } no longer exists - cannot open the layout's table| TYPE 'S' DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+
+    APPEND INITIAL LINE TO zcl_sde_appl=>mt_obj ASSIGNING FIELD-SYMBOL(<obj>).
+    CREATE OBJECT <obj>-alv_viewer EXPORTING i_tname = i_base.
+    <obj>-alv_viewer->open_tools( i_visible = abap_true ).
+    CHECK <obj>-alv_viewer->mo_tools IS BOUND.
+    "mo_tools is REF TO object (the viewer must not depend on zcl_sde_tools at
+    "activation) - the new window's own load_config now sees a matching BASE
+    CALL METHOD <obj>-alv_viewer->mo_tools->('LOAD_CONFIG') EXPORTING i_name = i_file.
+  ENDMETHOD.
   METHOD load_config.
     DATA: lt_lines TYPE string_table,
           lt_part  TYPE string_table.
@@ -2163,7 +2182,10 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
     IF l_base NE m_tabname.
       CLEAR m_loading.
-      MESSAGE |Layout belongs to { l_base }, not to { m_tabname }| TYPE 'S' DISPLAY LIKE 'E'.
+      "wrong window for this layout: open the right one instead of refusing -
+      "one window per table is how this app always switches tables (see the
+      "foreign-key double-click in zcl_sde_plugins=>run_dictionary_key)
+      open_layout_for( i_base = l_base i_file = l_file ).
       RETURN.
     ENDIF.
 
@@ -7825,8 +7847,8 @@ ENDFORM.
 
 ****************************************************
 INTERFACE lif_abapmerge_marker.
-* abapmerge 0.16.7 - 2026-08-18T17:21:20.659Z
-  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:21:20.659Z`.
+* abapmerge 0.16.7 - 2026-08-18T17:47:25.310Z
+  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:47:25.310Z`.
   CONSTANTS c_abapmerge_version TYPE string VALUE `0.16.7`.
 ENDINTERFACE.
 ****************************************************
