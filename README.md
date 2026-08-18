@@ -383,14 +383,14 @@ regenerate — never edit the standalone file directly.
 ## History and older documentation
 
 Generation 1 of SDE was a single report for viewing tables and the links between them; this
-repository is its successor and the description above covers both generations. The older material:
+repository is its successor and the description above covers both generations. The
+[wiki of this repository](../../wiki) documented generation 1 and is superseded by this file.
 
-- [Wiki of the original repository](https://github.com/ysichov/SDE/wiki) — description of the first
-  generation, superseded by this file
+The repository used to be called `SDE`; links of the form `github.com/ysichov/SDE/...` still
+redirect here.
+
 - [Simple Data Explorer](https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/) — feature
   description in Russian
-- [github.com/ysichov/SDE_abapgit](https://github.com/ysichov/SDE_abapgit) — 7.50 abapGit version of
-  generation 1
 
 ## Author
 
