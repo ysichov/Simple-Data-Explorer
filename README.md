@@ -274,8 +274,8 @@ opens in a normal SDE window with filters, empty-column handling and everything 
 
 ## Tools: joins, pivot tables, SQL
 
-The **Tools** button docks a builder below the data of the window: an HTML panel on top (tables and
-zones), the field list, the generated SQL, and the result grid.
+The **Tools** button docks a builder below the data of the window: an HTML canvas on top (the join
+graph, or the pivot cross), the field list, the generated SQL, and the result grid.
 
 <img width="1800" alt="Tools area" src="https://github.com/user-attachments/assets/fa269282-022a-4f01-b3cf-d7cb1088ba19" />
 
@@ -303,10 +303,35 @@ mode off and leaves the plain table behind.
 
 <img width="1382" alt="Pivot example" src="https://github.com/user-attachments/assets/22b7fd73-2284-49e5-8a78-be66e8e9732f" />
 
-Drop fields into the three zones — **Rows**, **Columns**, **Values**. Every value chip carries an
-aggregation: `SUM`, `COUNT`, `MIN`, `MAX`, `AVG` for numeric fields, `COUNT` / `MIN` / `MAX`
-otherwise. The whole pivot is executed as **one statement**, with a `CASE` bucket per column value,
-so the database does the work. Pivot works on the base table and on a join alike.
+The pivot mode replaces the canvas with the **pivot cross**: **ROWS** run down the left side,
+**COLUMNS** across the top, **MEASURES** fill the body, and the available fields sit below it. The
+SELECT list of the join is collapsed while pivoting — it has no effect on the pivot beyond deciding
+which fields are on offer — so the generated statement takes the whole lower half.
+
+- Every section starts with **three slots** and grows by one more as soon as it fills up, so there
+  is always a free slot to aim at.
+- Fill a slot by **dragging** a field chip into it, or click the chip and then click the slot.
+  Chips can be dragged from one slot to another to reorder them or to move them between sections;
+  the cross on a chip removes it.
+- Every measure chip carries an aggregation: `SUM`, `COUNT`, `MIN`, `MAX`, `AVG` for numeric fields,
+  `COUNT` / `MIN` / `MAX` otherwise. The same field can be measured several times, once per
+  aggregate.
+- Fields already placed are dimmed in the list below; in a join every chip keeps the color of its
+  table.
+
+**One statement** does the aggregation: the join is grouped by the row and the column fields
+together, so every line of the result is one cell. The matrix itself is spread in ABAP — a
+dynamically specified `SELECT` list cannot carry the `CASE` expressions a SQL-side matrix would
+need, and the parser rejects them. Up to 50 distinct column value combinations become columns;
+a blank value is shown as `(empty)`. Pivot works on the base table and on a join alike.
+
+- **Fixed values become text.** A field whose domain has fixed values (like a status or a class)
+  shows the domain's short text instead of its raw code, both in a spread column's header and in a
+  plain row. A checkbox-style field without domain text of its own (a `FLAG`) shows its own field
+  name for the checked value instead of a bare `X`.
+- **Sorting the grid** sorts the matrix itself — the pivot's grouped statement has no column that
+  corresponds to a spread column, so `ORDER BY` cannot reach it the way it does for the plain
+  join.
 
 ### Generated SQL
 
@@ -346,7 +371,7 @@ there is one. Loading a layout restores all of it, even before the selection pan
 | `zcl_sde_transmitter`, `zcl_sde_receiver` | Event link that makes one window drive another |
 | `zcl_sde_dragdrop`, `zcl_sde_dd_data` | Drag and drop between grids and selection panels |
 | `zcl_sde_tools` | Join and pivot builder: HTML UI, SQL generation, result grid, layout files |
-| `zcl_sde_pivot`, `zif_sde_pivot_types` | Pivot model and the `CASE`-based statement |
+| `zcl_sde_pivot`, `zif_sde_pivot_types` | Pivot model, builder panel and the grouped statement |
 | `zcl_sde_plugins` | Dictionary and HR navigation rules |
 | `zcl_sde_py_cluster_viewer` | Payroll result as a tree |
 | `zcl_sde_text_viewer` | Infotype long texts |

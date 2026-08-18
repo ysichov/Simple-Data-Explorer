@@ -42,11 +42,10 @@ CLASS zcl_sde_common DEFINITION DEFERRED.
 CLASS zcl_sde_appl DEFINITION DEFERRED.
 INTERFACE zif_sde_pivot_types.
 
-  "Shared types between zcl_sde_tools (join field list) and zcl_sde_pivot
-  "(pivot column value list) - each class needs the other's type, so a
-  "direct cross-reference would create a circular type dependency that
-  "cannot be resolved when both classes are flattened into one standalone
-  "program (see generate_standalone.sh).
+  "Shared type between zcl_sde_tools (join field list) and zcl_sde_pivot -
+  "each class needs the other's type, so a direct cross-reference would
+  "create a circular type dependency that cannot be resolved when both
+  "classes are flattened into one standalone program (see generate_standalone.sh).
 
   TYPES: BEGIN OF t_jfld,
            sel       TYPE abap_bool,
@@ -58,15 +57,9 @@ INTERFACE zif_sde_pivot_types.
            ddtext    TYPE reptext,
            datatype  TYPE c LENGTH 30,
            inttype   TYPE c LENGTH 1,
+           domname   TYPE domname, "fixed values behind a pivot column header, see value_label
          END OF t_jfld,
-         tt_jfld TYPE STANDARD TABLE OF t_jfld WITH DEFAULT KEY,
-
-         BEGIN OF t_colval,
-           text    TYPE string, "display value
-           literal TYPE string, "SQL literal ('USD' or 42), single-column compatibility
-           cond    TYPE string, "SQL condition for multi-column buckets
-         END OF t_colval,
-         tt_colvals TYPE STANDARD TABLE OF t_colval WITH DEFAULT KEY.
+         tt_jfld TYPE STANDARD TABLE OF t_jfld WITH DEFAULT KEY.
 
 ENDINTERFACE.
 
@@ -193,47 +186,115 @@ CLASS zcl_sde_pivot DEFINITION CREATE PUBLIC.
            tt_vals TYPE STANDARD TABLE OF t_val WITH DEFAULT KEY,
            tt_keys TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
 
-           tt_colvals TYPE zif_sde_pivot_types=>tt_colvals. "shared with zcl_sde_tools, see zif_sde_pivot_types
+           "one column of the grouped statement; the same list drives the SQL
+           "and the transpose in zcl_sde_tools=>execute_pivot
+           BEGIN OF t_sqlcol,
+             key  TYPE string,      "ALIAS~FIELD, empty for COUNT( * )
+             agg  TYPE string,      "SUM/COUNT/... , empty for a dimension
+             comp TYPE string,      "component name = alias in the statement
+             role TYPE c LENGTH 1,  "R row dimension, C column dimension, M measure
+           END OF t_sqlcol,
+           tt_sqlcols TYPE STANDARD TABLE OF t_sqlcol WITH DEFAULT KEY.
 
     METHODS:
       has_layout RETURNING VALUE(rv_has) TYPE abap_bool,
       has_columns RETURNING VALUE(rv_has) TYPE abap_bool,
       get_col_key RETURNING VALUE(rv_key) TYPE string,
       get_col_keys RETURNING VALUE(rt_keys) TYPE tt_keys,
+      get_sql_columns RETURNING VALUE(rt_cols) TYPE tt_sqlcols,
 
-      "HTML for the fields panel: zones + available field chips (SAPEVENT:pv?...)
+      "HTML for the builder: the pivot cross - rows down the left, columns across
+      "the top, measures in the body - plus the available field chips below it.
+      "i_header is the tool bar of the canvas the panel is rendered into.
       render_panel IMPORTING it_fields      TYPE zif_sde_pivot_types=>tt_jfld
                              i_show_texts   TYPE abap_bool DEFAULT abap_false
+                             i_header       TYPE string OPTIONAL
                    RETURNING VALUE(rv_html) TYPE string,
 
-      "pv actions: pk_<key> pick, tr rows, tc columns, ag_<AGG> values,
-      "rr_<key>/rc_<key>/rv_<idx> remove, CLR clear all
-      handle_action IMPORTING i_act TYPE string,
+      "pv actions: pk_<key> pick an available field, pz_<z><i> pick a placed one,
+      "pt_<z><i> put the picked field into that slot, px_<z><i> clear the slot,
+      "sa_<i>_<AGG> aggregate of measure i, CLR clear everything
+      handle_action IMPORTING i_act     TYPE string
+                              it_fields TYPE zif_sde_pivot_types=>tt_jfld OPTIONAL,
+
+      "drag&drop, posted as <target zone><slot>|<source zone><slot>|<key>;
+      "source zone a is the available list, r/c/v are the three sections
+      handle_drop IMPORTING i_move    TYPE string
+                            it_fields TYPE zif_sde_pivot_types=>tt_jfld OPTIONAL,
+
       normalize_aggs IMPORTING it_fields TYPE zif_sde_pivot_types=>tt_jfld,
 
-      "the whole pivot as ONE statement: CASE buckets per column value
+      "the statement behind the pivot: one group per row/column combination.
+      "The matrix itself is built in ABAP - a dynamically specified SELECT
+      "list cannot carry the CASE expressions a SQL-side matrix would need.
       build_select IMPORTING i_from        TYPE string
                              i_where       TYPE string
                              i_multi       TYPE abap_bool
                              i_rows        TYPE i
-                             it_col_vals   TYPE tt_colvals OPTIONAL
-                   RETURNING VALUE(rv_sql) TYPE string.
+                   RETURNING VALUE(rv_sql) TYPE string,
+
+      "the same statement as dynamic tokens: upper case, one line, no literals
+      build_tokens IMPORTING i_multi  TYPE abap_bool
+                   EXPORTING e_fields TYPE string
+                             e_group  TYPE string,
+
+      "column value -> component name part: A-Z, 0-9, '_' only
+      sanitize IMPORTING i_txt          TYPE string
+               RETURNING VALUE(rv_name) TYPE string.
 
   PRIVATE SECTION.
-    DATA: mt_rows TYPE tt_keys, "group-by fields in order
-          mt_cols TYPE tt_keys, "column fields in order
-          mt_vals TYPE tt_vals, "aggregated fields
-          m_pick  TYPE string.  "field picked for zone assignment
+    CONSTANTS: c_min_slots TYPE i      VALUE 3,   "3 x 3 sections; a full one grows by one empty slot
+               c_from_list TYPE string VALUE `a0`. "source of a chip that comes from the field list
+
+    DATA: mt_rows    TYPE tt_keys, "group-by fields in order
+          mt_cols    TYPE tt_keys, "column fields in order
+          mt_vals    TYPE tt_vals, "aggregated fields
+          m_pick     TYPE string,  "field picked for zone assignment
+          m_pick_src TYPE string.  "where it was picked up: the field list or <zone><slot>
 
     METHODS:
+      "slots: read one, take the content out of one, put a field into another
+      slot_key IMPORTING i_zone        TYPE string
+                         i_idx         TYPE i
+               RETURNING VALUE(rv_key) TYPE string,
+      pick_src RETURNING VALUE(rv_src) TYPE string,
+      take IMPORTING i_zone TYPE string
+                     i_idx  TYPE i
+           EXPORTING e_key  TYPE string
+                     e_agg  TYPE string,
+      put IMPORTING i_zone    TYPE string
+                    i_idx     TYPE i
+                    i_key     TYPE string
+                    i_agg     TYPE string OPTIONAL
+                    it_fields TYPE zif_sde_pivot_types=>tt_jfld OPTIONAL,
+
+      "rendering helpers
+      zone_html IMPORTING i_zone         TYPE string
+                          it_keys        TYPE tt_keys
+                          it_fields      TYPE zif_sde_pivot_types=>tt_jfld
+                          i_show_texts   TYPE abap_bool
+                          i_vertical     TYPE abap_bool DEFAULT abap_false
+                RETURNING VALUE(rv_html) TYPE string,
+      vals_html IMPORTING it_fields      TYPE zif_sde_pivot_types=>tt_jfld
+                          i_show_texts   TYPE abap_bool
+                RETURNING VALUE(rv_html) TYPE string,
+      free_slots IMPORTING i_zone         TYPE string
+                           i_filled       TYPE i
+                           i_vertical     TYPE abap_bool DEFAULT abap_false
+                 RETURNING VALUE(rv_html) TYPE string,
+      label_of IMPORTING i_key           TYPE string
+                         it_fields       TYPE zif_sde_pivot_types=>tt_jfld
+                         i_show_texts    TYPE abap_bool
+               RETURNING VALUE(rv_label) TYPE string,
+      is_used IMPORTING i_key        TYPE string
+              RETURNING VALUE(rv_ok) TYPE abap_bool,
+
       qualify IMPORTING i_key         TYPE string
                         i_multi       TYPE abap_bool
               RETURNING VALUE(rv_sql) TYPE string,
       comp_name IMPORTING i_key          TYPE string
                           i_prefix       TYPE string OPTIONAL
                 RETURNING VALUE(rv_name) TYPE string,
-      sanitize IMPORTING i_txt          TYPE string
-               RETURNING VALUE(rv_name) TYPE string,
       is_numeric_field IMPORTING i_key        TYPE string
                                  it_fields    TYPE zif_sde_pivot_types=>tt_jfld
                        RETURNING VALUE(rv_ok) TYPE abap_bool,
@@ -631,6 +692,12 @@ CLASS zcl_sde_tools DEFINITION INHERITING FROM zcl_sde_popup CREATE PUBLIC.
 
 protected section.
   PRIVATE SECTION.
+    TYPES: BEGIN OF t_domain_cache,
+             domname TYPE domname,
+             value   TYPE string,
+             text    TYPE string,
+           END OF t_domain_cache.
+
     DATA: mo_viewer    TYPE REF TO zcl_sde_table_viewer,
           m_tabname    TYPE tabname,
           mt_cand      TYPE tt_cand,
@@ -653,7 +720,10 @@ protected section.
           m_loading    TYPE abap_bool,                   "a layout is being applied: do not re-cache filters
           m_show_texts TYPE abap_bool,                   "field chips: texts instead of tech names
           m_fld_lang   TYPE spras,                       "language of the field texts
-          mt_where_sel TYPE TABLE OF zcl_sde_appl=>selection_display_s. "ranges before pivot rebind
+          m_layout     TYPE char1,                       "splitter geometry currently applied (' ' or P)
+          mt_where_sel TYPE TABLE OF zcl_sde_appl=>selection_display_s, "ranges before pivot rebind
+          mt_domain_cache TYPE TABLE OF t_domain_cache, "fixed-value texts already looked up
+          mt_pivot_sort TYPE abap_sortorder_tab. "sort of the matrix - the grouped SQL has no column to sort by
 
     METHODS:
       find_candidates,
@@ -662,6 +732,8 @@ protected section.
                     RETURNING VALUE(rt_dfies) TYPE ddfields,
       render_html,
       render_flds,
+      apply_layout,
+      pivot_src_fields RETURNING VALUE(rt_fields) TYPE tt_jfld,
       show_html IMPORTING io_html TYPE REF TO cl_gui_html_viewer i_html TYPE string,
       add_candidate IMPORTING i_tabname TYPE tabname,
       toggle_candidate IMPORTING i_tabname TYPE tabname,
@@ -689,7 +761,26 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
-      get_pivot_col_values RETURNING VALUE(rt_vals) TYPE zif_sde_pivot_types=>tt_colvals,
+      execute_pivot,
+      key_type IMPORTING i_key          TYPE string
+                         i_agg          TYPE string OPTIONAL
+               RETURNING VALUE(ro_type) TYPE REF TO cl_abap_datadescr,
+      value_text IMPORTING i_row          TYPE any
+                           it_comps       TYPE string_table
+                 RETURNING VALUE(rv_text) TYPE string,
+      value_label IMPORTING i_row          TYPE any
+                            it_comps       TYPE string_table
+                            it_cols        TYPE zcl_sde_pivot=>tt_sqlcols
+                  RETURNING VALUE(rv_text) TYPE string,
+      field_label IMPORTING i_key          TYPE string
+                            i_raw          TYPE string
+                  RETURNING VALUE(rv_text) TYPE string,
+      field_header IMPORTING i_key          TYPE string
+                   RETURNING VALUE(rv_text) TYPE string,
+      domain_text IMPORTING i_domname      TYPE domname
+                            i_value        TYPE string
+                  RETURNING VALUE(rv_text) TYPE string,
+      sync_sel_panel,
       build_from RETURNING VALUE(rv_from) TYPE string,
       is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
       cache_where_selection,
@@ -1011,9 +1102,30 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     refresh_all( ).
   ENDMETHOD.
   METHOD refresh_all.
+    apply_layout( ).
     render_html( ).
     render_flds( ).
     update_sql_view( ).
+  ENDMETHOD.
+  METHOD apply_layout.
+    "pivot mode: the builder needs the canvas, and the SELECT list it would push
+    "aside belongs to the join - so the statement takes the whole lower half
+    DATA(l_want) = COND char1( WHEN m_mode = 'P' THEN 'P' ELSE space ).
+    CHECK l_want NE m_layout AND mo_splitter IS BOUND AND mo_low_split IS BOUND.
+    m_layout = l_want.
+
+    IF l_want = 'P'.
+      mo_splitter->set_row_height( id = 1 height = 62 ).
+      mo_low_split->set_column_width( id = 1 width = 100 ).
+    ELSE.
+      mo_splitter->set_row_height( id = 1 height = 22 ).
+      mo_low_split->set_column_width( id = 1 width = 45 ).
+    ENDIF.
+  ENDMETHOD.
+  METHOD pivot_src_fields.
+    "the pivot source is what the join selected, not every field of every table
+    rt_fields = VALUE #( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
+    SORT rt_fields BY pos.
   ENDMETHOD.
   METHOD rebuild_selection.
     DATA: lt_old_flds TYPE tt_jfld,
@@ -1028,7 +1140,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     LOOP AT get_fieldlist( m_tabname ) INTO DATA(ls_f).
       APPEND VALUE #( sel = abap_true alias = 'T0' tabname = m_tabname "the window opened with all fields
                       fieldname = ls_f-fieldname keyflag = ls_f-keyflag
-                      ddtext = ls_f-fieldtext datatype = ls_f-datatype inttype = ls_f-inttype ) TO mt_jflds.
+                      ddtext = ls_f-fieldtext datatype = ls_f-datatype inttype = ls_f-inttype
+                      domname = ls_f-domname ) TO mt_jflds.
     ENDLOOP.
 
     lt_sorted = VALUE #( FOR wa IN mt_cand WHERE ( selected = abap_true ) ( wa ) ).
@@ -1120,6 +1233,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         APPEND VALUE #( alias = l_alias tabname = ls_cand-tabname
                         fieldname = ls_f-fieldname keyflag = ls_f-keyflag
                         ddtext = ls_f-fieldtext datatype = ls_f-datatype inttype = ls_f-inttype
+                        domname = ls_f-domname
                         sel = boolc( ls_f-keyflag = abap_true AND l_dupe = abap_false )
                       ) TO mt_jflds.
       ENDLOOP.
@@ -1186,6 +1300,22 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
   METHOD render_html.
     CHECK mo_html IS BOUND.
+
+    "the tool bar looks the same in every mode: base table + the two tools
+    DATA(l_head) =
+      |<span class="base">{ m_tabname }</span>| &&
+      |<a class="card{ COND string( WHEN m_mode = 'J' THEN ' sel' ) }" href="SAPEVENT:mode?J">&#128279; Join</a>| &&
+      |<a class="card{ COND string( WHEN m_mode = 'P' THEN ' sel' ) }" href="SAPEVENT:mode?P">&#8862; Pivot table</a>|.
+
+    IF m_mode = 'P' AND mo_pivot IS BOUND. "the pivot builder gets the whole canvas
+      DATA(lt_pvsrc) = pivot_src_fields( ).
+      mo_pivot->normalize_aggs( lt_pvsrc ).
+      show_html( io_html = mo_html
+                 i_html  = mo_pivot->render_panel( it_fields    = lt_pvsrc
+                                                   i_show_texts = m_show_texts
+                                                   i_header     = l_head ) ).
+      RETURN.
+    ENDIF.
 
     DATA(l_html) =
       `<html><head><meta charset="utf-8"><style>` &&
@@ -1258,9 +1388,7 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       `</head><body>` &&
       `<form id="pf" method="post" action="SAPEVENT:fsel" style="display:none">` &&
       `<input type="hidden" name="keys" id="pk"></form>` &&
-      |<span class="base">{ m_tabname }</span>| &&
-      |<a class="card{ COND string( WHEN m_mode = 'J' THEN ' sel' ) }" href="SAPEVENT:mode?J">&#128279; Join</a>| &&
-      |<a class="card{ COND string( WHEN m_mode = 'P' THEN ' sel' ) }" href="SAPEVENT:mode?P">&#8862; Pivot table</a>|.
+      l_head.
 
     IF m_mode = 'J'. "join tool: candidate canvas + join configuration
     l_html = l_html && ` &#8646; `.
@@ -1383,13 +1511,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
     CHECK mo_flds_html IS BOUND.
 
-    IF m_mode = 'P' AND mo_pivot IS BOUND. "pivot zones instead of the SELECT list
-      "the pivot source is what the join selected, not every field of every table
-      DATA(lt_src) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
-      SORT lt_src BY pos.
-      mo_pivot->normalize_aggs( lt_src ).
+    IF m_mode = 'P'. "the SELECT list belongs to the join: collapsed while pivoting
       show_html( io_html = mo_flds_html
-                 i_html  = mo_pivot->render_panel( it_fields = lt_src i_show_texts = m_show_texts ) ).
+                 i_html  = `<html><head><meta charset="utf-8"></head>` &&
+                           `<body style="font-family:Arial;font-size:11px;color:#888;margin:4px">` &&
+                           `The SELECT list is edited in the join tool.</body></html>` ).
       RETURN.
     ENDIF.
 
@@ -1803,8 +1929,23 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     m_order = l_kept.
   ENDMETHOD.
   METHOD sort_by.
-    "the sort buttons of the data grid drive ORDER BY instead of a frontend sort:
-    "sorting only the fetched rows would sort the wrong 500 rows
+    "the sort buttons of the data grid drive an explicit order instead of a
+    "frontend sort: sorting only the fetched rows would sort the wrong 500 rows.
+    "For the plain join this becomes ORDER BY text, parsed back out of the
+    "displayed statement by execute_sql. The pivot's grouped statement has no
+    "SQL column that corresponds to a matrix column, so the transposed result
+    "is sorted directly instead - the grid already shows its real fieldnames.
+    IF m_mode = 'P'.
+      CLEAR mt_pivot_sort.
+      LOOP AT it_cols INTO DATA(l_pcol).
+        DATA(l_pname) = condense( CONV string( l_pcol ) ).
+        CHECK l_pname IS NOT INITIAL.
+        APPEND VALUE #( name = to_upper( l_pname ) descending = i_desc ) TO mt_pivot_sort.
+      ENDLOOP.
+      update_sql_view( ).
+      RETURN.
+    ENDIF.
+
     CLEAR m_order.
     DATA(l_dir) = COND string( WHEN i_desc = abap_true THEN ` DESCENDING` ELSE `` ).
     DATA(l_multi) = is_multi( ).
@@ -2192,21 +2333,21 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           ENDIF.
         ENDIF.
         refresh_all( ).
-      WHEN 'pv'. "pivot zone actions
+      WHEN 'pv'. "pivot slot actions
         IF mo_pivot IS BOUND.
-          mo_pivot->handle_action( CONV #( getdata ) ).
-          render_flds( ).
+          mo_pivot->handle_action( i_act = CONV #( getdata ) it_fields = pivot_src_fields( ) ).
+          render_html( ).
           update_sql_view( ).
         ENDIF.
-      WHEN 'pvdrop'. "field dragged onto a zone: mv=dr_/dc_/dv_<key>
+      WHEN 'pvdrop'. "chip dropped on a slot: mv=<target><slot>|<source><slot>|<key>
         IF mo_pivot IS BOUND.
           DATA(l_drop_post) = concat_lines_of( table = postdata ).
           SPLIT l_drop_post AT '=' INTO DATA(l_drop_name) DATA(l_drop).
           REPLACE ALL OCCURRENCES OF '+' IN l_drop WITH ` `.
           l_drop = cl_http_utility=>unescape_url( l_drop ).
           IF l_drop IS NOT INITIAL.
-            mo_pivot->handle_action( l_drop ).
-            render_flds( ).
+            mo_pivot->handle_drop( i_move = l_drop it_fields = pivot_src_fields( ) ).
+            render_html( ).
             update_sql_view( ).
           ENDIF.
         ENDIF.
@@ -2224,8 +2365,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
             ENDCASE.
           ENDLOOP.
           IF l_agg_idx IS NOT INITIAL AND l_agg_new IS NOT INITIAL.
-            mo_pivot->handle_action( |sa_{ l_agg_idx }_{ l_agg_new }| ).
-            render_flds( ).
+            mo_pivot->handle_action( i_act     = |sa_{ l_agg_idx }_{ l_agg_new }|
+                                     it_fields = pivot_src_fields( ) ).
+            render_html( ).
             update_sql_view( ).
           ENDIF.
         ENDIF.
@@ -2382,14 +2524,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     CHECK mo_sql_html IS BOUND.
     DATA l_sql TYPE string.
     IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
-      DATA(lt_src) = VALUE tt_jfld( FOR wa IN mt_jflds WHERE ( sel = abap_true ) ( wa ) ).
-      SORT lt_src BY pos.
-      mo_pivot->normalize_aggs( lt_src ).
-      l_sql = mo_pivot->build_select( i_from      = build_from( )
-                                      i_where     = build_where( )
-                                      i_multi     = is_multi( )
-                                      i_rows      = COND #( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 )
-                                      it_col_vals = get_pivot_col_values( ) ).
+      mo_pivot->normalize_aggs( pivot_src_fields( ) ).
+      l_sql = mo_pivot->build_select( i_from  = build_from( )
+                                      i_where = build_where( )
+                                      i_multi = is_multi( )
+                                      i_rows  = COND #( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ) ).
     ELSE.
       l_sql = generate_select( ).
     ENDIF.
@@ -2448,7 +2587,12 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
     "apply every change directly to the original window
     IF m_ready = abap_true AND viewer_alive( ) = abap_true.
-      execute_sql( i_sql = l_sql ).
+      IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
+        execute_pivot( ). "the statement groups; the matrix (or the plain grouped rows,
+                          "when nothing is spread into columns) is shaped in ABAP
+      ELSE.
+        execute_sql( i_sql = l_sql ).
+      ENDIF.
     ENDIF.
   ENDMETHOD.
   METHOD viewer_alive.
@@ -2558,135 +2702,6 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         APPEND ls_sel TO mt_where_sel.
       ENDIF.
       DELETE mt_where_sel WHERE field_label = l_alt.
-    ENDLOOP.
-  ENDMETHOD.
-  METHOD get_pivot_col_values.
-    TYPES: BEGIN OF t_colmeta,
-             key   TYPE string,
-             sql   TYPE string,
-             comp  TYPE string,
-             field TYPE fieldname,
-           END OF t_colmeta.
-
-    FIELD-SYMBOLS: <vals> TYPE STANDARD TABLE,
-                   <row>  TYPE any,
-                   <v>    TYPE any.
-
-    DATA: lt_cols TYPE STANDARD TABLE OF string,
-          lt_meta TYPE STANDARD TABLE OF t_colmeta,
-          lt_comp TYPE abap_component_tab,
-          lr_vals TYPE REF TO data.
-
-    CHECK mo_pivot IS BOUND AND mo_pivot->has_columns( ) = abap_true.
-    DATA(lt_keys) = mo_pivot->get_col_keys( ).
-    CHECK lt_keys IS NOT INITIAL.
-
-    DATA(l_col_idx) = 0.
-    LOOP AT lt_keys INTO DATA(l_key).
-      SPLIT l_key AT '~' INTO DATA(l_alias) DATA(l_field).
-      DATA(l_alias_up) = to_upper( l_alias ).
-      DATA(l_field_up) = to_upper( l_field ).
-      READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias_up.
-      CHECK sy-subrc = 0.
-
-      ADD 1 TO l_col_idx.
-      DATA(l_comp) = |C{ l_col_idx }|.
-      DATA(l_col) = COND string( WHEN is_multi( ) = abap_true
-                                 THEN |{ l_alias_up }~{ l_field_up }|
-                                 ELSE |{ l_field_up }| ).
-
-      DATA lo_td TYPE REF TO cl_abap_typedescr.
-      DATA lo_type TYPE REF TO cl_abap_datadescr.
-      cl_abap_typedescr=>describe_by_name(
-        EXPORTING  p_name         = |{ ls_tab-tabname }-{ l_field_up }|
-        RECEIVING  p_descr_ref    = lo_td
-        EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
-      IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
-        RETURN.
-      ENDIF.
-      TRY.
-          lo_type = CAST cl_abap_datadescr( lo_td ).
-        CATCH cx_sy_move_cast_error.
-          RETURN.
-      ENDTRY.
-
-      APPEND l_col TO lt_cols.
-      APPEND VALUE #( name = l_comp type = lo_type ) TO lt_comp.
-      APPEND VALUE #( key = l_key sql = l_col comp = l_comp field = l_field_up ) TO lt_meta.
-    ENDLOOP.
-
-    CHECK lt_comp IS NOT INITIAL.
-
-    TRY.
-        DATA(lo_struct) = cl_abap_structdescr=>create( lt_comp ).
-        DATA(lo_tab) = cl_abap_tabledescr=>create(
-                         p_line_type  = lo_struct
-                         p_table_kind = cl_abap_tabledescr=>tablekind_std
-                         p_unique     = abap_false ).
-        CREATE DATA lr_vals TYPE HANDLE lo_tab.
-      CATCH cx_root.
-        RETURN.
-    ENDTRY.
-    ASSIGN lr_vals->* TO <vals>.
-
-    DATA(l_from) = to_upper( build_from( ) ).
-    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_from WITH ` `.
-    DATA(l_where) = upper_outside_quotes( build_where( ) ).
-
-    TRY.
-        IF l_where IS INITIAL.
-          SELECT DISTINCT (lt_cols)
-            FROM (l_from)
-            INTO TABLE @<vals>
-            UP TO 50 ROWS.
-        ELSE.
-          SELECT DISTINCT (lt_cols)
-            FROM (l_from)
-            WHERE (l_where)
-            INTO TABLE @<vals>
-            UP TO 50 ROWS.
-        ENDIF.
-      CATCH cx_root.
-        RETURN.
-    ENDTRY.
-    SORT <vals>.
-
-    "SQL literal: always a quoted character literal - ABAP SQL converts it to the
-    "column type itself, while unquoted decimals ('185.00') are a syntax error
-    LOOP AT <vals> ASSIGNING <row>.
-      DATA: l_text TYPE string,
-            l_cond TYPE string,
-            l_lit  TYPE string.
-      CLEAR: l_text, l_cond.
-
-      LOOP AT lt_meta INTO DATA(ls_meta).
-        ASSIGN COMPONENT ls_meta-comp OF STRUCTURE <row> TO <v>.
-        CHECK sy-subrc = 0.
-
-        DATA l_txt TYPE string.
-        l_txt = <v>. "plain assignment: NUMC/DATS/decimals keep their raw form
-        CONDENSE l_txt.
-        l_lit = l_txt.
-        REPLACE ALL OCCURRENCES OF `'` IN l_lit WITH `''`.
-        l_lit = COND #( WHEN l_lit IS INITIAL THEN `' '` ELSE |'{ l_lit }'| ).
-
-        IF l_text IS NOT INITIAL.
-          l_text = |{ l_text }/|.
-          l_cond = |{ l_cond } AND |.
-        ENDIF.
-        l_text = |{ l_text }{ COND string( WHEN l_txt IS INITIAL THEN '(empty)' ELSE l_txt ) }|.
-        IF l_txt IS INITIAL.
-          l_cond = |{ l_cond }( { ls_meta-sql } = { l_lit } OR { ls_meta-sql } IS NULL )|.
-        ELSE.
-          l_cond = |{ l_cond }{ ls_meta-sql } = { l_lit }|.
-        ENDIF.
-      ENDLOOP.
-
-      IF NOT line_exists( rt_vals[ text = l_text ] ).
-        APPEND VALUE #( text    = l_text
-                        literal = COND #( WHEN lines( lt_meta ) = 1 THEN l_lit )
-                        cond    = l_cond ) TO rt_vals.
-      ENDIF.
     ENDLOOP.
   ENDMETHOD.
   METHOD build_from.
@@ -3007,6 +3022,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
                                 ELSE |PIVOT { m_tabname } ({ lines( <result> ) })| ).
     mo_viewer->rebind( ir_tab = lr_table i_name = l_view_name i_generic = abap_true
                        it_catalog = lt_cat ).
+    sync_sel_panel( ).
+  ENDMETHOD.
+  METHOD sync_sel_panel.
+    "the filters of the panel follow the fields the statement produced
+    CHECK mo_viewer IS BOUND.
     IF mo_viewer->mo_sel IS BOUND.
       fill_sel_extras( ). "unselected join fields stay filterable behind the toolbar toggle
       mo_viewer->mo_sel->update_sel_tab( ).
@@ -3042,6 +3062,410 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       ENDLOOP.
       Zcl_SDE_common=>refresh( mo_viewer->mo_sel->mo_sel_alv ).
     ENDIF.
+  ENDMETHOD.
+  METHOD key_type.
+    "type of one column of the grouped statement
+    IF i_agg = 'COUNT'. "COUNT( field ) / COUNT( * ): integer result
+      ro_type = cl_abap_elemdescr=>get_int8( ).
+      RETURN.
+    ELSEIF i_agg = 'AVG'. "AVG returns a decimal regardless of the field type
+      ro_type = cl_abap_elemdescr=>get_p( p_length = 16 p_decimals = 3 ).
+      RETURN.
+    ENDIF.
+
+    SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    DATA(l_alias_up) = to_upper( l_alias ).
+    DATA(l_field_up) = to_upper( l_field ).
+    READ TABLE mt_jtabs INTO DATA(ls_tab) WITH KEY alias = l_alias_up.
+    CHECK sy-subrc = 0.
+
+    "describe_by_name raises a CLASSIC exception - a TRY/CATCH would dump here
+    DATA lo_td TYPE REF TO cl_abap_typedescr.
+    cl_abap_typedescr=>describe_by_name(
+      EXPORTING  p_name         = |{ ls_tab-tabname }-{ l_field_up }|
+      RECEIVING  p_descr_ref    = lo_td
+      EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
+    CHECK sy-subrc = 0 AND lo_td IS BOUND.
+    TRY.
+        ro_type = CAST cl_abap_datadescr( lo_td ).
+      CATCH cx_sy_move_cast_error.
+        CLEAR ro_type.
+    ENDTRY.
+  ENDMETHOD.
+  METHOD value_text.
+    "the values of a few components as one text: C/X, (empty) for a blank one
+    FIELD-SYMBOLS <v> TYPE any.
+    DATA l_txt TYPE string.
+
+    LOOP AT it_comps INTO DATA(l_comp).
+      ASSIGN COMPONENT l_comp OF STRUCTURE i_row TO <v>.
+      CHECK sy-subrc = 0.
+      l_txt = <v>. "plain assignment: NUMC/DATS/decimals keep their raw form
+      CONDENSE l_txt.
+      IF rv_text IS NOT INITIAL.
+        rv_text = |{ rv_text }/|.
+      ENDIF.
+      rv_text = |{ rv_text }{ COND string( WHEN l_txt IS INITIAL THEN `(empty)` ELSE l_txt ) }|.
+    ENDLOOP.
+  ENDMETHOD.
+  METHOD domain_text.
+    "fixed-value text of one domain value, cached across the cells of one pivot
+    READ TABLE mt_domain_cache INTO DATA(ls_cached) WITH KEY domname = i_domname value = i_value.
+    IF sy-subrc = 0.
+      rv_text = ls_cached-text.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE ddtext FROM dd07t INTO rv_text
+      WHERE domname     = i_domname
+        AND ddlanguage  = m_fld_lang
+        AND as4local    = 'A'
+        AND domvalue_l  = i_value.
+    IF sy-subrc NE 0.
+      CLEAR rv_text.
+    ENDIF.
+
+    APPEND VALUE #( domname = i_domname value = i_value text = rv_text ) TO mt_domain_cache.
+  ENDMETHOD.
+  METHOD field_label.
+    "display text of one field's value: the domain's fixed-value text when the
+    "field has one, the field's own label for an 'X' the domain cannot explain
+    "(typical for a FLAG data element - checked/unchecked has no useful code),
+    "the raw value otherwise
+    rv_text = COND #( WHEN i_raw IS INITIAL THEN `(empty)` ELSE i_raw ).
+    CHECK i_key IS NOT INITIAL.
+
+    SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    READ TABLE mt_jflds INTO DATA(ls_fld)
+      WITH KEY alias = to_upper( l_alias ) fieldname = to_upper( l_field ).
+    CHECK sy-subrc = 0.
+
+    DATA(l_dtext) = COND string( WHEN ls_fld-domname IS NOT INITIAL
+                                 THEN domain_text( i_domname = ls_fld-domname i_value = i_raw )
+                                 ELSE `` ).
+    IF l_dtext IS NOT INITIAL.
+      rv_text = l_dtext.
+    ELSEIF i_raw = 'X'. "no domain text for the checked value: name the field instead
+      rv_text = COND #( WHEN ls_fld-ddtext IS NOT INITIAL
+                        THEN CONV string( ls_fld-ddtext ) ELSE ls_fld-fieldname ).
+    ENDIF.
+  ENDMETHOD.
+  METHOD field_header.
+    "the field's own label: DDIC text if there is one, otherwise the technical name
+    CHECK i_key IS NOT INITIAL.
+    SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    READ TABLE mt_jflds INTO DATA(ls_fld)
+      WITH KEY alias = to_upper( l_alias ) fieldname = to_upper( l_field ).
+    CHECK sy-subrc = 0.
+    rv_text = COND #( WHEN ls_fld-ddtext IS NOT INITIAL THEN CONV string( ls_fld-ddtext ) ELSE ls_fld-fieldname ).
+  ENDMETHOD.
+  METHOD value_label.
+    "display text of a few components, one field_label per component - used
+    "for headers only. value_text is still the matching key, so distinct
+    "database values are never merged into one bucket by a label collision.
+    FIELD-SYMBOLS <v> TYPE any.
+    DATA l_txt TYPE string.
+
+    LOOP AT it_comps INTO DATA(l_comp).
+      ASSIGN COMPONENT l_comp OF STRUCTURE i_row TO <v>.
+      CHECK sy-subrc = 0.
+      l_txt = <v>.
+      CONDENSE l_txt.
+
+      READ TABLE it_cols INTO DATA(ls_src) WITH KEY comp = l_comp.
+      DATA(l_part) = field_label( i_key = COND #( WHEN sy-subrc = 0 THEN ls_src-key ELSE `` ) i_raw = l_txt ).
+
+      IF rv_text IS NOT INITIAL.
+        rv_text = |{ rv_text } / |.
+      ENDIF.
+      rv_text = |{ rv_text }{ l_part }|.
+    ENDLOOP.
+  ENDMETHOD.
+  METHOD execute_pivot.
+    "The matrix is spread here, not by the database: a dynamically specified
+    "SELECT list cannot carry CASE expressions. The statement groups by the
+    "dimensions, so every line of its result is one cell of the matrix.
+    CONSTANTS c_max_cols TYPE i VALUE 50. "distinct column value combinations
+
+    TYPES: BEGIN OF t_cell,
+             bucket TYPE string, "column value combination (raw, matches value_text)
+             meas   TYPE string, "component of the measure in the grouped result
+             comp   TYPE string, "component in the matrix
+           END OF t_cell,
+           BEGIN OF t_bktinfo,
+             key   TYPE string, "raw combination - the matching key, never shown
+             label TYPE string, "domain/field-aware text - the column header
+           END OF t_bktinfo,
+           BEGIN OF t_rmeta,
+             comp      TYPE string,
+             key       TYPE string,     "ALIAS~FIELD behind the component, for field_label
+             use_label TYPE abap_bool,  "at least one occurring value has a text label
+             header    TYPE string,
+           END OF t_rmeta.
+
+    FIELD-SYMBOLS: <narrow> TYPE STANDARD TABLE,
+                   <wide>   TYPE STANDARD TABLE,
+                   <nrow>   TYPE any,
+                   <wrow>   TYPE any,
+                   <val>    TYPE any,
+                   <cell>   TYPE any.
+
+    DATA: lt_ncomp  TYPE abap_component_tab,
+          lt_wcomp  TYPE abap_component_tab,
+          lt_cat    TYPE lvc_t_fcat,
+          lt_rdim   TYPE string_table, "row dimension components
+          lt_cdim   TYPE string_table, "column dimension components
+          lt_meas   TYPE zcl_sde_pivot=>tt_sqlcols,
+          lt_bktinfo TYPE TABLE OF t_bktinfo,
+          lt_rmeta  TYPE TABLE OF t_rmeta,
+          lt_taken  TYPE string_table,
+          lt_cell   TYPE TABLE OF t_cell,
+          lt_sort   TYPE abap_sortorder_tab,
+          lr_narrow TYPE REF TO data,
+          lr_wide   TYPE REF TO data.
+
+    CHECK mo_pivot IS BOUND AND viewer_alive( ) = abap_true.
+    DATA(lt_cols) = mo_pivot->get_sql_columns( ).
+    CHECK lt_cols IS NOT INITIAL.
+
+    "structure of the grouped statement: one component per column, same names
+    LOOP AT lt_cols INTO DATA(ls_col).
+      DATA(lo_type) = key_type( i_key = ls_col-key i_agg = ls_col-agg ).
+      IF lo_type IS NOT BOUND.
+        MESSAGE |Cannot determine the type of { ls_col-key }| TYPE 'S' DISPLAY LIKE 'E'.
+        RETURN.
+      ENDIF.
+      APPEND VALUE #( name = ls_col-comp type = lo_type ) TO lt_ncomp.
+      CASE ls_col-role.
+        WHEN 'R'.    APPEND ls_col-comp TO lt_rdim.
+        WHEN 'C'.    APPEND ls_col-comp TO lt_cdim.
+        WHEN OTHERS. APPEND ls_col TO lt_meas.
+      ENDCASE.
+    ENDLOOP.
+    "without column fields nothing is spread - the grouped result is the result,
+    "just with domain-aware row dimensions instead of raw codes (see below)
+
+    DATA l_fields TYPE string.
+    DATA l_group  TYPE string.
+    mo_pivot->build_tokens( EXPORTING i_multi  = is_multi( )
+                            IMPORTING e_fields = l_fields
+                                      e_group  = l_group ).
+    DATA(l_from) = to_upper( build_from( ) ).
+    REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_from WITH ` `.
+    DATA(l_where) = upper_outside_quotes( build_where( ) ).
+    DATA(l_rows)  = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
+
+    TRY.
+        DATA(lo_nline) = cl_abap_structdescr=>create( lt_ncomp ).
+        DATA(lo_ntab)  = cl_abap_tabledescr=>create( p_line_type  = lo_nline
+                                                     p_table_kind = cl_abap_tabledescr=>tablekind_std
+                                                     p_unique     = abap_false ).
+        CREATE DATA lr_narrow TYPE HANDLE lo_ntab.
+        ASSIGN lr_narrow->* TO <narrow>.
+
+        IF l_group IS INITIAL.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            INTO CORRESPONDING FIELDS OF TABLE @<narrow>
+            UP TO @l_rows ROWS.
+        ELSE.
+          SELECT (l_fields)
+            FROM (l_from)
+            WHERE (l_where)
+            GROUP BY (l_group)
+            INTO CORRESPONDING FIELDS OF TABLE @<narrow>
+            UP TO @l_rows ROWS.
+        ENDIF.
+      CATCH cx_root INTO DATA(lx).
+        MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        RETURN.
+    ENDTRY.
+
+    "sorted by the dimensions, the transpose walks the result once
+    LOOP AT lt_rdim INTO DATA(l_comp).
+      APPEND VALUE #( name = l_comp ) TO lt_sort.
+    ENDLOOP.
+    LOOP AT lt_cdim INTO l_comp.
+      APPEND VALUE #( name = l_comp ) TO lt_sort.
+    ENDLOOP.
+    SORT <narrow> BY (lt_sort).
+
+    "the distinct column value combinations become the columns of the matrix;
+    "the label (domain text, or the field name behind an unexplained 'X') is
+    "computed once per combination, from whichever row is the first to show it.
+    "Nothing to spread without a column field - the grouped rows stand as they are.
+    IF lt_cdim IS NOT INITIAL.
+      LOOP AT <narrow> ASSIGNING <nrow>.
+        DATA(l_key) = value_text( i_row = <nrow> it_comps = lt_cdim ).
+        IF NOT line_exists( lt_bktinfo[ key = l_key ] ).
+          APPEND VALUE #( key   = l_key
+                          label = value_label( i_row = <nrow> it_comps = lt_cdim it_cols = lt_cols ) ) TO lt_bktinfo.
+        ENDIF.
+      ENDLOOP.
+      SORT lt_bktinfo BY key.
+      IF lines( lt_bktinfo ) > c_max_cols.
+        DATA(l_cut) = c_max_cols + 1.
+        DELETE lt_bktinfo FROM l_cut.
+        MESSAGE |Only the first { c_max_cols } column values are shown| TYPE 'S' DISPLAY LIKE 'W'.
+      ENDIF.
+    ENDIF.
+
+    "matrix structure: the row dimensions, then one column per bucket and measure.
+    "A row dimension with domain-aware text (or an unexplained 'X') gets that
+    "text in the cell instead of the raw code - the whole column turns into a
+    "plain string then, since a fixed-value field is exactly the case where its
+    "DDIC type would render it as a checkbox or a bare code, not the intended text.
+    LOOP AT lt_rdim INTO l_comp.
+      READ TABLE lt_cols INTO DATA(ls_rcol) WITH KEY comp = l_comp role = 'R'.
+      DATA(l_rkey)  = COND string( WHEN sy-subrc = 0 THEN ls_rcol-key ELSE `` ).
+      DATA(l_ruse)  = abap_false.
+      DATA(l_rhead) = to_lower( l_comp ).
+
+      IF l_rkey IS NOT INITIAL.
+        DATA(l_rhead2) = field_header( l_rkey ).
+        IF l_rhead2 IS NOT INITIAL.
+          l_rhead = l_rhead2.
+          "does any value actually occurring in the result get a text label?
+          LOOP AT <narrow> ASSIGNING <nrow>.
+            ASSIGN COMPONENT l_comp OF STRUCTURE <nrow> TO <val>.
+            CHECK sy-subrc = 0.
+            DATA(l_rraw) = CONV string( <val> ).
+            CONDENSE l_rraw.
+            IF field_label( i_key = l_rkey i_raw = l_rraw ) NE COND string( WHEN l_rraw IS INITIAL THEN `(empty)` ELSE l_rraw ).
+              l_ruse = abap_true.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+      APPEND VALUE #( comp = l_comp key = l_rkey use_label = l_ruse header = l_rhead ) TO lt_rmeta.
+    ENDLOOP.
+
+    LOOP AT lt_rmeta INTO DATA(ls_rmeta).
+      IF ls_rmeta-use_label = abap_true.
+        DATA(lo_rtype) = CAST cl_abap_datadescr( cl_abap_elemdescr=>get_string( ) ).
+        APPEND VALUE #( name = ls_rmeta-comp type = lo_rtype ) TO lt_wcomp.
+        APPEND fcat_entry( i_fieldname = CONV #( ls_rmeta-comp ) io_type = lo_rtype i_text = ls_rmeta-header ) TO lt_cat.
+      ELSE.
+        DATA(lo_dtype) = lt_ncomp[ name = ls_rmeta-comp ]-type.
+        APPEND VALUE #( name = ls_rmeta-comp type = lo_dtype ) TO lt_wcomp.
+        APPEND fcat_entry( i_fieldname = CONV #( ls_rmeta-comp ) io_type = lo_dtype i_text = `` ) TO lt_cat.
+      ENDIF.
+      APPEND ls_rmeta-comp TO lt_taken.
+    ENDLOOP.
+
+    IF lt_cdim IS NOT INITIAL.
+      LOOP AT lt_bktinfo INTO DATA(ls_bkt).
+        LOOP AT lt_meas INTO DATA(ls_meas).
+          "component: AGG_FIELD_<value>, unique, <= 30 - built from the raw key,
+          "the label may contain spaces or run long
+          DATA(l_san)  = mo_pivot->sanitize( ls_bkt-key ).
+          DATA(l_base) = 29 - strlen( l_san ).
+          DATA(l_name) = COND string( WHEN strlen( ls_meas-comp ) > l_base
+                                      THEN ls_meas-comp+0(l_base) ELSE ls_meas-comp ) && `_` && l_san.
+          WHILE line_exists( lt_taken[ table_line = l_name ] ).
+            l_name = |{ COND string( WHEN strlen( l_name ) > 28 THEN l_name+0(28) ELSE l_name ) }_{ sy-index }|.
+          ENDWHILE.
+          APPEND l_name TO lt_taken.
+
+          DATA(lo_mtype) = lt_ncomp[ name = ls_meas-comp ]-type.
+          APPEND VALUE #( name = l_name type = lo_mtype ) TO lt_wcomp.
+          APPEND VALUE #( bucket = ls_bkt-key meas = ls_meas-comp comp = l_name ) TO lt_cell.
+          "header: the column label, and the measure as well when there is more than one
+          DATA(l_head) = COND string( WHEN lines( lt_meas ) = 1
+                                      THEN ls_bkt-label
+                                      ELSE |{ ls_bkt-label } { to_lower( ls_meas-comp ) }| ).
+          APPEND fcat_entry( i_fieldname = CONV #( l_name ) io_type = lo_mtype i_text = l_head ) TO lt_cat.
+        ENDLOOP.
+      ENDLOOP.
+    ELSE.
+      "no columns placed: the measures keep their own name, straight from the
+      "grouped result - nothing to spread, nothing to disambiguate
+      LOOP AT lt_meas INTO DATA(ls_flatmeas).
+        DATA(lo_ftype) = lt_ncomp[ name = ls_flatmeas-comp ]-type.
+        APPEND VALUE #( name = ls_flatmeas-comp type = lo_ftype ) TO lt_wcomp.
+        DATA(l_fhead) = COND string( WHEN ls_flatmeas-key IS INITIAL THEN `Count`
+                                     ELSE field_header( ls_flatmeas-key ) ).
+        APPEND fcat_entry( i_fieldname = CONV #( ls_flatmeas-comp ) io_type = lo_ftype i_text = l_fhead ) TO lt_cat.
+      ENDLOOP.
+    ENDIF.
+
+    TRY.
+        DATA(lo_wline) = cl_abap_structdescr=>create( lt_wcomp ).
+        DATA(lo_wtab)  = cl_abap_tabledescr=>create( p_line_type  = lo_wline
+                                                     p_table_kind = cl_abap_tabledescr=>tablekind_std
+                                                     p_unique     = abap_false ).
+        CREATE DATA lr_wide TYPE HANDLE lo_wtab.
+      CATCH cx_root INTO lx.
+        MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        RETURN.
+    ENDTRY.
+    ASSIGN lr_wide->* TO <wide>.
+
+    "one line per row dimension combination, one cell per bucket
+    DATA(l_prev) = ``.
+    LOOP AT <narrow> ASSIGNING <nrow>.
+      DATA(l_idx)  = sy-tabix. "value_text below reads tables of its own
+      DATA(l_dims) = value_text( i_row = <nrow> it_comps = lt_rdim ).
+      IF l_idx = 1 OR l_dims NE l_prev.
+        APPEND INITIAL LINE TO <wide> ASSIGNING <wrow>.
+        LOOP AT lt_rmeta INTO ls_rmeta.
+          ASSIGN COMPONENT ls_rmeta-comp OF STRUCTURE <nrow> TO <val>.
+          CHECK sy-subrc = 0.
+          ASSIGN COMPONENT ls_rmeta-comp OF STRUCTURE <wrow> TO <cell>.
+          CHECK sy-subrc = 0.
+          IF ls_rmeta-use_label = abap_true.
+            DATA(l_cellraw) = CONV string( <val> ).
+            CONDENSE l_cellraw.
+            <cell> = field_label( i_key = ls_rmeta-key i_raw = l_cellraw ).
+          ELSE.
+            <cell> = <val>.
+          ENDIF.
+        ENDLOOP.
+        l_prev = l_dims.
+      ENDIF.
+
+      IF lt_cdim IS NOT INITIAL.
+        DATA(l_bkt) = value_text( i_row = <nrow> it_comps = lt_cdim ).
+        LOOP AT lt_cell INTO DATA(ls_cell) WHERE bucket = l_bkt.
+          ASSIGN COMPONENT ls_cell-meas OF STRUCTURE <nrow> TO <val>.
+          CHECK sy-subrc = 0.
+          ASSIGN COMPONENT ls_cell-comp OF STRUCTURE <wrow> TO <cell>.
+          IF sy-subrc = 0.
+            <cell> = <val>.
+          ENDIF.
+        ENDLOOP.
+      ELSE.
+        "no columns placed: the measures are already the row's own components
+        LOOP AT lt_meas INTO DATA(ls_flatval).
+          ASSIGN COMPONENT ls_flatval-comp OF STRUCTURE <nrow> TO <val>.
+          CHECK sy-subrc = 0.
+          ASSIGN COMPONENT ls_flatval-comp OF STRUCTURE <wrow> TO <cell>.
+          IF sy-subrc = 0.
+            <cell> = <val>.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+    ENDLOOP.
+
+    "the sort buttons of the grid: stale column names (from a layout that has
+    "since changed) are dropped rather than raising an error
+    DATA lt_valid_sort TYPE abap_sortorder_tab.
+    LOOP AT mt_pivot_sort INTO DATA(ls_psort).
+      IF line_exists( lt_wcomp[ name = ls_psort-name ] ).
+        APPEND ls_psort TO lt_valid_sort.
+      ENDIF.
+    ENDLOOP.
+    IF lt_valid_sort IS NOT INITIAL.
+      SORT <wide> BY (lt_valid_sort).
+    ENDIF.
+
+    mo_viewer->rebind( ir_tab     = lr_wide
+                       i_name     = |PIVOT { m_tabname } ({ lines( <wide> ) })|
+                       i_generic  = abap_true
+                       it_catalog = lt_cat ).
+    sync_sel_panel( ).
   ENDMETHOD.
   METHOD fcat_entry.
     rs_cat-fieldname = i_fieldname.
@@ -6399,64 +6823,202 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
                      ELSE `COUNT` ).
   ENDMETHOD.
 
+  METHOD label_of.
+    "placed chip: the qualified key, or the field text when texts are switched on
+    SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
+    DATA(l_alias_up) = to_upper( l_alias ).
+    DATA(l_field_up) = to_upper( l_field ).
+    READ TABLE it_fields INTO DATA(ls_fld) WITH KEY alias = l_alias_up fieldname = l_field_up.
+    IF sy-subrc = 0 AND i_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL.
+      rv_label = escape( val = CONV string( ls_fld-ddtext ) format = cl_abap_format=>e_html_text ).
+    ELSE.
+      rv_label = to_lower( i_key ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD is_used.
+    rv_ok = boolc( line_exists( mt_rows[ table_line = i_key ] )
+                OR line_exists( mt_cols[ table_line = i_key ] )
+                OR line_exists( mt_vals[ key = i_key ] ) ).
+  ENDMETHOD.
+
+  METHOD slot_key.
+    "what sits in a slot, without touching it
+    CHECK i_idx >= 1.
+    CASE i_zone.
+      WHEN `r`.
+        CHECK i_idx <= lines( mt_rows ).
+        rv_key = mt_rows[ i_idx ].
+      WHEN `c`.
+        CHECK i_idx <= lines( mt_cols ).
+        rv_key = mt_cols[ i_idx ].
+      WHEN `v`.
+        CHECK i_idx <= lines( mt_vals ).
+        rv_key = mt_vals[ i_idx ]-key.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD pick_src.
+    "where the picked chip came from, in the notation of the drop protocol
+    rv_src = COND #( WHEN m_pick_src IS INITIAL THEN c_from_list ELSE m_pick_src ).
+  ENDMETHOD.
+
+  METHOD take.
+    "empty one slot and hand its content back (drag between sections)
+    CLEAR: e_key, e_agg.
+    CHECK i_idx >= 1.
+    CASE i_zone.
+      WHEN `r`.
+        CHECK i_idx <= lines( mt_rows ).
+        e_key = mt_rows[ i_idx ].
+        DELETE mt_rows INDEX i_idx.
+      WHEN `c`.
+        CHECK i_idx <= lines( mt_cols ).
+        e_key = mt_cols[ i_idx ].
+        DELETE mt_cols INDEX i_idx.
+      WHEN `v`.
+        CHECK i_idx <= lines( mt_vals ).
+        e_key = mt_vals[ i_idx ]-key.
+        e_agg = mt_vals[ i_idx ]-agg.
+        DELETE mt_vals INDEX i_idx.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD put.
+    "insert before slot i_idx; a drop beyond the last filled slot appends
+    FIELD-SYMBOLS <keys> TYPE tt_keys.
+
+    CHECK i_key IS NOT INITIAL.
+    DATA(l_idx) = i_idx.
+
+    IF i_zone = `v`. "measures may hold the same field twice - one slot per aggregate
+      DATA(ls_val) = VALUE t_val( key = i_key
+                                  agg = COND #( WHEN i_agg IS NOT INITIAL
+                                                THEN i_agg
+                                                ELSE default_agg( i_key = i_key it_fields = it_fields ) ) ).
+      "the same aggregate of the same field twice would collide in the result structure
+      READ TABLE mt_vals TRANSPORTING NO FIELDS WITH KEY key = ls_val-key agg = ls_val-agg.
+      IF sy-subrc = 0.
+        DATA(l_dup) = sy-tabix.
+        DELETE mt_vals INDEX l_dup.
+        IF l_dup < l_idx.
+          l_idx = l_idx - 1.
+        ENDIF.
+      ENDIF.
+      IF l_idx >= 1 AND l_idx <= lines( mt_vals ).
+        INSERT ls_val INTO mt_vals INDEX l_idx.
+      ELSE.
+        APPEND ls_val TO mt_vals.
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    CASE i_zone.
+      WHEN `r`.
+        ASSIGN mt_rows TO <keys>.
+        DELETE mt_cols WHERE table_line = i_key. "a field is a row or a column, never both
+      WHEN `c`.
+        ASSIGN mt_cols TO <keys>.
+        DELETE mt_rows WHERE table_line = i_key.
+      WHEN OTHERS. RETURN.
+    ENDCASE.
+
+    "a dimension appears once per section: a second drop moves it, it does not double it
+    READ TABLE <keys> TRANSPORTING NO FIELDS WITH KEY table_line = i_key.
+    IF sy-subrc = 0.
+      DATA(l_old) = sy-tabix.
+      DELETE <keys> INDEX l_old.
+      IF l_old < l_idx.
+        l_idx = l_idx - 1.
+      ENDIF.
+    ENDIF.
+
+    IF l_idx >= 1 AND l_idx <= lines( <keys> ).
+      INSERT i_key INTO <keys> INDEX l_idx.
+    ELSE.
+      APPEND i_key TO <keys>.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD handle_drop.
+    "<target zone><slot>|<source zone><slot>|<key>
+    SPLIT i_move AT '|' INTO DATA(l_tgt) DATA(l_src) DATA(l_key).
+    CHECK strlen( l_tgt ) >= 2 AND l_key IS NOT INITIAL.
+
+    DATA(l_tzone) = CONV string( l_tgt(1) ).
+    DATA(l_tidx)  = CONV i( l_tgt+1 ).
+    DATA(l_agg)   = ``.
+
+    IF strlen( l_src ) >= 2 AND l_src(1) NE 'a'. "a placed chip is moved, not a new one
+      DATA(l_szone) = CONV string( l_src(1) ).
+      DATA(l_sidx)  = CONV i( l_src+1 ).
+      IF l_szone = l_tzone AND l_sidx = l_tidx. "dropped where it already was
+        CLEAR: m_pick, m_pick_src.
+        RETURN.
+      ENDIF.
+      take( EXPORTING i_zone = l_szone i_idx = l_sidx
+            IMPORTING e_key  = DATA(l_taken) e_agg = l_agg ).
+      IF l_taken IS NOT INITIAL.
+        l_key = l_taken. "the slot content wins over the key sent by the browser
+      ENDIF.
+      IF l_szone = l_tzone AND l_sidx < l_tidx. "the slots behind it moved up
+        l_tidx = l_tidx - 1.
+      ENDIF.
+    ENDIF.
+
+    put( i_zone = l_tzone i_idx = l_tidx i_key = l_key i_agg = l_agg it_fields = it_fields ).
+    CLEAR: m_pick, m_pick_src.
+  ENDMETHOD.
+
   METHOD handle_action.
-    CASE i_act.
-      WHEN 'CLR'.
-        CLEAR: mt_rows, mt_cols, mt_vals, m_pick.
-      WHEN 'tr'. "picked field -> rows
-        IF m_pick IS NOT INITIAL AND NOT line_exists( mt_rows[ table_line = m_pick ] ).
-          APPEND m_pick TO mt_rows.
+    IF i_act = 'CLR'.
+      CLEAR: mt_rows, mt_cols, mt_vals, m_pick, m_pick_src.
+      RETURN.
+    ENDIF.
+
+    CHECK strlen( i_act ) > 3.
+    DATA(l_rest) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
+
+    CASE i_act(3).
+      WHEN 'pk_'. "pick a field from the list (clicking it again cancels)
+        IF m_pick = l_rest AND m_pick_src = c_from_list.
+          CLEAR: m_pick, m_pick_src.
+        ELSE.
+          m_pick     = l_rest.
+          m_pick_src = c_from_list.
         ENDIF.
-        CLEAR m_pick.
-      WHEN 'tc'. "picked field -> columns
-        IF m_pick IS NOT INITIAL AND lines( mt_cols ) < 3 AND NOT line_exists( mt_cols[ table_line = m_pick ] ).
-          APPEND m_pick TO mt_cols.
-        ENDIF.
-        CLEAR m_pick.
-      WHEN OTHERS.
-        "drag&drop: dr_/dc_/dv_<key> put the field straight into a zone
-        IF strlen( i_act ) > 3 AND i_act(3) = 'dr_'.
-          DATA(l_dkey) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
-          IF NOT line_exists( mt_rows[ table_line = l_dkey ] ).
-            APPEND l_dkey TO mt_rows.
-          ENDIF.
-          CLEAR m_pick.
-          RETURN.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dc_'.
-          DATA(l_ckey) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
-          IF lines( mt_cols ) < 3 AND NOT line_exists( mt_cols[ table_line = l_ckey ] ).
-            APPEND l_ckey TO mt_cols.
-          ENDIF.
-          CLEAR m_pick.
-          RETURN.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'dv_'.
-          APPEND VALUE #( key = substring( val = i_act off = 3 len = strlen( i_act ) - 3 )
-                          agg = 'COUNT' ) TO mt_vals.
-          CLEAR m_pick.
-          RETURN.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'sa_'. "sa_<idx>_<AGG>: change aggregate
-          SPLIT i_act+3 AT '_' INTO DATA(l_sidx) DATA(l_sagg).
-          READ TABLE mt_vals ASSIGNING FIELD-SYMBOL(<val>) INDEX CONV i( l_sidx ).
-          IF sy-subrc = 0 AND l_sagg IS NOT INITIAL.
-            <val>-agg = l_sagg.
-          ENDIF.
+
+      WHEN 'pz_'. "a chip in a slot: insert the picked field before it, or pick it up
+        CHECK strlen( l_rest ) >= 2.
+        IF m_pick IS NOT INITIAL AND m_pick_src NE l_rest.
+          handle_drop( i_move    = |{ l_rest }\|{ pick_src( ) }\|{ m_pick }|
+                       it_fields = it_fields ).
           RETURN.
         ENDIF.
-        IF strlen( i_act ) > 3 AND i_act(3) = 'pk_'. "pick a field (or unpick)
-          DATA(l_key) = substring( val = i_act off = 3 len = strlen( i_act ) - 3 ).
-          m_pick = COND #( WHEN m_pick = l_key THEN `` ELSE l_key ).
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'ag_'. "picked field -> values with aggregate
-          IF m_pick IS NOT INITIAL.
-            APPEND VALUE #( key = m_pick agg = i_act+3 ) TO mt_vals.
-          ENDIF.
-          CLEAR m_pick.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rr_'. "remove from rows
-          DELETE mt_rows WHERE table_line = i_act+3.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rc_'. "remove from columns
-          DELETE mt_cols WHERE table_line = i_act+3.
-        ELSEIF strlen( i_act ) > 3 AND i_act(3) = 'rv_'. "remove from values by index
-          DATA(l_idx) = CONV i( i_act+3 ).
-          DELETE mt_vals INDEX l_idx.
+        DATA(l_zkey) = slot_key( i_zone = CONV string( l_rest(1) ) i_idx = CONV i( l_rest+1 ) ).
+        CHECK l_zkey IS NOT INITIAL.
+        IF m_pick = l_zkey AND m_pick_src = l_rest. "clicking it again cancels
+          CLEAR: m_pick, m_pick_src.
+        ELSE.
+          m_pick     = l_zkey.
+          m_pick_src = l_rest.
+        ENDIF.
+
+      WHEN 'pt_'. "put the picked field into slot <zone><slot>
+        CHECK strlen( l_rest ) >= 2 AND m_pick IS NOT INITIAL.
+        handle_drop( i_move    = |{ l_rest }\|{ pick_src( ) }\|{ m_pick }|
+                     it_fields = it_fields ).
+
+      WHEN 'px_'. "clear slot <zone><slot>
+        CHECK strlen( l_rest ) >= 2.
+        take( EXPORTING i_zone = CONV string( l_rest(1) ) i_idx = CONV i( l_rest+1 ) ).
+        CLEAR: m_pick, m_pick_src.
+
+      WHEN 'sa_'. "sa_<idx>_<AGG>: aggregate of a measure
+        SPLIT l_rest AT '_' INTO DATA(l_sidx) DATA(l_sagg).
+        READ TABLE mt_vals ASSIGNING FIELD-SYMBOL(<val>) INDEX CONV i( l_sidx ).
+        IF sy-subrc = 0 AND l_sagg IS NOT INITIAL.
+          <val>-agg = l_sagg.
         ENDIF.
     ENDCASE.
   ENDMETHOD.
@@ -6470,195 +7032,286 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+  METHOD free_slots.
+    "always one empty slot more than the section holds, never less than three
+    DATA(l_slots) = nmax( val1 = c_min_slots val2 = i_filled + 1 ).
+    DATA(l_cls) = COND string( WHEN i_vertical = abap_true THEN `slot vslot` ELSE `slot hslot` ).
+    DATA(l_free) = l_slots - i_filled.
+
+    "with a field picked every free slot is a target: mark them, the corner says which field
+    DATA(l_txt) = COND string( WHEN m_pick IS NOT INITIAL THEN `+` ELSE `&#183;` ).
+    IF m_pick IS NOT INITIAL.
+      l_cls = |{ l_cls } ready|.
+    ENDIF.
+
+    DO l_free TIMES.
+      DATA(l_idx) = i_filled + sy-index.
+      rv_html = rv_html &&
+        |<a class="{ l_cls }" href="SAPEVENT:pv?pt_{ i_zone }{ l_idx }"| &&
+        | onmouseover="zo(event,this,'{ i_zone }{ l_idx }')" onclick="return cl(event)">| &&
+        |{ l_txt }</a>|.
+    ENDDO.
+  ENDMETHOD.
+
+  METHOD zone_html.
+    "rows and columns: one chip per slot - drag it to another slot, cross removes it
+    DATA(l_cls) = COND string( WHEN i_vertical = abap_true THEN `slot vslot fill` ELSE `slot hslot fill` ).
+
+    LOOP AT it_keys INTO DATA(l_key).
+      DATA(l_slot) = |{ i_zone }{ sy-tabix }|.
+      DATA(l_pick) = COND string( WHEN m_pick = l_key AND m_pick_src = l_slot THEN ` pick` ).
+      rv_html = rv_html &&
+        |<span class="{ l_cls }{ l_pick }" onmouseover="zo(event,this,'{ l_slot }')">| &&
+        |<a class="lbl" href="SAPEVENT:pv?pz_{ l_slot }"| &&
+        | draggable="false" ondragstart="return false"| &&
+        | onmousedown="return md(event,'{ l_key }','{ l_slot }')" onclick="return cl(event)"| &&
+        | title="{ l_key } - drag into another slot">| &&
+        |{ label_of( i_key = l_key it_fields = it_fields i_show_texts = i_show_texts ) }</a>| &&
+        | <a class="rmx" href="SAPEVENT:pv?px_{ l_slot }" title="remove">&#10005;</a></span>|.
+    ENDLOOP.
+
+    rv_html = rv_html && free_slots( i_zone = i_zone i_filled = lines( it_keys ) i_vertical = i_vertical ).
+  ENDMETHOD.
+
+  METHOD vals_html.
+    "measures: the aggregate is a listbox on the chip itself
+    LOOP AT mt_vals INTO DATA(ls_val).
+      DATA(l_idx) = sy-tabix.
+      DATA(l_slot) = |v{ l_idx }|.
+      DATA(l_pick) = COND string( WHEN m_pick = ls_val-key AND m_pick_src = l_slot THEN ` pick` ).
+      DATA(lt_aggs) = allowed_aggs( i_key = ls_val-key it_fields = it_fields ).
+      rv_html = rv_html &&
+        |<span class="slot hslot fill vfill{ l_pick }" onmouseover="zo(event,this,'{ l_slot }')">| &&
+        |<form style="display:inline" method="post" action="SAPEVENT:pvagg">| &&
+        |<input type="hidden" name="idx" value="{ l_idx }">| &&
+        |<select name="agg" onchange="this.form.submit()">|.
+      LOOP AT lt_aggs INTO DATA(l_agg).
+        rv_html = rv_html &&
+          |<option{ COND string( WHEN ls_val-agg = l_agg THEN ' selected' ) }>{ l_agg }</option>|.
+      ENDLOOP.
+      rv_html = rv_html &&
+        |</select> <a class="lbl" href="SAPEVENT:pv?pz_{ l_slot }"| &&
+        | draggable="false" ondragstart="return false"| &&
+        | onmousedown="return md(event,'{ ls_val-key }','{ l_slot }')" onclick="return cl(event)"| &&
+        | title="{ ls_val-key } - drag into another slot">| &&
+        |{ label_of( i_key = ls_val-key it_fields = it_fields i_show_texts = i_show_texts ) }</a>| &&
+        | <a class="rmx" href="SAPEVENT:pv?px_{ l_slot }" title="remove">&#10005;</a></form></span>|.
+    ENDLOOP.
+
+    rv_html = rv_html && free_slots( i_zone = `v` i_filled = lines( mt_vals ) ).
+  ENDMETHOD.
+
   METHOD render_panel.
     rv_html =
       `<html><head><meta charset="utf-8"><style>` &&
-      `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#fff;}` &&
-      `h4{margin:6px 0 2px 0;font-size:11px;color:#2c5f8a;}` &&
-      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;text-decoration:none;color:#000;}` &&
-      `.chip:hover{border-color:#2c5f8a;}` &&
-      `.zone{background:#f6f8fa;border:1px dashed #bbb;border-radius:4px;padding:3px;margin:2px 0;}` &&
-      `.zchip{display:inline-block;border:1px solid #2e8b2e;background:#eef8ee;border-radius:4px;` &&
-      `padding:1px 6px;margin:2px;font-family:Consolas,monospace;text-decoration:none;color:#000;}` &&
-      `.agg{color:#7a3db8;font-weight:bold;}` &&
-      `.add{border-style:dashed;background:#fff8e6;border-color:#d2691e;color:#d2691e;font-weight:bold;}` &&
+      `body{font-family:Arial,sans-serif;font-size:11px;margin:4px;background:#f6f8fa;}` &&
+      "tool bar of the canvas, same look as in join mode
+      `.base{display:inline-block;background:#2c5f8a;color:#fff;border-radius:6px;padding:6px 12px;margin:3px;font-weight:bold;}` &&
+      `.card{display:inline-block;border:1px solid #aaa;border-radius:6px;padding:5px 10px;margin:3px;background:#fff;text-decoration:none;color:#000;}` &&
+      `.card:hover{border-color:#2c5f8a;}` &&
+      `.sel{background:#d3f2d3;border:2px solid #2e8b2e;font-weight:bold;}` &&
+      "the cross: corner + columns on top, rows + measures below
+      `table.pv{border-collapse:separate;border-spacing:3px;margin-top:2px;}` &&
+      `table.pv td{vertical-align:top;padding:0;}` &&
+      `td.side{width:210px;}` &&
+      `.hdr{font-size:10px;font-weight:bold;color:#2c5f8a;margin:0 0 2px 3px;}` &&
+      `.hdr i{font-weight:normal;font-style:normal;color:#999;}` &&
+      `.zone{background:#fff;border:1px solid #dfe3e8;border-radius:5px;padding:2px;}` &&
+      `.slot{border:1px dashed #c3c8ce;border-radius:4px;padding:2px 6px;margin:2px;` &&
+      `background:#fbfcfd;color:#c0c4c8;text-decoration:none;white-space:nowrap;}` &&
+      `.vslot{display:block;text-align:center;}` &&
+      `.ready{color:#d2691e;border-color:#d2691e;font-weight:bold;}` &&
+      `.hslot{display:inline-block;min-width:104px;text-align:center;}` &&
+      `.fill{border-style:solid;border-color:#2e8b2e;background:#eef8ee;color:#000;text-align:left;}` &&
+      `.vfill{border-color:#7a3db8;background:#f7f0ff;}` &&
+      `.lbl{font-family:Consolas,monospace;text-decoration:none;color:#000;}` &&
+      `.rmx{color:#a00;text-decoration:none;font-size:10px;}` &&
       `.pick{outline:2px dashed #d2691e;}` &&
+      `.chip{display:inline-block;border:1px solid #bbb;border-radius:10px;padding:1px 8px;margin:2px;` &&
+      `background:#fff;text-decoration:none;color:#000;}` &&
+      `.chip:hover{border-color:#2c5f8a;}` &&
+      `.used{color:#9aa0a6;border-style:dotted;}` &&
+      `.c1{background:#d8ecff;border-color:#5797c9;}` &&
+      `.c2{background:#dcf5d6;border-color:#67a95e;}` &&
+      `.c3{background:#fff1c2;border-color:#c09a2b;}` &&
+      `.c4{background:#f3ddff;border-color:#a678c2;}` &&
+      `.c5{background:#ffdede;border-color:#c87373;}` &&
+      `.c6{background:#d9f4ef;border-color:#58a99b;}` &&
+      `.key{border-style:double;border-width:3px;}` &&
+      `.avail{background:#fff;border:1px solid #dfe3e8;border-radius:5px;padding:3px;margin:3px;}` &&
       `.act{color:#2c5f8a;text-decoration:none;margin-right:6px;}` &&
-      `.hint{color:#d2691e;font-weight:bold;}` &&
       `.dir{color:#888;font-size:9px;}` &&
-      `.rmx{color:#a00;text-decoration:none;}` &&
+      `.hint{color:#d2691e;font-weight:bold;font-family:Consolas,monospace;}` &&
       `select{font-size:10px;}` &&
       `</style>` &&
-      "drag a field chip onto a zone (mouse events + hidden form, as elsewhere)
-      `<script>var mk=null,mt=null,mz=null,mv=false;` &&
-      `function md(e,k){mk=k;mv=false;return true;}` &&
-      `function zo(e,el,z){if(!mk)return;mv=true;` &&
-      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mz=z;` &&
+      "drag a chip onto a slot: mouse events + a hidden form, as everywhere else
+      `<script>var mk=null,ms=null,mt=null,mz=null,mv=false;` &&
+      `function md(e,k,s){mk=k;ms=s;mv=false;return true;}` &&
+      `function zo(e,el,t){if(!mk)return;mv=true;` &&
+      `if(mt&&mt!==el){mt.style.boxShadow='';}mt=el;mz=t;` &&
       `el.style.boxShadow='0 0 0 2px #d2691e';}` &&
       `function cl(e){if(mv){mv=false;if(e.preventDefault)e.preventDefault();return false;}return true;}` &&
       `document.onmouseup=function(){if(!mk)return;` &&
-      `var k=mk,z=mz,ok=mv;mk=null;mz=null;` &&
+      `var k=mk,s=ms,t=mz,ok=mv;mk=null;ms=null;mz=null;` &&
       `if(mt){mt.style.boxShadow='';mt=null;}` &&
-      `if(ok&&z){document.getElementById('pmk').value=z+'_'+k;` &&
+      `if(ok&&t){document.getElementById('pmk').value=t+'|'+s+'|'+k;` &&
       `document.getElementById('pmf').submit();}};` &&
       `</script>` &&
       `</head><body onselectstart="return false">` &&
       `<form id="pmf" method="post" action="SAPEVENT:pvdrop" style="display:none">` &&
       `<input type="hidden" name="mv" id="pmk"></form>` &&
-      `<h4>PIVOT&nbsp;&nbsp;<a class="act" href="SAPEVENT:pv?CLR">clear</a></h4>`.
+      i_header.
 
+    "corner of the cross: title, clear, and what to do next
+    DATA(l_corner) =
+      `<div class="hdr">PIVOT&nbsp;&nbsp;<a class="act" href="SAPEVENT:pv?CLR">clear</a></div>`.
     IF m_pick IS NOT INITIAL.
-      rv_html = rv_html &&
-        |<div class="hint">picked: { to_lower( m_pick ) } - now click a button inside the target zone | &&
-        |(click the field again to cancel)</div>|.
+      l_corner = l_corner &&
+        |<div class="hint">{ to_lower( m_pick ) }</div>| &&
+        `<div class="dir">click a slot to drop it there (click the chip again to cancel)</div>`.
     ELSE.
-      rv_html = rv_html &&
-        `<div class="dir">drag a field into a zone (or: click the field, then click inside the zone)</div>`.
+      l_corner = l_corner &&
+        `<div class="dir">drag a field from the list below into a slot - or click the field,` &&
+        ` then click the slot.<br>A section that fills up grows by one more slot.</div>`.
     ENDIF.
 
-    "zones: drop targets; when a field is picked the add-buttons appear inside as well
-    DATA(l_pick_low) = to_lower( m_pick ).
-    rv_html = rv_html && `<h4>Dimensions (plain columns)</h4><div class="zone" onmouseover="zo(event,this,'dr')">`.
-    LOOP AT mt_rows INTO DATA(l_row).
-      rv_html = rv_html &&
-        |<a class="zchip" href="SAPEVENT:pv?rr_{ l_row }" title="remove">{ to_lower( l_row ) } &#10005;</a>|.
-    ENDLOOP.
-    IF m_pick IS NOT INITIAL.
-      rv_html = rv_html &&
-        |<a class="zchip add" href="SAPEVENT:pv?tr">+ { l_pick_low }</a>|.
-    ELSEIF mt_rows IS INITIAL.
-      rv_html = rv_html && `<span class="dir">fields kept as regular result columns go here</span>`.
-    ENDIF.
+    rv_html = rv_html &&
+      `<table class="pv"><tr>` &&
+      |<td class="side">{ l_corner }</td>| &&
+      `<td><div class="hdr">COLUMNS <i>- field values become result columns (max 50 combinations)</i></div>` &&
+      `<div class="zone">` &&
+      zone_html( i_zone = `c` it_keys = mt_cols it_fields = it_fields i_show_texts = i_show_texts ) &&
+      `</div></td></tr><tr>` &&
+      `<td class="side"><div class="hdr">ROWS <i>- grouped, one line each</i></div><div class="zone">` &&
+      zone_html( i_zone = `r` it_keys = mt_rows it_fields = it_fields
+                 i_show_texts = i_show_texts i_vertical = abap_true ) &&
+      `</div></td>` &&
+      `<td><div class="hdr">MEASURES <i>- aggregated per row and column</i></div><div class="zone">` &&
+      vals_html( it_fields = it_fields i_show_texts = i_show_texts ) &&
+      `</div></td></tr></table>`.
 
-    rv_html = rv_html && `</div><h4>Spread (values to columns)</h4><div class="zone" onmouseover="zo(event,this,'dc')">`.
-    LOOP AT mt_cols INTO DATA(l_col).
-      rv_html = rv_html &&
-        |<a class="zchip" href="SAPEVENT:pv?rc_{ l_col }" title="remove">{ to_lower( l_col ) } &#10005;</a>|.
-    ENDLOOP.
-    IF m_pick IS NOT INITIAL.
-      rv_html = rv_html &&
-        |<a class="zchip add" href="SAPEVENT:pv?tc">+ { l_pick_low }</a>|.
-    ELSEIF mt_cols IS INITIAL.
-      rv_html = rv_html && `<span class="dir">field values become separate result columns (max 50)</span>`.
-    ELSEIF lines( mt_cols ) >= 3.
-      rv_html = rv_html && `<span class="dir">maximum 3 spread fields</span>`.
-    ENDIF.
-
-    rv_html = rv_html && `</div><h4>Measures (aggregates)</h4><div class="zone" onmouseover="zo(event,this,'dv')">`.
-    LOOP AT mt_vals INTO DATA(ls_val).
-      DATA(l_vidx) = sy-tabix.
-      DATA(lt_aggs) = allowed_aggs( i_key = ls_val-key it_fields = it_fields ).
-      rv_html = rv_html && |<span class="zchip">| &&
-        |<form style="display:inline" method="post" action="SAPEVENT:pvagg">| &&
-        |<input type="hidden" name="idx" value="{ l_vidx }">| &&
-        |<select name="agg" onchange="this.form.submit()">|.
-      LOOP AT lt_aggs INTO DATA(l_a).
-        rv_html = rv_html &&
-          |<option{ COND string( WHEN ls_val-agg = l_a THEN ' selected' ) }>{ l_a }</option>|.
-      ENDLOOP.
-      rv_html = rv_html &&
-        |</select> { to_lower( ls_val-key ) }| &&
-        | <a class="rmx" href="SAPEVENT:pv?rv_{ l_vidx }" title="remove">&#10005;</a></form></span>|.
-    ENDLOOP.
-    IF m_pick IS NOT INITIAL.
-      LOOP AT allowed_aggs( i_key = m_pick it_fields = it_fields ) INTO DATA(l_add_agg).
-        rv_html = rv_html &&
-          |<a class="zchip add" href="SAPEVENT:pv?ag_{ l_add_agg }">+ { l_add_agg }( { l_pick_low } )</a>|.
-      ENDLOOP.
-    ELSEIF mt_vals IS INITIAL.
-      rv_html = rv_html && `<span class="dir">numeric fields for SUM/COUNT/MIN/MAX/AVG go here</span>`.
-    ENDIF.
-    rv_html = rv_html && `</div><h4>Available fields</h4>`.
-
-    "available fields as chips
+    "available fields: colored per table when the pivot runs on a join
+    DATA lt_alias TYPE tt_keys.
     LOOP AT it_fields INTO DATA(ls_fld).
-      DATA(l_key) = |{ condense( CONV string( ls_fld-alias ) ) }~{ ls_fld-fieldname }|.
-      DATA(l_cls) = COND string( WHEN m_pick = l_key THEN 'chip pick' ELSE 'chip' ).
+      DATA(l_alias) = condense( CONV string( ls_fld-alias ) ).
+      IF NOT line_exists( lt_alias[ table_line = l_alias ] ).
+        APPEND l_alias TO lt_alias.
+      ENDIF.
+    ENDLOOP.
+
+    rv_html = rv_html && `<div class="avail">`.
+    IF it_fields IS INITIAL.
+      rv_html = rv_html && `<span class="dir">no fields selected - pick them in the join tool</span>`.
+    ENDIF.
+    LOOP AT it_fields INTO ls_fld.
+      l_alias = condense( CONV string( ls_fld-alias ) ).
+      DATA(l_key) = |{ l_alias }~{ ls_fld-fieldname }|.
+      DATA(l_cls) = `chip`.
+      IF lines( lt_alias ) > 1. "one color per table, as in the join panel
+        READ TABLE lt_alias TRANSPORTING NO FIELDS WITH KEY table_line = l_alias.
+        DATA(l_color) = ( sy-tabix - 1 ) MOD 6 + 1.
+        l_cls = |{ l_cls } c{ l_color }|.
+      ENDIF.
+      IF ls_fld-keyflag = abap_true.
+        l_cls = |{ l_cls } key|.
+      ENDIF.
+      IF is_used( l_key ) = abap_true. "already in a section
+        l_cls = |{ l_cls } used|.
+      ENDIF.
+      IF m_pick = l_key AND m_pick_src = c_from_list.
+        l_cls = |{ l_cls } pick|.
+      ENDIF.
       DATA(l_label) = COND string(
         WHEN i_show_texts = abap_true AND ls_fld-ddtext IS NOT INITIAL
-        THEN escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_text )
+        THEN escape( val = CONV string( ls_fld-ddtext ) format = cl_abap_format=>e_html_text )
         ELSE |{ ls_fld-fieldname }| ).
       rv_html = rv_html &&
         |<a class="{ l_cls }" href="SAPEVENT:pv?pk_{ l_key }"| &&
         | draggable="false" ondragstart="return false"| &&
-        | onmousedown="return md(event,'{ l_key }')" onclick="return cl(event)"| &&
-        | title="{ l_key } { escape( val = ls_fld-ddtext format = cl_abap_format=>e_html_attr ) }">| &&
+        | onmousedown="return md(event,'{ l_key }','{ c_from_list }')" onclick="return cl(event)"| &&
+        | title="{ l_key } { escape( val = CONV string( ls_fld-ddtext ) format = cl_abap_format=>e_html_attr ) }">| &&
         |{ l_label }</a>|.
     ENDLOOP.
 
-    rv_html = rv_html && `</body></html>`.
+    rv_html = rv_html && `</div></body></html>`.
+  ENDMETHOD.
+
+  METHOD get_sql_columns.
+    "the grouped statement column by column: dimensions first, measures last.
+    "execute_pivot builds the result structure and the matrix from the same list
+    LOOP AT mt_rows INTO DATA(l_key).
+      APPEND VALUE #( key = l_key role = 'R' comp = comp_name( l_key ) ) TO rt_cols.
+    ENDLOOP.
+    LOOP AT mt_cols INTO l_key.
+      APPEND VALUE #( key = l_key role = 'C' comp = comp_name( l_key ) ) TO rt_cols.
+    ENDLOOP.
+    LOOP AT mt_vals INTO DATA(ls_val).
+      APPEND VALUE #( key  = ls_val-key
+                      agg  = ls_val-agg
+                      role = 'M'
+                      comp = comp_name( i_key = ls_val-key i_prefix = ls_val-agg ) ) TO rt_cols.
+    ENDLOOP.
+    IF mt_vals IS INITIAL AND rt_cols IS NOT INITIAL. "no measure: count the rows per group
+      APPEND VALUE #( agg = `COUNT` role = 'M' comp = `CNT_ROWS` ) TO rt_cols.
+    ENDIF.
+
+    "the component names are the aliases of the statement as well: keep them unique
+    DATA lt_taken TYPE tt_keys.
+    LOOP AT rt_cols ASSIGNING FIELD-SYMBOL(<col>).
+      DATA(l_base) = <col>-comp.
+      WHILE line_exists( lt_taken[ table_line = <col>-comp ] ).
+        <col>-comp = |{ COND string( WHEN strlen( l_base ) > 28 THEN l_base+0(28) ELSE l_base ) }_{ sy-index }|.
+      ENDWHILE.
+      APPEND <col>-comp TO lt_taken.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD build_tokens.
+    "same columns as build_select, but as the dynamic tokens of the SELECT
+    CLEAR: e_fields, e_group.
+    LOOP AT get_sql_columns( ) INTO DATA(ls_col).
+      DATA(l_qual) = COND string( WHEN ls_col-key IS INITIAL
+                                  THEN `*`
+                                  ELSE to_upper( qualify( i_key = ls_col-key i_multi = i_multi ) ) ).
+      IF e_fields IS NOT INITIAL.
+        e_fields = |{ e_fields }, |.
+      ENDIF.
+      IF ls_col-role = 'M'.
+        e_fields = |{ e_fields }{ ls_col-agg }( { l_qual } ) AS { ls_col-comp }|.
+      ELSE.
+        e_fields = |{ e_fields }{ l_qual } AS { ls_col-comp }|.
+        IF e_group IS NOT INITIAL.
+          e_group = |{ e_group }, |.
+        ENDIF.
+        e_group = |{ e_group }{ l_qual }|.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD build_select.
     DATA: l_fields TYPE string,
-          l_group  TYPE string,
-          lt_names TYPE tt_keys,
-          lt_vals  TYPE tt_vals.
+          l_group  TYPE string.
     DATA(l_nl) = cl_abap_char_utilities=>newline.
 
     CHECK has_layout( ) = abap_true.
 
-    "row dimensions
-    LOOP AT mt_rows INTO DATA(l_dim).
-      DATA(l_qual) = qualify( i_key = l_dim i_multi = i_multi ).
+    LOOP AT get_sql_columns( ) INTO DATA(ls_col).
+      DATA(l_qual) = COND string( WHEN ls_col-key IS INITIAL
+                                  THEN `*`
+                                  ELSE qualify( i_key = ls_col-key i_multi = i_multi ) ).
       IF l_fields IS NOT INITIAL.
         l_fields = |{ l_fields },{ l_nl }       |.
-        l_group  = |{ l_group }, |.
       ENDIF.
-      l_fields = |{ l_fields }{ l_qual } AS { to_lower( comp_name( l_dim ) ) }|.
-      l_group  = |{ l_group }{ l_qual }|.
+      IF ls_col-role = 'M'.
+        l_fields = |{ l_fields }{ ls_col-agg }( { l_qual } ) AS { to_lower( ls_col-comp ) }|.
+      ELSE.
+        l_fields = |{ l_fields }{ l_qual } AS { to_lower( ls_col-comp ) }|.
+        IF l_group IS NOT INITIAL.
+          l_group = |{ l_group }, |.
+        ENDIF.
+        l_group = |{ l_group }{ l_qual }|.
+      ENDIF.
     ENDLOOP.
-
-    IF has_columns( ) = abap_true AND it_col_vals IS NOT INITIAL.
-      lt_vals = mt_vals.
-      IF lt_vals IS INITIAL.
-        APPEND VALUE #( key = mt_cols[ 1 ] agg = 'COUNT' ) TO lt_vals.
-      ENDIF.
-      "matrix: one CASE bucket per column value and aggregate
-      LOOP AT it_col_vals INTO DATA(ls_cv).
-        LOOP AT lt_vals INTO DATA(ls_val).
-          DATA(l_fq) = qualify( i_key = ls_val-key i_multi = i_multi ).
-          DATA(l_cond) = COND string( WHEN ls_cv-cond IS NOT INITIAL
-                                      THEN ls_cv-cond
-                                      ELSE |{ qualify( i_key = mt_cols[ 1 ] i_multi = i_multi ) } = { ls_cv-literal }| ).
-          "component: AGG_FIELD_<value>, unique, <= 30
-          DATA(l_sanval) = sanitize( ls_cv-text ).
-          DATA(l_acomp) = comp_name( i_key = ls_val-key i_prefix = ls_val-agg ).
-          DATA(l_base_len) = 29 - strlen( l_sanval ).
-          DATA(l_name) = COND string( WHEN strlen( l_acomp ) > l_base_len
-                                      THEN l_acomp+0(l_base_len) ELSE l_acomp ) && '_' && l_sanval.
-          WHILE line_exists( lt_names[ table_line = l_name ] ).
-            l_name = |{ COND string( WHEN strlen( l_name ) > 28 THEN l_name+0(28) ELSE l_name ) }_{ sy-index }|.
-          ENDWHILE.
-          APPEND l_name TO lt_names.
-          IF l_fields IS NOT INITIAL.
-            l_fields = |{ l_fields },{ l_nl }       |.
-          ENDIF.
-          "no ELSE: other buckets stay NULL and are ignored by the aggregate
-          DATA(l_then) = COND string( WHEN ls_val-agg = 'COUNT' THEN `1` ELSE l_fq ).
-          l_fields = |{ l_fields }{ ls_val-agg }( CASE WHEN { l_cond } | &&
-                     |THEN { l_then } END ) AS { to_lower( l_name ) }|.
-        ENDLOOP.
-      ENDLOOP.
-    ELSE.
-      "no buckets: plain aggregates; column fields act as dimensions instead of disappearing
-      LOOP AT mt_cols INTO DATA(l_col_dim).
-        DATA(l_cdim) = qualify( i_key = l_col_dim i_multi = i_multi ).
-        IF l_fields IS NOT INITIAL.
-          l_fields = |{ l_fields },{ l_nl }       |.
-          l_group  = |{ l_group }, |.
-        ENDIF.
-        l_fields = |{ l_fields }{ l_cdim } AS { to_lower( comp_name( l_col_dim ) ) }|.
-        l_group  = |{ l_group }{ l_cdim }|.
-      ENDLOOP.
-      LOOP AT mt_vals INTO ls_val.
-        IF l_fields IS NOT INITIAL.
-          l_fields = |{ l_fields },{ l_nl }       |.
-        ENDIF.
-        l_fields = |{ l_fields }{ ls_val-agg }( { qualify( i_key = ls_val-key i_multi = i_multi ) } )| &&
-                   | AS { to_lower( comp_name( i_key = ls_val-key i_prefix = ls_val-agg ) ) }|.
-      ENDLOOP.
-    ENDIF.
 
     rv_sql = |SELECT { l_fields }{ l_nl }  FROM { i_from }|.
     IF i_where IS NOT INITIAL.
@@ -7172,8 +7825,8 @@ ENDFORM.
 
 ****************************************************
 INTERFACE lif_abapmerge_marker.
-* abapmerge 0.16.7 - 2026-08-18T11:36:35.079Z
-  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T11:36:35.079Z`.
+* abapmerge 0.16.7 - 2026-08-18T17:21:20.659Z
+  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:21:20.659Z`.
   CONSTANTS c_abapmerge_version TYPE string VALUE `0.16.7`.
 ENDINTERFACE.
 ****************************************************
