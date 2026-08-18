@@ -203,6 +203,13 @@ CLASS zcl_sde_pivot DEFINITION CREATE PUBLIC.
       get_col_keys RETURNING VALUE(rt_keys) TYPE tt_keys,
       get_sql_columns RETURNING VALUE(rt_cols) TYPE tt_sqlcols,
 
+      "the cross as plain data, so a layout file can carry it (zcl_sde_tools=>save_config)
+      get_rows RETURNING VALUE(rt_keys) TYPE tt_keys,
+      get_vals RETURNING VALUE(rt_vals) TYPE tt_vals,
+      set_layout IMPORTING it_rows TYPE tt_keys
+                           it_cols TYPE tt_keys
+                           it_vals TYPE tt_vals,
+
       "HTML for the builder: the pivot cross - rows down the left, columns across
       "the top, measures in the body - plus the available field chips below it.
       "i_header is the tool bar of the canvas the panel is rendered into.
@@ -2049,6 +2056,23 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     LOOP AT mt_jflds INTO DATA(ls_fld) WHERE sel = abap_true.
       APPEND |FLD{ l_tab }{ ls_fld-alias }{ l_tab }{ ls_fld-fieldname }{ l_tab }{ ls_fld-pos }| TO lt_lines.
     ENDLOOP.
+    "the pivot cross: rows, columns, measures with their aggregate, matrix sort.
+    "Written whatever the active tool is - switching to Join and back must not
+    "cost the layout, and an old reader simply ignores the unknown line types
+    IF mo_pivot IS BOUND.
+      LOOP AT mo_pivot->get_rows( ) INTO DATA(l_prow).
+        APPEND |PVR{ l_tab }{ l_prow }| TO lt_lines.
+      ENDLOOP.
+      LOOP AT mo_pivot->get_col_keys( ) INTO DATA(l_pcol).
+        APPEND |PVC{ l_tab }{ l_pcol }| TO lt_lines.
+      ENDLOOP.
+      LOOP AT mo_pivot->get_vals( ) INTO DATA(ls_pval).
+        APPEND |PVV{ l_tab }{ ls_pval-key }{ l_tab }{ ls_pval-agg }| TO lt_lines.
+      ENDLOOP.
+      LOOP AT mt_pivot_sort INTO DATA(ls_psort).
+        APPEND |PVS{ l_tab }{ ls_psort-name }{ l_tab }{ ls_psort-descending }| TO lt_lines.
+      ENDLOOP.
+    ENDIF.
     "filters: the row values plus every line of a multi-range
     cache_where_selection( ). "pull what is currently typed in the selection panel
     LOOP AT mt_where_sel INTO DATA(ls_sel).
@@ -2129,6 +2153,10 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     DATA: lt_stabs TYPE TABLE OF t_saved_tab,
           lt_sflds TYPE TABLE OF t_saved_fld,
           lt_wsel  TYPE TABLE OF zcl_sde_appl=>selection_display_s,
+          lt_prows TYPE zcl_sde_pivot=>tt_keys,
+          lt_pcols TYPE zcl_sde_pivot=>tt_keys,
+          lt_pvals TYPE zcl_sde_pivot=>tt_vals,
+          lt_psort TYPE abap_sortorder_tab,
           l_base   TYPE tabname,
           l_pos    TYPE i,
           l_mode   TYPE char1,
@@ -2155,6 +2183,14 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         WHEN 'FLD'.
           CHECK lines( lt_part ) >= 4.
           APPEND VALUE #( alias = lt_part[ 2 ] fieldname = lt_part[ 3 ] pos = lt_part[ 4 ] ) TO lt_sflds.
+        WHEN 'PVR'. APPEND lt_part[ 2 ] TO lt_prows. "pivot cross: row dimension
+        WHEN 'PVC'. APPEND lt_part[ 2 ] TO lt_pcols. "column dimension
+        WHEN 'PVV'. "measure: field and its aggregate
+          CHECK lines( lt_part ) >= 3.
+          APPEND VALUE #( key = lt_part[ 2 ] agg = lt_part[ 3 ] ) TO lt_pvals.
+        WHEN 'PVS'. "sort of the matrix
+          APPEND VALUE #( name       = lt_part[ 2 ]
+                          descending = COND #( WHEN lines( lt_part ) >= 3 THEN lt_part[ 3 ] ) ) TO lt_psort.
         WHEN 'SEL' OR 'SELR'. "filter of one field / one line of a multi-range
           "an empty HIGH loses its trailing tab on the way through the file,
           "so everything past the field name is optional
@@ -2236,8 +2272,20 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     ENDLOOP.
     normalize_pos( ). "pos drives the SELECT order, mt_jflds keeps its per-table grouping
 
-    IF l_mode IS NOT INITIAL AND l_mode NE 'P'. "pivot layouts are not part of the file
+    "the pivot cross, if the file carries one
+    IF lt_prows IS NOT INITIAL OR lt_pcols IS NOT INITIAL OR lt_pvals IS NOT INITIAL.
+      IF mo_pivot IS NOT BOUND.
+        mo_pivot = NEW #( ).
+      ENDIF.
+      mo_pivot->set_layout( it_rows = lt_prows it_cols = lt_pcols it_vals = lt_pvals ).
+      mt_pivot_sort = lt_psort.
+    ENDIF.
+
+    IF l_mode IS NOT INITIAL.
       m_mode = l_mode.
+      IF m_mode = 'P' AND mo_pivot IS NOT BOUND. "file from before the pivot was saved
+        mo_pivot = NEW #( ).
+      ENDIF.
     ENDIF.
     IF l_sql IS NOT INITIAL.
       m_sql_manual = l_sql.
@@ -6770,6 +6818,26 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
     rt_keys = mt_cols.
   ENDMETHOD.
 
+  METHOD get_rows.
+    rt_keys = mt_rows.
+  ENDMETHOD.
+
+  METHOD get_vals.
+    rt_vals = mt_vals.
+  ENDMETHOD.
+
+  METHOD set_layout.
+    "a layout comes from a file: nothing is picked, and a field that ended up in
+    "both dimensions (hand-edited file) stays a row - put( ) guarantees the same
+    mt_rows = it_rows.
+    mt_cols = it_cols.
+    mt_vals = it_vals.
+    LOOP AT mt_rows INTO DATA(l_key).
+      DELETE mt_cols WHERE table_line = l_key.
+    ENDLOOP.
+    CLEAR: m_pick, m_pick_src.
+  ENDMETHOD.
+
   METHOD qualify.
     "T0~CARRID -> t0~carrid (join) or carrid (single table)
     SPLIT i_key AT '~' INTO DATA(l_alias) DATA(l_field).
@@ -7849,8 +7917,8 @@ ENDFORM.
 
 ****************************************************
 INTERFACE lif_abapmerge_marker.
-* abapmerge 0.16.7 - 2026-08-18T17:50:28.488Z
-  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T17:50:28.488Z`.
+* abapmerge 0.16.7 - 2026-08-18T20:55:46.885Z
+  CONSTANTS c_merge_timestamp TYPE string VALUE `2026-08-18T20:55:46.885Z`.
   CONSTANTS c_abapmerge_version TYPE string VALUE `0.16.7`.
 ENDINTERFACE.
 ****************************************************
