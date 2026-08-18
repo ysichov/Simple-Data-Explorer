@@ -24,6 +24,13 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
       get_col_keys RETURNING VALUE(rt_keys) TYPE tt_keys,
       get_sql_columns RETURNING VALUE(rt_cols) TYPE tt_sqlcols,
 
+      "the cross as plain data, so a layout file can carry it (zcl_sde_tools=>save_config)
+      get_rows RETURNING VALUE(rt_keys) TYPE tt_keys,
+      get_vals RETURNING VALUE(rt_vals) TYPE tt_vals,
+      set_layout IMPORTING it_rows TYPE tt_keys
+                           it_cols TYPE tt_keys
+                           it_vals TYPE tt_vals,
+
       "HTML for the builder: the pivot cross - rows down the left, columns across
       "the top, measures in the body - plus the available field chips below it.
       "i_header is the tool bar of the canvas the panel is rendered into.
@@ -145,6 +152,26 @@ CLASS zcl_sde_pivot IMPLEMENTATION.
 
   METHOD get_col_keys.
     rt_keys = mt_cols.
+  ENDMETHOD.
+
+  METHOD get_rows.
+    rt_keys = mt_rows.
+  ENDMETHOD.
+
+  METHOD get_vals.
+    rt_vals = mt_vals.
+  ENDMETHOD.
+
+  METHOD set_layout.
+    "a layout comes from a file: nothing is picked, and a field that ended up in
+    "both dimensions (hand-edited file) stays a row - put( ) guarantees the same
+    mt_rows = it_rows.
+    mt_cols = it_cols.
+    mt_vals = it_vals.
+    LOOP AT mt_rows INTO DATA(l_key).
+      DELETE mt_cols WHERE table_line = l_key.
+    ENDLOOP.
+    CLEAR: m_pick, m_pick_src.
   ENDMETHOD.
 
   METHOD qualify.
