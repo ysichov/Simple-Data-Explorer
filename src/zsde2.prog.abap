@@ -3,10 +3,10 @@
 *& Simple Data Explorer v.2 SelecTor
 *&---------------------------------------------------------------------*
 *& version: beta 2.0.0.77
-*& GIT:            https://github.com/ysichov/SDE/blob/master/SDE_750.abap - here may be most actual version
-*& AbapGit         https://github.com/ysichov/SDE_abapgit
+*& GIT:            https://github.com/ysichov/Simple-Data-Explorer
+*& Standalone:     https://github.com/ysichov/Simple-Data-Explorer/blob/master/src/z_sde_standalone.prog.abap
+*& EN description  https://github.com/ysichov/Simple-Data-Explorer#readme
 *& RU description  https://ysychov.wordpress.com/2020/02/10/simple-data-explorer/
-*& EN description  https://blogs.sap.com/2020/03/22/simple-data-explorer/
 
 *& Multi-windows program for viewing tables, views, salary clusters, CDS and some links between them
 *& Written by Yurii Sychov

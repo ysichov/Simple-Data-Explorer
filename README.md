@@ -42,7 +42,6 @@ single-file viewer is still shipped for old releases — see
   - [Saving and loading layouts](#saving-and-loading-layouts)
 - [Repository layout](#repository-layout)
 - [Architecture](#architecture)
-- [Building the standalone program](#building-the-standalone-program)
 - [History and older documentation](#history-and-older-documentation)
 - [Author](#author)
 - [License](#license)
@@ -100,8 +99,7 @@ No package, no abapGit, nothing to activate except one report:
 2. Paste the contents of [`src/z_sde_standalone.prog.abap`](src/z_sde_standalone.prog.abap).
 3. Activate and run.
 
-The file is generated from `src/` — see
-[Building the standalone program](#building-the-standalone-program). Do not edit it by hand.
+The file is generated from the sources in `src/` — do not edit it by hand.
 
 ### Legacy one-file versions
 
@@ -334,8 +332,7 @@ there is one. Loading a layout restores all of it, even before the selection pan
 | --- | --- |
 | [`src/`](src) | The program: one report, the global classes, one interface, plus the generated standalone report |
 | [`SDE_702.abap`](SDE_702.abap), [`SDE_750_HR.abap`](SDE_750_HR.abap) | Legacy one-file versions (not part of the abapGit package) |
-| [`generate_standalone.sh`](generate_standalone.sh), [`generate_standalone.bat`](generate_standalone.bat) | Build of the standalone report |
-| [`fix_event_order.py`](fix_event_order.py) | Post-processing of the merged report (see below) |
+| [`generate_standalone.sh`](generate_standalone.sh), [`generate_standalone.bat`](generate_standalone.bat), [`fix_event_order.py`](fix_event_order.py) | Developer tooling that regenerates the standalone report from `src/` |
 | [`AGENTS.md`](AGENTS.md) | Rules for automated contributors |
 
 ## Architecture
@@ -358,27 +355,6 @@ there is one. Loading a layout restores all of it, even before the selection pan
 | `zcl_sde_ddic`, `zcl_sde_common` | Dictionary and ALV helpers |
 | `zcl_sde_popup` | Base class of every dialog window |
 | `z_sde_standalone` (report) | Everything above merged into one file — generated, never edited |
-
-## Building the standalone program
-
-Prerequisites: [abapmerge](https://github.com/larshp/abapMerge) (`npm i -g abapmerge`), bash and
-Python 3.
-
-```bash
-./generate_standalone.sh
-```
-
-On Windows, `generate_standalone.bat` calls the same script through Git bash. The paths at the top
-of the script are absolute — adjust `SDE_SRC` / `TARGET_DIR` to your machine before the first run.
-
-The script copies `src/` to a work directory, renames the entry point to `z_sde.prog.abap` (abapmerge
-derives the report name from the file name and only injects the classes once it finds a matching
-`REPORT` statement), runs abapmerge, and then calls `fix_event_order.py`: abapmerge orders class
-definitions by `INHERITING FROM` only, while `METHODS ... FOR EVENT ... OF <class>` also requires the
-other class to be defined earlier in a flattened program. Finally the header comment is restored.
-
-`src/z_sde_standalone.prog.abap` is the output of this build. Change the classes under `src/` and
-regenerate — never edit the standalone file directly.
 
 ## History and older documentation
 
