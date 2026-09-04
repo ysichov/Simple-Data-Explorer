@@ -1,14 +1,22 @@
-CLASS zcl_sde_adt_res_app DEFINITION
-  PUBLIC
-  INHERITING FROM cl_adt_res_app_base
-  FINAL
-  CREATE PUBLIC.
+class ZCL_SDE_ADT_RES_APP definition
+  public
+  inheriting from CL_ADT_RES_APP_BASE
+  final
+  create public .
 
+public section.
+
+  interfaces IF_ADT_DISCOVERY_PROVIDER .
   PROTECTED SECTION.
     METHODS fill_router REDEFINITION.
+private section.
 ENDCLASS.
 
-CLASS zcl_sde_adt_res_app IMPLEMENTATION.
+
+
+CLASS ZCL_SDE_ADT_RES_APP IMPLEMENTATION.
+
+
   METHOD fill_router.
     router->attach( iv_template      = '/zsde/table/{name}'
                     iv_handler_class = 'ZCL_SDE_ADT_RES_TABLE' ).
