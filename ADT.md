@@ -184,5 +184,11 @@ system:
 - **Authorization.** SDE reads arbitrary tables. `BADI_ADT_REST_AUTHORIZATION` in package
   `SADT_REST` is the intended hook; `S_TABU_DIS` / `S_TABU_NAM` checks belong there or in the
   resource itself.
-- **Volume.** The ALV currently lives on the server. Sending rows as JSON means server-side
-  paging, which does not exist in the current code.
+- ~~**Volume.**~~ Measured on ALC: `TADIR?rows=10000` returns in 2–3 seconds end to end.
+  Accepted as adequate, so the array-of-objects payload stays and no paging was added. Worth
+  keeping in mind that roughly half of that payload is field names repeated on every row; if it
+  ever needs to shrink, `rows` can become positional arrays aligned with `fields`.
+
+  The rate does constrain one thing: SDE's select-options re-read as you type, and 2–3 seconds
+  per 10 000 rows is a page-load budget, not a keystroke budget. Reactive filtering needs a
+  small default page size, not a faster serializer.
