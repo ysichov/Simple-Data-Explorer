@@ -107,6 +107,51 @@ SAP's own applications typically register two disjunctions — `=` on the bare b
 base URL, and `CP` on `base/*` for everything under it. The `CP` row alone is enough to serve
 sub-paths.
 
+## Selecting rows
+
+Filters are passed as indexed query parameters, one part per parameter. Nothing is packed into a
+separator-delimited string, so a colon inside a `TIMS` value or a quote inside a text field
+cannot break the request.
+
+| Parameter | Meaning | Default |
+|---|---|---|
+| `f{i}` | field name | — |
+| `s{i}` | sign, `I` or `E` | `I` |
+| `o{i}` | option | `EQ` |
+| `l{i}` | low value | — |
+| `h{i}` | high value, for `BT` and `NB` | — |
+
+Options are `EQ NE GT GE LT LE CP NP BT NB`; at most 20 lines are read. In `CP` and `NP` a `*`
+becomes `%` and a `+` becomes `_`. Single quotes inside values are doubled before the literal is
+built.
+
+```
+?rows=100&f1=BUKRS&o1=EQ&l1=0001
+?rows=100&f1=LAND1&o1=CP&l1=D*
+?f1=BUKRS&o1=BT&l1=0001&h1=1000
+?f1=LAND1&o1=EQ&l1=DE&f2=LAND1&o2=EQ&l2=UA
+?f1=LAND1&s1=E&o1=EQ&l1=DE
+```
+
+These are select-option semantics, not a naive chain of ANDs: **lines for the same field are
+ORed**, an excluding line becomes `AND NOT`, and **different fields are ANDed**. The fourth
+example above returns Germany or Ukraine; the fifth returns everything except Germany. That
+matches `ZCL_SDE_SEL_OPT`, so moving real select-options across later needs no rework.
+
+### Why not a raw WHERE string
+
+`ZCL_SDE_SQL=>READ_ANY_TABLE` catches `CX_SY_DYNAMIC_OSQL_SYNTAX` with `#EC NO_HANDLER`. A
+malformed condition would therefore return an empty table and no complaint at all, and a user
+who mistyped a field name would conclude there is no data. Passing the parts separately lets the
+resource check each one and answer:
+
+| Situation | Response |
+|---|---|
+| Field not in the table | **400** `Table T001 has no field BUKRSX.` |
+| Unknown option | **400**, listing the allowed ones |
+| Field is `STRG` or `RSTR` | **400** — a LOB cannot appear in a WHERE clause |
+| `BT` or `NB` without `h{i}` | **400**, naming the missing parameter |
+
 ## Verifying the registration without guessing at screens
 
 ```sql
