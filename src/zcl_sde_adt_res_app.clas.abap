@@ -5,8 +5,6 @@ class ZCL_SDE_ADT_RES_APP definition
   create public .
 
 public section.
-
-  interfaces IF_ADT_DISCOVERY_PROVIDER .
   PROTECTED SECTION.
     METHODS fill_router REDEFINITION.
 private section.
