@@ -1,18 +1,27 @@
 # SDE as an ADT REST resource
 
-Status: **working skeleton**. A custom resource is registered under `/sap/bc/adt/zsde/` and
-answers with plain text. No data, no JSON yet — this step existed only to prove that the route
-resolves and that path templates and query parameters arrive intact.
+Status: **reads real data**. A custom resource is registered under `/sap/bc/adt/zsde/` and
+returns table rows plus a field catalogue as JSON.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
+Content-Type: application/json
 
-SDE ADT resource alive
-table = T001
-rows  = 5
-user  = SYCHOV
-sysid = ALC
+{
+  "table": "t001",
+  "count": 5,
+  "fields": [
+    { "name": "mandt", "position": 1, "key": true,  "datatype": "CLNT",
+      "length": 3, "decimals": 0, "text": "Client" },
+    { "name": "bukrs", "position": 2, "key": true,  "datatype": "CHAR",
+      "length": 4, "decimals": 0, "text": "Company Code" }
+  ],
+  "rows": [ { "mandt": "100", "bukrs": "0001" } ]
+}
 ```
+
+Rows and catalogue use the same lowercased DDIC field names, so a client maps
+`field.name` straight onto `row[field.name]`.
 
 ## Why ADT REST and not a plain ICF service
 
@@ -137,11 +146,37 @@ is correct either way.
   The line has been removed here; the system still has it until the next abapGit pull and
   activation.
 
-## Next step
+## How the payload is built
 
-Replace the plain-text payload in `ZCL_SDE_ADT_RES_TABLE=>get` with real data:
-`zcl_sde_sql=>read_any_table( )` for the rows, RTTI or `DDIF_FIELDINFO_GET` for the field
-catalogue, and `CL_ADT_REST_JSON_HANDLER` or `/UI2/CL_JSON` for serialization.
+`CL_ADT_REST_JSON_HANDLER` is not usable here: it serializes through a Simple Transformation
+named at construction time, and an ST is statically typed, so it cannot describe a table
+structure only known at runtime. Instead `/UI2/CL_JSON=>serialize( )` builds the JSON from RTTI,
+and the result is returned through `CL_ADT_REST_PLAIN_TEXT_HANDLER` constructed with
+`content_type = if_rest_media_type=>gc_appl_json` — that handler takes the content type as a
+constructor parameter, so the correct `Content-Type` is set without adding an ST object.
+
+The row structure comes from `cl_abap_typedescr=>describe_by_name( )` →
+`cl_abap_tabledescr=>create( )` → `CREATE DATA ... TYPE HANDLE`. Note that `TYPE HANDLE` does
+not accept an inline functional call; the descriptor has to be in a variable first.
+
+The catalogue is one call, `cl_abap_structdescr->get_ddic_field_list( )`, which returns key
+flags, DDIC data types, lengths and field texts together.
+
+### Deliberate gaps
+
+- **No conversion exits.** Values are serialized as stored, so `ALPHA`-padded keys arrive
+  padded and no unit or currency formatting is applied. This is lossless and reversible;
+  formatting is a decision for the client or a later flag, not something to bake in silently.
+- **Transparent and cluster tables only.** `zcl_sde_sql=>exist_table( )` matches `TRANSP` and
+  `CLUSTER`, so views and CDS entities return 404. `zcl_sde_sql` has `exist_view( )` and
+  `exist_cds( )` ready for when that is wanted.
+- **No paging.** `rows` caps the read, there is no offset or cursor.
+
+A missing table produces a real 404 (`CX_ADT_RES_NOT_FOUND`) rather than an empty result —
+`zcl_sde_sql=>read_any_table( )` silently returns nothing for an unknown table, so the resource
+checks existence itself first.
+
+## Next step
 
 Two questions are still open and should be answered before this goes anywhere near a productive
 system:
