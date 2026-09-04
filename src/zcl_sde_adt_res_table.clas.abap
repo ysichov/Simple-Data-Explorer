@@ -150,6 +150,14 @@ CLASS zcl_sde_adt_res_table IMPLEMENTATION.
 
   METHOD field_catalog.
     LOOP AT it_ddic ASSIGNING FIELD-SYMBOL(<ls_ddic>).
+      " Open SQL already restricts the read to the session's client, so the
+      " client field holds the same value in every row: noise in the grid and
+      " useless as a selection criterion. Recognised by its data type, because
+      " it is not always called MANDT.
+      IF <ls_ddic>-datatype = 'CLNT'.
+        CONTINUE.
+      ENDIF.
+
       APPEND VALUE #( name     = to_lower( <ls_ddic>-fieldname )
                       position = <ls_ddic>-position
                       key      = <ls_ddic>-keyflag
