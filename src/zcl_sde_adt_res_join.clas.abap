@@ -330,10 +330,12 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
       IF sy-subrc <> 0.
         APPEND VALUE #( label = lv_label ) TO rt_filter ASSIGNING <filter>.
       ENDIF.
-      APPEND VALUE #( sign   = lv_sign
-                      option = lv_option
-                      low    = lv_low
-                      high   = lv_high ) TO <filter>-range.
+      " The free-selection range calls it OPTI, not OPTION - the same name
+      " ZCL_SDE_SEL_OPT fills when the panel builds a line.
+      APPEND VALUE #( sign = lv_sign
+                      opti = lv_option
+                      low  = lv_low
+                      high = lv_high ) TO <filter>-range.
     ENDDO.
   ENDMETHOD.
 
