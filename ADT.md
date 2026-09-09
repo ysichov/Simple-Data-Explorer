@@ -387,6 +387,20 @@ Nothing about the join logic, which never touched a control. Only the way in:
   panel that does not exist yet. `SET_FILTERS` fills the same cache, so nothing about the `WHERE`
   had to be rewritten.
 
+### The rest of the builder
+
+`pick=X` says the SELECT list belongs to the caller and `sf1..sfN` name the fields in it, as
+`alias~field`. Without `pick` the builder keeps its own list, which starts as every field of every
+joined table. The flag exists because an empty list is not the absence of one.
+
+Selecting nothing is not an error and not an empty statement: `GENERATE_SELECT` falls back to
+`t0~*`, which is SDE's own behaviour and visible in the `sql` it returns.
+
+`j<alias>` sets the join type of a joined table, `on<alias>` its condition — `jT1=INNER`,
+`onT1=t1~carrid = t0~carrid`. Both are the builder's proposal and the caller's to overrule, which
+is what the editable cell in the canvas does. A type other than `INNER` or `LEFT OUTER` answers
+400. The base table stands in the `FROM` and joins nothing, so its type is never used.
+
 ### The pivot
 
 `r1..rN` are the row dimensions, `c1..cN` the columns and `v1..vN` the measures, each an

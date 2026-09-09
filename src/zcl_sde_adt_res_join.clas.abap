@@ -15,6 +15,9 @@ CLASS zcl_sde_adt_res_join DEFINITION
     " a limit that is never met in practice still has to exist.
     CONSTANTS c_max_filters TYPE i VALUE 20.
 
+    " A SELECT list longer than this is not one a person picked.
+    CONSTANTS c_max_fields TYPE i VALUE 200.
+
     CONSTANTS c_options TYPE string VALUE `EQ NE GT GE LT LE CP NP BT NB`.
 
     " A table the dictionary offers around the ones already in the join.
@@ -154,6 +157,54 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
                       jtype   = ls_tab-jtype
                       cond    = ls_tab-cond ) TO lt_tab.
     ENDLOOP.
+
+    " The join type and the ON condition of a joined table, named by its alias:
+    " jT1=INNER, onT1=t1~matnr = t0~matnr. Both are the builder's proposal and
+    " the caller's to overrule, which is what the editable cell does.
+    DATA(lt_jtab_now) = lo_tools->join_tables( ).
+    LOOP AT lt_jtab_now INTO DATA(ls_jtab_now).
+      DATA lv_jtype TYPE string.
+      DATA lv_cond  TYPE string.
+      CLEAR: lv_jtype, lv_cond.
+      request->get_uri_query_parameter( EXPORTING name  = |j{ ls_jtab_now-alias }|
+                                        IMPORTING value = lv_jtype ).
+      request->get_uri_query_parameter( EXPORTING name  = |on{ ls_jtab_now-alias }|
+                                        IMPORTING value = lv_cond ).
+      IF lv_jtype IS NOT INITIAL.
+        lv_jtype = to_upper( lv_jtype ).
+        IF lv_jtype <> 'INNER' AND lv_jtype <> 'LEFT OUTER'.
+          bad_request( |Join type { lv_jtype } for { ls_jtab_now-alias } must be| &&
+                       | INNER or LEFT OUTER.| ).
+        ENDIF.
+      ENDIF.
+      IF lv_jtype IS NOT INITIAL OR lv_cond IS NOT INITIAL.
+        lo_tools->set_join( i_alias = ls_jtab_now-alias
+                            i_jtype = lv_jtype
+                            i_cond  = lv_cond ).
+      ENDIF.
+    ENDLOOP.
+
+    " The SELECT list, as a set rather than a history: PICK says the list is the
+    " caller's, sf1..sfN name what is in it. Without PICK the builder keeps its
+    " own list, which starts as every field of every joined table. An empty
+    " list is not the absence of one, hence the flag.
+    DATA lv_pick TYPE abap_bool.
+    DATA lv_field TYPE string.
+    request->get_uri_query_parameter( EXPORTING name      = 'pick'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_pick ).
+    IF lv_pick = abap_true.
+      lo_tools->select_fields( `NONE` ).
+      DO c_max_fields TIMES.
+        CLEAR lv_field.
+        request->get_uri_query_parameter( EXPORTING name  = |sf{ sy-index }|
+                                          IMPORTING value = lv_field ).
+        IF lv_field IS INITIAL.
+          EXIT.
+        ENDIF.
+        lo_tools->select_fields( |tg_{ to_upper( lv_field ) }| ).
+      ENDDO.
+    ENDIF.
 
     DATA(lt_jfld) = lo_tools->join_fields( ).
 

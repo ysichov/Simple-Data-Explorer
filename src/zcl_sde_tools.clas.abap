@@ -55,6 +55,16 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
       " every render method already checks that its control exists.
       candidates   RETURNING VALUE(rt_cand) TYPE tt_cand,
       set_filters  IMPORTING it_filter TYPE tt_filter,
+      " The SELECT list, driven by the same codes as the field toolbar: ALL,
+      " NONE, KEYS, tg_ALIAS~FIELD for one field, and all_/non_/key_<alias>
+      " for one table.
+      select_fields IMPORTING i_action TYPE string,
+      " The join type and the ON condition of one joined table. Both are the
+      " builder's to propose and the caller's to overrule, which is what the
+      " editable cell in the canvas does.
+      set_join     IMPORTING i_alias TYPE char5
+                             i_jtype TYPE string OPTIONAL
+                             i_cond  TYPE string OPTIONAL,
       " The cross, for a caller that has no builder panel to drag chips on.
       set_pivot    IMPORTING it_rows TYPE zcl_sde_pivot=>tt_keys
                              it_cols TYPE zcl_sde_pivot=>tt_keys
@@ -1398,6 +1408,27 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     execute_pivot( EXPORTING i_rows    = i_rows
                    IMPORTING er_result = er_result
                              ev_error  = ev_error ).
+  ENDMETHOD.
+
+
+  METHOD select_fields.
+    handle_fld_action( i_action ).
+  ENDMETHOD.
+
+
+  METHOD set_join.
+    READ TABLE mt_jtabs ASSIGNING FIELD-SYMBOL(<jtab>) WITH KEY alias = i_alias.
+    CHECK sy-subrc = 0.
+    IF i_jtype IS NOT INITIAL.
+      <jtab>-jtype = i_jtype.
+    ENDIF.
+    IF i_cond IS NOT INITIAL.
+      " The canvas repairs a term glued to the one before it; a caller that
+      " types its own condition gets the same treatment.
+      DATA(l_cond) = i_cond.
+      REPLACE ALL OCCURRENCES OF REGEX '(\w)AND\s' IN l_cond WITH '$1 AND '.
+      <jtab>-cond = condense( l_cond ).
+    ENDIF.
   ENDMETHOD.
 
 
