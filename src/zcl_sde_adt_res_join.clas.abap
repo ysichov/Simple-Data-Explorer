@@ -56,16 +56,27 @@ ENDCLASS.
 CLASS zcl_sde_adt_res_join IMPLEMENTATION.
 
   METHOD get.
-    DATA: lv_name TYPE tabname,
-          lv_take TYPE tabname,
-          lt_cand TYPE tt_candidate,
-          lt_tab  TYPE tt_table,
-          lt_fld  TYPE tt_field.
+    DATA: lv_name  TYPE tabname,
+          lv_take  TYPE tabname,
+          lv_rows  TYPE i,
+          lr_rows  TYPE REF TO data,
+          lv_error TYPE string,
+          lt_cand  TYPE tt_candidate,
+          lt_tab   TYPE tt_table,
+          lt_fld   TYPE tt_field.
+    FIELD-SYMBOLS <lt_rows> TYPE STANDARD TABLE.
 
     request->get_uri_attribute( EXPORTING name      = 'name'
                                           mandatory = abap_true
                                 IMPORTING value     = lv_name ).
     TRANSLATE lv_name TO UPPER CASE.
+
+    " Nought asks for the statement without running it, which is what the page
+    " wants while the join is still being assembled.
+    request->get_uri_query_parameter( EXPORTING name      = 'rows'
+                                                mandatory = abap_false
+                                                default   = 0
+                                      IMPORTING value     = lv_rows ).
 
     IF zcl_sde_sql=>exist_table( lv_name ) <> 1 AND zcl_sde_sql=>exist_view( lv_name ) <> 1.
       not_found( i_type = `table` i_id = CONV string( lv_name ) ).
@@ -130,9 +141,28 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
                       datatype  = ls_fld-datatype ) TO lt_fld.
     ENDLOOP.
 
+    DATA(lv_rows_json) = `null`.
+    IF lv_rows > 0.
+      lo_tools->run( EXPORTING i_rows    = lv_rows
+                     IMPORTING er_result = lr_rows
+                               ev_error  = lv_error ).
+      IF lv_error IS NOT INITIAL.
+        " The statement is generated, not typed, so a failure here is ours and
+        " not the caller's mistake to guess at.
+        bad_request( |The join statement did not run: { lv_error }| ).
+      ENDIF.
+      IF lr_rows IS BOUND.
+        ASSIGN lr_rows->* TO <lt_rows>.
+        lv_rows_json = /ui2/cl_json=>serialize(
+                         data        = <lt_rows>
+                         pretty_name = /ui2/cl_json=>pretty_mode-low_case ).
+      ENDIF.
+    ENDIF.
+
     DATA(lv_body) =
       |\{"table":"{ to_lower( lv_name ) }",| &&
       |"sql":{ /ui2/cl_json=>serialize( data = lo_tools->sql( ) ) },| &&
+      |"rows":{ lv_rows_json },| &&
       |"candidates":{ /ui2/cl_json=>serialize(
                         data        = lt_cand
                         pretty_name = /ui2/cl_json=>pretty_mode-low_case ) },| &&

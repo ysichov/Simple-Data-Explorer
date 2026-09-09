@@ -44,6 +44,9 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
       " them through these. Rendering is not skipped by them but by itself:
       " every render method already checks that its control exists.
       candidates   RETURNING VALUE(rt_cand) TYPE tt_cand,
+      run          IMPORTING i_rows    TYPE i DEFAULT 100
+                   EXPORTING er_result TYPE REF TO data
+                             ev_error  TYPE string,
       toggle_table IMPORTING i_tabname TYPE tabname,
       join_tables  RETURNING VALUE(rt_jtab) TYPE tt_jtab,
       join_fields  RETURNING VALUE(rt_jfld) TYPE tt_jfld,
@@ -146,7 +149,13 @@ protected section.
       is_multi RETURNING VALUE(rv_multi) TYPE abap_bool,
       cache_where_selection,
       build_where RETURNING VALUE(rv_where) TYPE string,
-      execute_sql IMPORTING i_sql TYPE string i_quiet TYPE abap_bool DEFAULT abap_false,
+      " ER_RESULT and EV_ERROR are for a caller with no window: it takes the rows
+      " itself and learns why there are none. The GUI passes neither and is
+      " unaffected.
+      execute_sql IMPORTING i_sql     TYPE string
+                            i_quiet   TYPE abap_bool DEFAULT abap_false
+                  EXPORTING er_result TYPE REF TO data
+                            ev_error  TYPE string,
       fcat_entry IMPORTING i_fieldname   TYPE lvc_fname
                            io_type       TYPE REF TO cl_abap_datadescr
                            i_text        TYPE string
@@ -1345,6 +1354,24 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD run.
+    " GENERATE_SELECT ends in an UP TO of its own, taken from the application's
+    " global row count. A caller over HTTP has its own limit and no business
+    " setting a global, so the clause is replaced rather than added: two of
+    " them would leave one behind for the FROM parse to trip over.
+    DATA(l_sql) = generate_select( ).
+    REPLACE REGEX 'UP\s+TO\s+\d+\s+ROWS' IN l_sql WITH |UP TO { i_rows } ROWS|.
+    IF sy-subrc <> 0.
+      l_sql = |{ l_sql } UP TO { i_rows } ROWS|.
+    ENDIF.
+
+    execute_sql( EXPORTING i_sql     = l_sql
+                           i_quiet   = abap_true
+                 IMPORTING er_result = er_result
+                           ev_error  = ev_error ).
+  ENDMETHOD.
+
+
   METHOD toggle_table.
     toggle_candidate( i_tabname ).
   ENDMETHOD.
@@ -2357,15 +2384,17 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     "split into SELECT <fields> FROM <from> [WHERE <where>]
     FIND REGEX '^\s*SELECT\s' IN l_upper MATCH LENGTH DATA(l_sel_len).
     IF sy-subrc NE 0.
+      ev_error = 'Statement must start with SELECT'.
       IF i_quiet = abap_false.
-        MESSAGE 'Statement must start with SELECT' TYPE 'S' DISPLAY LIKE 'E'.
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
       ENDIF.
       RETURN.
     ENDIF.
     FIND REGEX '\sFROM\s' IN l_upper MATCH OFFSET DATA(l_from_off) MATCH LENGTH DATA(l_from_len).
     IF sy-subrc NE 0.
+      ev_error = 'FROM clause not found'.
       IF i_quiet = abap_false.
-        MESSAGE 'FROM clause not found' TYPE 'S' DISPLAY LIKE 'E'.
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
       ENDIF.
       RETURN.
     ENDIF.
@@ -2417,8 +2446,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           FIND REGEX '(\w+)~(\w+)' IN l_fld_up SUBMATCHES l_alias2 l_field.
         ENDIF.
         IF l_agg IS INITIAL OR l_name IS INITIAL OR l_field IS INITIAL.
+          ev_error = |Cannot parse field: { l_fld_str } (expressions need AS name)|.
           IF i_quiet = abap_false.
-            MESSAGE |Cannot parse field: { l_fld_str } (expressions need AS name)| TYPE 'S' DISPLAY LIKE 'E'.
+            MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
           ENDIF.
           RETURN.
         ENDIF.
@@ -2469,16 +2499,18 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           RECEIVING  p_descr_ref    = lo_td
           EXCEPTIONS type_not_found = 1 OTHERS = 2 ).
         IF sy-subrc NE 0 OR lo_td IS NOT BOUND.
+          ev_error = |Unknown field { ls_alias-tabname }-{ l_field }|.
           IF i_quiet = abap_false.
-            MESSAGE |Unknown field { ls_alias-tabname }-{ l_field }| TYPE 'S' DISPLAY LIKE 'E'.
+            MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
           ENDIF.
           RETURN.
         ENDIF.
         TRY.
             lo_type = CAST cl_abap_datadescr( lo_td ).
           CATCH cx_sy_move_cast_error.
+            ev_error = |{ ls_alias-tabname }-{ l_field } is not a data type|.
             IF i_quiet = abap_false.
-              MESSAGE |{ ls_alias-tabname }-{ l_field } is not a data type| TYPE 'S' DISPLAY LIKE 'E'.
+              MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
             ENDIF.
             RETURN.
         ENDTRY.
@@ -2493,8 +2525,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     ENDLOOP.
 
     IF lt_comp IS INITIAL.
+      ev_error = 'No fields to select'.
       IF i_quiet = abap_false.
-        MESSAGE 'No fields to select' TYPE 'S' DISPLAY LIKE 'E'.
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
       ENDIF.
       RETURN.
     ENDIF.
@@ -2547,11 +2580,18 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
         ENDIF.
 
       CATCH cx_root INTO DATA(lx).
+        ev_error = lx->get_text( ).
         IF i_quiet = abap_false.
-          MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+          MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
         ENDIF.
         RETURN.
     ENDTRY.
+
+    er_result = lr_table.
+
+    " No window: the caller has the rows in ER_RESULT and there is nothing to
+    " hand them to.
+    CHECK mo_viewer IS BOUND.
 
     DATA(l_view_name) = COND #( WHEN l_group IS INITIAL
                                 THEN |JOIN { m_tabname } ({ lines( <result> ) })|

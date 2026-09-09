@@ -1,8 +1,8 @@
 # SDE as an ADT REST resource
 
 Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
-serves three resources as JSON: table rows with their field catalogue, the code metrics of an
-object, and its version history.
+serves four resources as JSON: table rows with their field catalogue, the code metrics of an
+object, its version history, and the join builder.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -45,6 +45,7 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 | `ZCL_SDE_ADT_RES_TABLE` | CLAS | Resource. Inherits `CL_ADT_REST_RESOURCE`, redefines `get`. |
 | `ZCL_SDE_ADT_RES_METRICS` | CLAS | Resource. Code metrics of an object, computed by ACE. |
 | `ZCL_SDE_ADT_RES_VERSIONS` | CLAS | Resource. Versionable parts of an object and their versions, read by AVE. |
+| `ZCL_SDE_ADT_RES_JOIN` | CLAS | Resource. The join builder of SDE without its window. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
@@ -60,6 +61,8 @@ router->attach( iv_template      = '/zsde/metrics/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
 router->attach( iv_template      = '/zsde/versions/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
+router->attach( iv_template      = '/zsde/join/{name}'
+                iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
 ```
 
 Every service of the VERTEX front end registers here rather than under a prefix of its own. A
@@ -333,6 +336,53 @@ Its constructor passes only `previous` to the superclass, so `get_text( )` on th
 itself is the generic class text. The resource walks the `previous` chain and joins what it finds,
 because "AVE cannot list the parts of ZCL_X" with no reason after it is a silent failure wearing
 an error message.
+
+## The join builder
+
+```
+GET /sap/bc/adt/zsde/join/MARA?t1=MAKT&rows=100
+
+{
+  "table": "mara",
+  "sql": "SELECT t0~matnr AS t0_matnr, t1~maktx AS t1_maktx FROM mara AS t0 ...",
+  "rows": [ { "t0_matnr": "000000000000000042", "t1_maktx": "Bolt" } ],
+  "candidates": [ { "tabname": "MAKT", "ddtext": "Material Descriptions",
+                    "direction": "I", "alias": "T1", "selected": true } ],
+  "tables": [ { "alias": "T1", "tabname": "MAKT", "jtype": "LEFT OUTER",
+                "cond": "t1~matnr = t0~matnr" } ],
+  "fields": [ ... ]
+}
+```
+
+Without `t`-parameters the answer is what the dictionary offers around the base table: outgoing
+and incoming foreign keys and text tables, with the direction in `direction` (`O`, `I`, `T`, `M`).
+With them it is the join they make. `rows` omitted or nought returns the statement without running
+it, which is what assembling a join wants; a positive `rows` runs it and returns the result under
+the alias-prefixed names the statement gave the columns.
+
+**The selection travels whole, every time.** The builder hands out an alias when a table is first
+taken into the join and never reuses it, and HTTP has no session to keep that in. So the client
+sends its whole selection in the order it made it, and the model is replayed from the base table.
+Same order, same aliases; a client that reorders its own list renames its own columns.
+
+A table that was never offered answers 400. `TOGGLE_CANDIDATE` ignores a name it does not know,
+which would otherwise answer with a join quietly missing a table — a wrong answer in the shape of
+a right one.
+
+### What had to change in SDE
+
+Nothing about the join logic, which never touched a control. Only the way in:
+
+- `ZCL_SDE_TOOLS`'s constructor built splitters, HTML viewers and, without a parent, a dialog box,
+  and demanded a reference to the table window. `IO_VIEWER` is now optional and the base table can
+  be named directly; without a viewer the constructor discovers the candidates, builds the
+  selection and returns before creating a control. Nothing else needed guarding — every render
+  method already checks that its own control exists.
+- `EXECUTE_SQL` did all its work and then handed the result to the window in its last three lines.
+  It now returns the result through `ER_RESULT`, reports why there is none through `EV_ERROR`, and
+  only rebinds when there is a window to rebind into.
+- `CACHE_WHERE_SELECTION` is skipped headless: the filters of such a caller arrive with its
+  request, not from a selection panel. So the generated `WHERE` is empty for now.
 
 ## Verifying the registration without guessing at screens
 
