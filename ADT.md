@@ -1,8 +1,8 @@
 # SDE as an ADT REST resource
 
 Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
-serves two resources as JSON: table rows with their field catalogue, and the code metrics of an
-object.
+serves three resources as JSON: table rows with their field catalogue, the code metrics of an
+object, and its version history.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -44,6 +44,7 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 |---|---|---|
 | `ZCL_SDE_ADT_RES_TABLE` | CLAS | Resource. Inherits `CL_ADT_REST_RESOURCE`, redefines `get`. |
 | `ZCL_SDE_ADT_RES_METRICS` | CLAS | Resource. Code metrics of an object, computed by ACE. |
+| `ZCL_SDE_ADT_RES_VERSIONS` | CLAS | Resource. Versionable parts of an object and their versions, read by AVE. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
@@ -57,6 +58,8 @@ router->attach( iv_template      = '/zsde/table/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_TABLE' ).
 router->attach( iv_template      = '/zsde/metrics/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
+router->attach( iv_template      = '/zsde/versions/{name}'
+                iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
 ```
 
 Every service of the VERTEX front end registers here rather than under a prefix of its own. A
@@ -228,6 +231,75 @@ repository object name.
 - **No token detail.** `ZCL_ACE_METRICS` also returns the classified token list behind the
   Halstead counts. It is debugging material and larger than everything else together, so it is
   left out of the payload.
+
+## Object versions
+
+Two shapes on one path. Without `part`, the versionable parts of the object:
+
+```
+GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS
+
+{
+  "object": "zcl_x",
+  "type": "clas",
+  "parts": [
+    { "class": "ZCL_X", "unit": "Public section", "name": "ZCL_X", "part_type": "CPUB" },
+    { "class": "ZCL_X", "unit": "DO_WORK", "name": "ZCL_X                         DO_WORK",
+      "part_type": "METH" }
+  ]
+}
+```
+
+With `part` and `ptype`, the versions of that one part:
+
+```
+GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS&part=ZCL_X%20...%20DO_WORK&ptype=METH
+
+{
+  "object": "zcl_x", "type": "clas", "part": "...", "part_type": "meth",
+  "versions": [
+    { "version": "00003", "date": "20260714", "time": "104512", "author": "SYCHOV",
+      "author_name": "Yurii Sychov", "request": "ALCK900593", "task": "ALCK900614" }
+  ]
+}
+```
+
+Dates and times are passed as the dictionary holds them, `YYYYMMDD` and `HHMMSS`. Formatting is
+the reader's job, because only the reader knows the locale.
+
+**Why two requests.** The parts of a class are its sections, its local includes and one entry per
+method. Answering both in one call would read the version directory once per part just to draw a
+list of names — eighty reads for eighty rows. The parts list is cheap; the versions are asked for
+one part at a time, which is also how AVE's own two grids work.
+
+The numbers are AVE's, so [AVE](https://github.com/ysichov/AVE) must be installed in the same
+system. Its whole version layer is free of `CL_GUI`, so nothing had to be worked around:
+
+```abap
+DATA(lo_object) = NEW zcl_ave_object_factory( )->get_instance(
+                      object_type = 'CLAS' object_name = lv_name ).
+DATA(lt_parts)  = lo_object->get_parts( ).
+DATA(lo_vrsd)   = NEW zcl_ave_vrsd( type = ls_part-type name = ls_part-object_name ).
+DATA(lo_ver)    = NEW zcl_ave_version( ls_vrsd ).
+```
+
+`type` accepts `CLAS`, `INTF`, `PROG`, `INCL`, `FUGR`, `FUNC`, `DDLS`, `TABL`, `DOMA` and `DTEL`,
+with or without the ADT subtype. The DDIC three are mapped to the VRSD part types AVE expects
+(`TABD`, `DOMD`, `DTED`).
+
+### A transport and a package are refused
+
+Both answer 400 naming the reason. AVE reads them, and reading them is what AVE is for — but a
+request is dozens of objects, and AVE reports progress with an estimate and asks whether to
+continue when it grows. One blocking HTTP call has nowhere to put that, so it is refused rather
+than left to time out.
+
+### ZCX_AVE carries no message
+
+Its constructor passes only `previous` to the superclass, so `get_text( )` on the exception
+itself is the generic class text. The resource walks the `previous` chain and joins what it finds,
+because "AVE cannot list the parts of ZCL_X" with no reason after it is a silent failure wearing
+an error message.
 
 ## Verifying the registration without guessing at screens
 

@@ -24,5 +24,7 @@ CLASS ZCL_SDE_ADT_RES_APP IMPLEMENTATION.
     " wrong.
     router->attach( iv_template      = '/zsde/metrics/{name}'
                     iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
+    router->attach( iv_template      = '/zsde/versions/{name}'
+                    iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
   ENDMETHOD.
 ENDCLASS.
