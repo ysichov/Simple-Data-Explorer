@@ -211,6 +211,11 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
                               task        = CONV string( lo_version->task )
                             ) TO lt_ver.
             ENDLOOP.
+            " AVE sorts the directory ascending so that 99998, its key for the
+            " active version, lands after the numbered ones. A reader wants the
+            " newest first, and so does the client: it compares a version with
+            " the one below it, which is the change that version made.
+            SORT lt_ver BY version DESCENDING.
           ELSE.
             lt_new = source_of( io_vrsd = lo_vrsd i_versno = lv_to ).
             IF lv_from IS NOT INITIAL.
@@ -249,11 +254,16 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
           APPEND VALUE #( op = CONV string( ls_diff-op ) text = ls_diff-text ) TO lt_op.
         ENDLOOP.
 
+        " VERSNO is numeric, so an absent FROM would print as 00000 and read
+        " like a version number somebody could look up.
+        DATA(lv_from_text) = COND string( WHEN lv_from IS INITIAL THEN ``
+                                          ELSE |{ lv_from }| ).
+
         lv_body = |\{"object":"{ to_lower( lv_name ) }",| &&
                   |"type":"{ to_lower( lv_type ) }",| &&
                   |"part":"{ to_lower( lv_part ) }",| &&
                   |"part_type":"{ to_lower( lv_ptype ) }",| &&
-                  |"from":"{ lv_from }","to":"{ lv_to }",| &&
+                  |"from":"{ lv_from_text }","to":"{ lv_to }",| &&
                   |"added":{ lv_added },"deleted":{ lv_deleted },"kept":{ lv_kept },| &&
                   |"ops":{ /ui2/cl_json=>serialize(
                              data        = lt_op
