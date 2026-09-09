@@ -387,6 +387,31 @@ Nothing about the join logic, which never touched a control. Only the way in:
   panel that does not exist yet. `SET_FILTERS` fills the same cache, so nothing about the `WHERE`
   had to be rewritten.
 
+### The pivot
+
+`r1..rN` are the row dimensions, `c1..cN` the columns and `v1..vN` the measures, each an
+`alias~field` of the join; `a1..aN` carry the aggregate of the matching measure. Any of them turns
+the answer into a pivot: `sql` becomes the grouped statement and `rows`, when asked for, the
+spread matrix.
+
+```
+GET /sap/bc/adt/zsde/join/MARA?r1=t0~mtart&v1=t0~ntgew&a1=SUM&rows=100
+```
+
+The matrix is spread in ABAP, not by the database — a dynamically specified SELECT list cannot
+carry the CASE expressions a SQL-side matrix would need — so the statement groups by the
+dimensions and every line of its result is one cell. Up to fifty distinct column value
+combinations become columns.
+
+An aggregate the field's type cannot carry is settled rather than refused: `SUM` over a character
+field comes back as something that field can do. What returns is the answer, not what was asked
+for, and the statement in `sql` says which.
+
+`EXECUTE_PIVOT` needed the same two changes as `EXECUTE_SQL`: the result comes back through
+`ER_RESULT`, the reasons through `EV_ERROR`, and the window is required to hand the matrix over
+rather than to build it. Its row limit is a parameter now instead of an application global, since
+a caller over HTTP has its own and no business setting a global.
+
 ### Filters
 
 The same indexed parameters as the table resource — `f1/s1/o1/l1/h1`, `f2/...` — and the same

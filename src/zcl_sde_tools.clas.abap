@@ -55,13 +55,21 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
       " every render method already checks that its control exists.
       candidates   RETURNING VALUE(rt_cand) TYPE tt_cand,
       set_filters  IMPORTING it_filter TYPE tt_filter,
+      " The cross, for a caller that has no builder panel to drag chips on.
+      set_pivot    IMPORTING it_rows TYPE zcl_sde_pivot=>tt_keys
+                             it_cols TYPE zcl_sde_pivot=>tt_keys
+                             it_vals TYPE zcl_sde_pivot=>tt_vals,
+      run_pivot    IMPORTING i_rows    TYPE i DEFAULT 100
+                   EXPORTING er_result TYPE REF TO data
+                             ev_error  TYPE string,
       run          IMPORTING i_rows    TYPE i DEFAULT 100
                    EXPORTING er_result TYPE REF TO data
                              ev_error  TYPE string,
       toggle_table IMPORTING i_tabname TYPE tabname,
       join_tables  RETURNING VALUE(rt_jtab) TYPE tt_jtab,
       join_fields  RETURNING VALUE(rt_jfld) TYPE tt_jfld,
-      sql          RETURNING VALUE(rv_sql) TYPE string.
+      sql          IMPORTING i_rows        TYPE i DEFAULT 0
+                   RETURNING VALUE(rv_sql) TYPE string.
 
 protected section.
   PRIVATE SECTION.
@@ -136,7 +144,12 @@ protected section.
       update_sql_view,
       refresh_all,
       generate_select RETURNING VALUE(rv_sql) TYPE string,
-      execute_pivot,
+      " ER_RESULT and EV_ERROR are for a caller with no window, exactly as in
+      " EXECUTE_SQL: it takes the spread matrix itself and learns why there is
+      " none. The GUI passes neither.
+      execute_pivot IMPORTING i_rows    TYPE i DEFAULT 0
+                    EXPORTING er_result TYPE REF TO data
+                              ev_error  TYPE string,
       key_type IMPORTING i_key          TYPE string
                          i_agg          TYPE string OPTIONAL
                RETURNING VALUE(ro_type) TYPE REF TO cl_abap_datadescr,
@@ -1365,6 +1378,29 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD set_pivot.
+    IF mo_pivot IS NOT BOUND.
+      mo_pivot = NEW #( ).
+    ENDIF.
+    m_mode = 'P'.
+    mo_pivot->set_layout( it_rows = it_rows it_cols = it_cols it_vals = it_vals ).
+    " A measure without an aggregate, or one the field's type cannot carry,
+    " is settled here rather than in the statement.
+    mo_pivot->normalize_aggs( pivot_src_fields( ) ).
+  ENDMETHOD.
+
+
+  METHOD run_pivot.
+    IF mo_pivot IS NOT BOUND OR mo_pivot->has_layout( ) = abap_false.
+      ev_error = `No pivot layout: give it at least one row or column and one measure.`.
+      RETURN.
+    ENDIF.
+    execute_pivot( EXPORTING i_rows    = i_rows
+                   IMPORTING er_result = er_result
+                             ev_error  = ev_error ).
+  ENDMETHOD.
+
+
   METHOD set_filters.
     " BUILD_WHERE reads this cache first and only falls back to the selection
     " panel when it is empty - which is how filters restored from a layout file
@@ -1412,7 +1448,20 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
 
   METHOD sql.
-    rv_sql = generate_select( ).
+    " Which statement is the current one is decided the same way the SQL pane
+    " decides it: a pivot with a layout has its own, grouped by the dimensions.
+    IF m_mode = 'P' AND mo_pivot IS BOUND AND mo_pivot->has_layout( ) = abap_true.
+      mo_pivot->normalize_aggs( pivot_src_fields( ) ).
+      rv_sql = mo_pivot->build_select( i_from  = build_from( )
+                                       i_where = build_where( )
+                                       i_multi = is_multi( )
+                                       i_rows  = COND #( WHEN i_rows > 0 THEN i_rows
+                                                         WHEN zcl_sde_appl=>gv_rows > 0
+                                                         THEN zcl_sde_appl=>gv_rows
+                                                         ELSE 500 ) ).
+    ELSE.
+      rv_sql = generate_select( ).
+    ENDIF.
   ENDMETHOD.
 
 
@@ -2840,7 +2889,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
           lr_narrow TYPE REF TO data,
           lr_wide   TYPE REF TO data.
 
-    CHECK mo_pivot IS BOUND AND viewer_alive( ) = abap_true.
+    " The window is needed to hand the matrix over, not to build it.
+    CHECK mo_pivot IS BOUND.
     DATA(lt_cols) = mo_pivot->get_sql_columns( ).
     CHECK lt_cols IS NOT INITIAL.
 
@@ -2848,7 +2898,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     LOOP AT lt_cols INTO DATA(ls_col).
       DATA(lo_type) = key_type( i_key = ls_col-key i_agg = ls_col-agg ).
       IF lo_type IS NOT BOUND.
-        MESSAGE |Cannot determine the type of { ls_col-key }| TYPE 'S' DISPLAY LIKE 'E'.
+        ev_error = |Cannot determine the type of { ls_col-key }|.
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
         RETURN.
       ENDIF.
       APPEND VALUE #( name = ls_col-comp type = lo_type ) TO lt_ncomp.
@@ -2869,7 +2920,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     DATA(l_from) = to_upper( build_from( ) ).
     REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN l_from WITH ` `.
     DATA(l_where) = upper_outside_quotes( build_where( ) ).
-    DATA(l_rows)  = COND i( WHEN zcl_sde_appl=>gv_rows > 0 THEN zcl_sde_appl=>gv_rows ELSE 500 ).
+    " Nought keeps the window's behaviour: the application's row count, or 500.
+    " A caller with its own limit passes it and nothing global is touched.
+    DATA(l_rows)  = COND i( WHEN i_rows > 0                 THEN i_rows
+                            WHEN zcl_sde_appl=>gv_rows > 0  THEN zcl_sde_appl=>gv_rows
+                            ELSE 500 ).
 
     TRY.
         DATA(lo_nline) = cl_abap_structdescr=>create( lt_ncomp ).
@@ -2894,7 +2949,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
             UP TO @l_rows ROWS.
         ENDIF.
       CATCH cx_root INTO DATA(lx).
-        MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        ev_error = lx->get_text( ).
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
         RETURN.
     ENDTRY.
 
@@ -3014,7 +3070,8 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
                                                      p_unique     = abap_false ).
         CREATE DATA lr_wide TYPE HANDLE lo_wtab.
       CATCH cx_root INTO lx.
-        MESSAGE lx->get_text( ) TYPE 'S' DISPLAY LIKE 'E'.
+        ev_error = lx->get_text( ).
+        MESSAGE ev_error TYPE 'S' DISPLAY LIKE 'E'.
         RETURN.
     ENDTRY.
     ASSIGN lr_wide->* TO <wide>.
@@ -3076,6 +3133,11 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     IF lt_valid_sort IS NOT INITIAL.
       SORT <wide> BY (lt_valid_sort).
     ENDIF.
+
+    er_result = lr_wide.
+
+    " No window: the caller has the matrix in ER_RESULT.
+    CHECK viewer_alive( ) = abap_true.
 
     mo_viewer->rebind( ir_tab     = lr_wide
                        i_name     = |PIVOT { m_tabname } ({ lines( <wide> ) })|

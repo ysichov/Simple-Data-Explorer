@@ -48,6 +48,16 @@ CLASS zcl_sde_adt_res_join DEFINITION
            END OF ty_field,
            tt_field TYPE STANDARD TABLE OF ty_field WITH EMPTY KEY.
 
+    "! The pivot cross, as indexed parameters: r1..rN are the row dimensions,
+    "! c1..cN the columns and v1..vN the measures, each key an ALIAS~FIELD of
+    "! the join. a1..aN carry the aggregate of the matching measure; left out,
+    "! the pivot settles one the field's type can carry.
+    METHODS read_pivot
+      IMPORTING io_request TYPE REF TO if_adt_rest_request
+      EXPORTING et_rows    TYPE zcl_sde_pivot=>tt_keys
+                et_cols    TYPE zcl_sde_pivot=>tt_keys
+                et_vals    TYPE zcl_sde_pivot=>tt_vals.
+
     "! Reads the indexed selection parameters f1/s1/o1/l1/h1, f2/... - the same
     "! contract the table resource uses - and checks every label against the
     "! fields the join actually has. BUILD_WHERE drops a label it does not know
@@ -162,15 +172,37 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
                       datatype  = ls_fld-datatype ) TO lt_fld.
     ENDLOOP.
 
+    DATA(lt_prows) = VALUE zcl_sde_pivot=>tt_keys( ).
+    DATA(lt_pcols) = VALUE zcl_sde_pivot=>tt_keys( ).
+    DATA(lt_pvals) = VALUE zcl_sde_pivot=>tt_vals( ).
+    read_pivot( EXPORTING io_request = request
+                IMPORTING et_rows    = lt_prows
+                          et_cols    = lt_pcols
+                          et_vals    = lt_pvals ).
+    DATA(lv_pivot) = xsdbool( lt_prows IS NOT INITIAL
+                           OR lt_pcols IS NOT INITIAL
+                           OR lt_pvals IS NOT INITIAL ).
+    IF lv_pivot = abap_true.
+      lo_tools->set_pivot( it_rows = lt_prows it_cols = lt_pcols it_vals = lt_pvals ).
+    ENDIF.
+
     DATA(lv_rows_json) = `null`.
     IF lv_rows > 0.
-      lo_tools->run( EXPORTING i_rows    = lv_rows
-                     IMPORTING er_result = lr_rows
-                               ev_error  = lv_error ).
+      IF lv_pivot = abap_true.
+        " The matrix is spread in ABAP: a dynamically specified SELECT list
+        " cannot carry the CASE expressions a SQL-side one would need.
+        lo_tools->run_pivot( EXPORTING i_rows    = lv_rows
+                             IMPORTING er_result = lr_rows
+                                       ev_error  = lv_error ).
+      ELSE.
+        lo_tools->run( EXPORTING i_rows    = lv_rows
+                       IMPORTING er_result = lr_rows
+                                 ev_error  = lv_error ).
+      ENDIF.
       IF lv_error IS NOT INITIAL.
         " The statement is generated, not typed, so a failure here is ours and
         " not the caller's mistake to guess at.
-        bad_request( |The join statement did not run: { lv_error }| ).
+        bad_request( |The statement did not run: { lv_error }| ).
       ENDIF.
       IF lr_rows IS BOUND.
         ASSIGN lr_rows->* TO <lt_rows>.
@@ -182,7 +214,8 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
 
     DATA(lv_body) =
       |\{"table":"{ to_lower( lv_name ) }",| &&
-      |"sql":{ /ui2/cl_json=>serialize( data = lo_tools->sql( ) ) },| &&
+      |"sql":{ /ui2/cl_json=>serialize( data = lo_tools->sql( lv_rows ) ) },| &&
+      |"pivot":{ COND string( WHEN lv_pivot = abap_true THEN `true` ELSE `false` ) },| &&
       |"rows":{ lv_rows_json },| &&
       |"candidates":{ /ui2/cl_json=>serialize(
                         data        = lt_cand
@@ -197,6 +230,40 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
     response->set_body_data(
       content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
       data            = lv_body ).
+  ENDMETHOD.
+
+
+  METHOD read_pivot.
+    DATA: lv_key TYPE string,
+          lv_agg TYPE string.
+
+    DO c_max_filters TIMES.
+      DATA(lv_i) = |{ sy-index }|.
+
+      CLEAR lv_key.
+      io_request->get_uri_query_parameter( EXPORTING name  = |r{ lv_i }|
+                                           IMPORTING value = lv_key ).
+      IF lv_key IS NOT INITIAL.
+        APPEND to_lower( lv_key ) TO et_rows.
+      ENDIF.
+
+      CLEAR lv_key.
+      io_request->get_uri_query_parameter( EXPORTING name  = |c{ lv_i }|
+                                           IMPORTING value = lv_key ).
+      IF lv_key IS NOT INITIAL.
+        APPEND to_lower( lv_key ) TO et_cols.
+      ENDIF.
+
+      CLEAR: lv_key, lv_agg.
+      io_request->get_uri_query_parameter( EXPORTING name  = |v{ lv_i }|
+                                           IMPORTING value = lv_key ).
+      IF lv_key IS NOT INITIAL.
+        io_request->get_uri_query_parameter( EXPORTING name  = |a{ lv_i }|
+                                             IMPORTING value = lv_agg ).
+        APPEND VALUE #( key = to_lower( lv_key )
+                        agg = to_upper( lv_agg ) ) TO et_vals.
+      ENDIF.
+    ENDDO.
   ENDMETHOD.
 
 
