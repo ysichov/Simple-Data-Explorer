@@ -30,12 +30,24 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
 
            tt_jfld TYPE zif_sde_pivot_types=>tt_jfld. "shared with zcl_sde_pivot, see zif_sde_pivot_types
 
-    METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer
-                                   io_parent TYPE REF TO cl_gui_container OPTIONAL, "docked mode: build inside this container
+    METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer OPTIONAL
+                                   io_parent TYPE REF TO cl_gui_container OPTIONAL  "docked mode: build inside this container
+                                   i_tabname TYPE tabname OPTIONAL,                 "headless mode: the base table, since there is no window to ask
       "called from the toolbars (dynamically, the viewer holds us as REF TO object)
       save_layout_dialog,
       load_layout_dialog,
-      sort_by IMPORTING it_cols TYPE lvc_t_fnam i_desc TYPE abap_bool DEFAULT abap_false.
+      sort_by IMPORTING it_cols TYPE lvc_t_fnam i_desc TYPE abap_bool DEFAULT abap_false,
+
+      "--- headless use ---------------------------------------------------
+      " Constructed without a viewer, the join model and the statement it
+      " generates are all there is, and a caller that draws elsewhere reaches
+      " them through these. Rendering is not skipped by them but by itself:
+      " every render method already checks that its control exists.
+      candidates   RETURNING VALUE(rt_cand) TYPE tt_cand,
+      toggle_table IMPORTING i_tabname TYPE tabname,
+      join_tables  RETURNING VALUE(rt_jtab) TYPE tt_jtab,
+      join_fields  RETURNING VALUE(rt_jfld) TYPE tt_jfld,
+      sql          RETURNING VALUE(rv_sql) TYPE string.
 
 protected section.
   PRIVATE SECTION.
@@ -158,8 +170,20 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
   METHOD constructor.
     super->constructor( ).
     mo_viewer = io_viewer.
-    m_tabname = io_viewer->m_tabname.
+    m_tabname = COND #( WHEN io_viewer IS BOUND THEN io_viewer->m_tabname ELSE i_tabname ).
     m_fld_lang = sy-langu.
+
+    " Headless: no window to build into and none to read filters from. The
+    " candidates and the join model are all a caller that renders elsewhere
+    " needs, and M_READY stays false, so nothing later tries to push a result
+    " into a window that is not there. CACHE_WHERE_SELECTION is skipped with
+    " the rest: the filters of a headless caller arrive with its request, not
+    " from a selection panel.
+    IF io_viewer IS NOT BOUND.
+      find_candidates( ).
+      rebuild_selection( ).
+      RETURN.
+    ENDIF.
 
     DATA lo_parent TYPE REF TO cl_gui_container.
     IF io_parent IS BOUND. "docked below the data area of the viewer window
@@ -1313,6 +1337,31 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
       l_kept = |{ l_kept }{ l_trim }|.
     ENDLOOP.
     m_order = l_kept.
+  ENDMETHOD.
+
+
+  METHOD candidates.
+    rt_cand = mt_cand.
+  ENDMETHOD.
+
+
+  METHOD toggle_table.
+    toggle_candidate( i_tabname ).
+  ENDMETHOD.
+
+
+  METHOD join_tables.
+    rt_jtab = mt_jtabs.
+  ENDMETHOD.
+
+
+  METHOD join_fields.
+    rt_jfld = mt_jflds.
+  ENDMETHOD.
+
+
+  METHOD sql.
+    rv_sql = generate_select( ).
   ENDMETHOD.
 
 
