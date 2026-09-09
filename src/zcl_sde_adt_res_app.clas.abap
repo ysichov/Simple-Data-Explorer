@@ -26,5 +26,7 @@ CLASS ZCL_SDE_ADT_RES_APP IMPLEMENTATION.
                     iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
     router->attach( iv_template      = '/zsde/versions/{name}'
                     iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
+    router->attach( iv_template      = '/zsde/join/{name}'
+                    iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
   ENDMETHOD.
 ENDCLASS.
