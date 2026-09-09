@@ -31,6 +31,14 @@ CLASS zcl_sde_adt_res_versions DEFINITION
            END OF ty_version,
            tt_version TYPE STANDARD TABLE OF ty_version WITH EMPTY KEY.
 
+    " One line of the diff. The op is what AVE's engine returns: '=' kept,
+    " '-' from the old version, '+' from the new one.
+    TYPES: BEGIN OF ty_op,
+             op   TYPE string,
+             text TYPE string,
+           END OF ty_op,
+           tt_op TYPE STANDARD TABLE OF ty_op WITH EMPTY KEY.
+
     METHODS not_found
       IMPORTING i_type TYPE string
                 i_id   TYPE string
@@ -45,6 +53,15 @@ CLASS zcl_sde_adt_res_versions DEFINITION
     CLASS-METHODS reason
       IMPORTING ix_error       TYPE REF TO cx_root
       RETURNING VALUE(rv_text) TYPE string.
+
+    " The source of one recorded version. A number that is not in the directory
+    " is refused rather than diffed against nothing, which would report the
+    " whole part as added and look like a real answer.
+    METHODS source_of
+      IMPORTING io_vrsd          TYPE REF TO zcl_ave_vrsd
+                i_versno         TYPE versno
+      RETURNING VALUE(rt_source) TYPE abaptxt255_tab
+      RAISING   zcx_ave cx_adt_res_bad_request.
 ENDCLASS.
 
 
@@ -59,6 +76,11 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
           lv_ave   TYPE string,
           lt_part  TYPE tt_part,
           lt_ver   TYPE tt_version,
+          lv_from  TYPE versno,
+          lv_to    TYPE versno,
+          lt_op    TYPE tt_op,
+          lt_old   TYPE abaptxt255_tab,
+          lt_new   TYPE abaptxt255_tab,
           lv_body  TYPE string.
 
     request->get_uri_attribute( EXPORTING name      = 'name'
@@ -85,6 +107,16 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
     request->get_uri_query_parameter( EXPORTING name      = 'ptype'
                                                 mandatory = abap_false
                                       IMPORTING value     = lv_ptype ).
+
+    " Both present, the answer is the difference between those two versions of
+    " the part. An empty FROM is the oldest version compared against nothing,
+    " which is how a first version reads: every line added.
+    request->get_uri_query_parameter( EXPORTING name      = 'from'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_from ).
+    request->get_uri_query_parameter( EXPORTING name      = 'to'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_to ).
 
     " ADT names an object type differently from AVE's factory, and the DDIC
     " types carry their VRSD part type already.
@@ -166,28 +198,67 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
       TRY.
           DATA(lo_vrsd) = NEW zcl_ave_vrsd( type = CONV #( to_upper( lv_ptype ) )
                                             name = CONV #( to_upper( lv_part ) ) ).
-          LOOP AT lo_vrsd->vrsd_list INTO DATA(ls_vrsd).
-            DATA(lo_version) = NEW zcl_ave_version( ls_vrsd ).
-            APPEND VALUE #( version     = |{ lo_version->version_number }|
-                            date        = |{ lo_version->date }|
-                            time        = |{ lo_version->time }|
-                            author      = CONV string( lo_version->author )
-                            author_name = CONV string( lo_version->author_name )
-                            request     = CONV string( lo_version->request )
-                            task        = CONV string( lo_version->task )
-                          ) TO lt_ver.
-          ENDLOOP.
+
+          IF lv_to IS INITIAL.
+            LOOP AT lo_vrsd->vrsd_list INTO DATA(ls_vrsd).
+              DATA(lo_version) = NEW zcl_ave_version( ls_vrsd ).
+              APPEND VALUE #( version     = |{ lo_version->version_number }|
+                              date        = |{ lo_version->date }|
+                              time        = |{ lo_version->time }|
+                              author      = CONV string( lo_version->author )
+                              author_name = CONV string( lo_version->author_name )
+                              request     = CONV string( lo_version->request )
+                              task        = CONV string( lo_version->task )
+                            ) TO lt_ver.
+            ENDLOOP.
+          ELSE.
+            lt_new = source_of( io_vrsd = lo_vrsd i_versno = lv_to ).
+            IF lv_from IS NOT INITIAL.
+              lt_old = source_of( io_vrsd = lo_vrsd i_versno = lv_from ).
+            ENDIF.
+          ENDIF.
+
         CATCH zcx_ave INTO DATA(lx_ver).
           bad_request( |AVE cannot read the versions of { lv_part }: { reason( lx_ver ) }| ).
       ENDTRY.
 
-      lv_body = |\{"object":"{ to_lower( lv_name ) }",| &&
-                |"type":"{ to_lower( lv_type ) }",| &&
-                |"part":"{ to_lower( lv_part ) }",| &&
-                |"part_type":"{ to_lower( lv_ptype ) }",| &&
-                |"versions":{ /ui2/cl_json=>serialize(
-                                data        = lt_ver
-                                pretty_name = /ui2/cl_json=>pretty_mode-low_case ) }\}|.
+      IF lv_to IS INITIAL.
+        lv_body = |\{"object":"{ to_lower( lv_name ) }",| &&
+                  |"type":"{ to_lower( lv_type ) }",| &&
+                  |"part":"{ to_lower( lv_part ) }",| &&
+                  |"part_type":"{ to_lower( lv_ptype ) }",| &&
+                  |"versions":{ /ui2/cl_json=>serialize(
+                                  data        = lt_ver
+                                  pretty_name = /ui2/cl_json=>pretty_mode-low_case ) }\}|.
+      ELSE.
+        " AVE's own engine, unchanged: it pairs the declarations of a class
+        " section by signature rather than by position, because SAP regenerates
+        " those includes in an arbitrary order and a plain line diff reports
+        " every moved declaration as a deletion and an insertion far apart.
+        DATA(lt_diff) = zcl_ave_popup_diff=>compute_diff( it_old = lt_old
+                                                          it_new = lt_new ).
+        DATA lv_added   TYPE i.
+        DATA lv_deleted TYPE i.
+        DATA lv_kept    TYPE i.
+        LOOP AT lt_diff INTO DATA(ls_diff).
+          CASE ls_diff-op.
+            WHEN '+'.  lv_added   = lv_added + 1.
+            WHEN '-'.  lv_deleted = lv_deleted + 1.
+            WHEN OTHERS. lv_kept  = lv_kept + 1.
+          ENDCASE.
+          APPEND VALUE #( op = CONV string( ls_diff-op ) text = ls_diff-text ) TO lt_op.
+        ENDLOOP.
+
+        lv_body = |\{"object":"{ to_lower( lv_name ) }",| &&
+                  |"type":"{ to_lower( lv_type ) }",| &&
+                  |"part":"{ to_lower( lv_part ) }",| &&
+                  |"part_type":"{ to_lower( lv_ptype ) }",| &&
+                  |"from":"{ lv_from }","to":"{ lv_to }",| &&
+                  |"added":{ lv_added },"deleted":{ lv_deleted },"kept":{ lv_kept },| &&
+                  |"ops":{ /ui2/cl_json=>serialize(
+                             data        = lt_op
+                             pretty_name = /ui2/cl_json=>pretty_mode-low_case ) }\}|.
+      ENDIF.
     ENDIF.
 
     response->set_body_data(
@@ -206,6 +277,15 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
   METHOD bad_request.
     RAISE EXCEPTION TYPE cx_adt_res_bad_request
       EXPORTING explanation = i_text.
+  ENDMETHOD.
+
+
+  METHOD source_of.
+    LOOP AT io_vrsd->vrsd_list INTO DATA(ls_vrsd) WHERE versno = i_versno.
+      rt_source = NEW zcl_ave_version( ls_vrsd )->get_source( ).
+      RETURN.
+    ENDLOOP.
+    bad_request( |Version { i_versno } is not in the version directory of this part.| ).
   ENDMETHOD.
 
 
