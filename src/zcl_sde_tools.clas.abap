@@ -2276,6 +2276,9 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
 
   METHOD cache_where_selection.
+    " Nothing on the headless path reaches this today, and it is one call away
+    " from doing so.
+    CHECK mo_viewer IS BOUND.
     CHECK mo_viewer->mo_sel IS BOUND.
     "while a layout is applied the panel is still empty: caching it now would
     "delete the very filters that were just read from the file
@@ -2363,6 +2366,12 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
     "selection panel is even created (it is built on demand, SEL_ON)
     lt_sel = mt_where_sel.
     IF lt_sel IS INITIAL.
+      " And with no window there is no panel to fall back to. A caller without
+      " one filters through SET_FILTERS or not at all - and an empty cache is
+      " the ordinary case there, not the exception.
+      IF mo_viewer IS NOT BOUND.
+        RETURN.
+      ENDIF.
       CHECK mo_viewer->mo_sel IS BOUND.
       lt_sel = mo_viewer->mo_sel->mt_sel_tab.
     ENDIF.
