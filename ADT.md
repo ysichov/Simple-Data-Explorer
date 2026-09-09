@@ -287,6 +287,39 @@ DATA(lo_ver)    = NEW zcl_ave_version( ls_vrsd ).
 with or without the ADT subtype. The DDIC three are mapped to the VRSD part types AVE expects
 (`TABD`, `DOMD`, `DTED`).
 
+### The difference between two versions
+
+With `from` and `to` on top of `part` and `ptype`, the answer is the diff of that part between
+those two versions:
+
+```
+GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS&part=...&ptype=METH&from=00001&to=00002
+
+{
+  "object": "zcl_x", "part": "...", "part_type": "meth",
+  "from": "00001", "to": "00002",
+  "added": 2, "deleted": 1, "kept": 32,
+  "ops": [ { "op": "=", "text": "    line one" },
+           { "op": "-", "text": "    lv_old = 1." },
+           { "op": "+", "text": "    lv_new = 2." } ]
+}
+```
+
+An empty `from` compares the oldest version against nothing, which is how a first version reads:
+every line added. A version number that is not in the directory answers 400 rather than being
+diffed against nothing, because "everything was added" is a plausible-looking answer to a wrong
+question.
+
+The engine is `ZCL_AVE_POPUP_DIFF=>COMPUTE_DIFF`, called unchanged. Two things it does that a
+plain line diff does not: it pairs the declarations of a class section by signature rather than by
+position, because SAP regenerates those includes in an arbitrary order, and it does the same for
+the generated Gateway DPC bodies. So a moved method declaration is not reported as a deletion and
+an insertion far apart.
+
+Despite the class name there is no popup in it: the progress indicator lives in the blame builder,
+and the `i_title` and `i_confirm_key` parameters of `compute_diff` are never read. It is safe in an
+HTTP request.
+
 ### A transport and a package are refused
 
 Both answer 400 naming the reason. AVE reads them, and reading them is what AVE is for — but a
