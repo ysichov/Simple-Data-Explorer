@@ -1,7 +1,8 @@
 # SDE as an ADT REST resource
 
-Status: **reads real data**. A custom resource is registered under `/sap/bc/adt/zsde/` and
-returns table rows plus a field catalogue as JSON.
+Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
+serves two resources as JSON: table rows with their field catalogue, and the code metrics of an
+object.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -42,18 +43,26 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 | Object | Type | Role |
 |---|---|---|
 | `ZCL_SDE_ADT_RES_TABLE` | CLAS | Resource. Inherits `CL_ADT_REST_RESOURCE`, redefines `get`. |
+| `ZCL_SDE_ADT_RES_METRICS` | CLAS | Resource. Code metrics of an object, computed by ACE. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
 The classes live in [`src/`](src) and travel through abapGit. The ENHO was created in SAP and
 is picked up by abapGit as well (all three objects are in package `Z_SDE`).
 
-Routing is one line:
+Routing is one line per service:
 
 ```abap
 router->attach( iv_template      = '/zsde/table/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_TABLE' ).
+router->attach( iv_template      = '/zsde/metrics/{name}'
+                iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
 ```
+
+Every service of the VERTEX front end registers here rather than under a prefix of its own. A
+second prefix means a second BAdI implementation and a second `STATIC_URI_PATH` filter — the
+part of this page that costs an hour to get wrong. The prefix is where the ADT node is claimed,
+not the identity of the service.
 
 Templates are relative to `get_static_uri_path( )`, so `/zsde/table/{name}` serves
 `/sap/bc/adt/zsde/table/{name}`. Read the path variable with
@@ -151,6 +160,74 @@ resource check each one and answer:
 | Unknown option | **400**, listing the allowed ones |
 | Field is `STRG` or `RSTR` | **400** — a LOB cannot appear in a WHERE clause |
 | `BT` or `NB` without `h{i}` | **400**, naming the missing parameter |
+
+## Code metrics
+
+```
+GET /sap/bc/adt/zsde/metrics/ZCL_SDE_SQL?type=CLAS
+Content-Type: application/json
+
+{
+  "object": "zcl_sde_sql",
+  "type": "clas",
+  "program": "zcl_sde_sql===================cp",
+  "totals": { "units": 4, "cyclomatic": 12, "avg_cyclomatic": 3.00, "loc": 62,
+              "lloc": 38, "cloc": 9, "volume": 1841.55, "effort": 48310.22, "bugs": 0.613 },
+  "units": [
+    { "include": "zcl_sde_sql===================cm001", "unit_type": "method",
+      "unit_name": "read_any_table", "cyclomatic": 5, "mi": 61.24, "loc": 28, "lloc": 17,
+      "cloc": 4, "volume": 902.31, "difficulty": 18.40, "effort": 16602.50, "bugs": 0.301,
+      "n1": 94, "n2": 71, "big_n1": 21, "big_n2": 39, "vocabulary": 60, "prog_length": 165 }
+  ]
+}
+```
+
+The numbers are ACE's — McCabe cyclomatic complexity, the Halstead set and the maintainability
+index — so [ACE](https://github.com/ysichov/ACE) must be installed in the same system. Without
+it the resource does not activate.
+
+`type` accepts `CLAS`, `INTF`, `PROG` and `INCL`, with or without the ADT subtype: the caller may
+send `CLAS/OC` as it comes from the object tree, and only the part in front of the slash is read.
+Anything else answers 400 naming what is supported. A name that does not exist answers 404.
+
+### Reaching ACE without SAP GUI
+
+`ZCL_ACE_METRICS=>CALCULATE` takes a parse result, not an object name, and in ACE that result
+lives inside a window object built on `CL_GUI` controls. None of that can run in an HTTP request.
+The way in is `ZCL_ACE_PARSER=>PARSE`, which fills the parse structure through a CHANGING
+parameter and touches no control at all — including `TT_CALLS_LINE`, the table of unit boundaries
+the metrics read to find methods.
+
+```abap
+DATA ls_source TYPE zif_ace_parse_data=>ts_parse_data.
+zcl_ace_parser=>parse( EXPORTING i_program = lv_program i_include = lv_program
+                       CHANGING  cs_source = ls_source ).
+DATA(ls_result) = zcl_ace_metrics=>calculate( is_parse_data = ls_source
+                                              i_program     = lv_program ).
+```
+
+Two things decide whether the answer is complete.
+
+**A class pool holds no code.** The method bodies are in its `CM` includes, so every include of
+the pool is parsed as well — passing the *pool* as `i_program` and the *include* as `i_include`,
+because `CALCULATE` aggregates `tt_progs WHERE program = i_program`. Passing the include as both,
+which is what every caller inside ACE does, would leave each method in an object of its own.
+
+**`D010INC` also returns the system includes.** `<SYSINI>` and its kin come back alongside the
+real ones, and their units — `SYSTEM-EXIT`, `%_CTL_END` — then appear as code nobody wrote and
+are counted into the totals. They are skipped by the angle bracket, which cannot occur in a
+repository object name.
+
+### Deliberate gaps here too
+
+- **No package mode.** One object per request. ACE can walk a package; parsing one in an HTTP
+  request would need a progress channel this resource does not have.
+- **Test includes are included.** `CCAU` is parsed like any other include, so a class with unit
+  tests reports them among its methods. The include of every unit is in the payload, so a client
+  can group or drop them; nothing is filtered away silently here.
+- **No token detail.** `ZCL_ACE_METRICS` also returns the classified token list behind the
+  Halstead counts. It is debugging material and larger than everything else together, so it is
+  left out of the payload.
 
 ## Verifying the registration without guessing at screens
 

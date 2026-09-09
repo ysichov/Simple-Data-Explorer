@@ -8,9 +8,9 @@ CLASS zcl_sde_adt_res_metrics DEFINITION
     METHODS get REDEFINITION.
 
   PRIVATE SECTION.
-    "! One code unit - a method, FORM, module or function. The token detail
-    "! ZCL_ACE_METRICS also returns is left out: it is debugging material and
-    "! larger than everything else together.
+    " One code unit - a method, FORM, module or function. The token detail
+    " ZCL_ACE_METRICS also returns is left out: it is debugging material and
+    " larger than everything else together.
     TYPES: BEGIN OF ty_unit,
              include     TYPE string,
              unit_type   TYPE string,
@@ -135,8 +135,16 @@ CLASS zcl_sde_adt_res_metrics IMPLEMENTATION.
       IF ls_include-include = lv_program.
         CONTINUE.
       ENDIF.
+      " D010INC also lists the system includes every program gets - <SYSINI>
+      " and its kin. Their units (SYSTEM-EXIT, %_CTL_END) belong to SAP's
+      " runtime, not to the object being measured, and left in they show up as
+      " rows nobody wrote and are counted into the totals. The angle bracket
+      " is what marks them: it cannot occur in a repository object name.
+      IF ls_include-include CS '<'.
+        CONTINUE.
+      ENDIF.
       zcl_ace_parser=>parse( EXPORTING i_program = lv_program
-                                       i_include = CONV #( ls_include-include )
+                                       i_include = ls_include-include
                              CHANGING  cs_source = ls_source ).
     ENDLOOP.
 
