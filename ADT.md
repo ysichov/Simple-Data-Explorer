@@ -382,7 +382,21 @@ Nothing about the join logic, which never touched a control. Only the way in:
   It now returns the result through `ER_RESULT`, reports why there is none through `EV_ERROR`, and
   only rebinds when there is a window to rebind into.
 - `CACHE_WHERE_SELECTION` is skipped headless: the filters of such a caller arrive with its
-  request, not from a selection panel. So the generated `WHERE` is empty for now.
+  request. `BUILD_WHERE` already reads them from a cache and only falls back to the selection
+  panel when that cache is empty — which is how filters restored from a layout file survive a
+  panel that does not exist yet. `SET_FILTERS` fills the same cache, so nothing about the `WHERE`
+  had to be rewritten.
+
+### Filters
+
+The same indexed parameters as the table resource — `f1/s1/o1/l1/h1`, `f2/...` — and the same
+select-option semantics. What differs is the field: it is named the way the panel names it, and
+the way the statement names the column it produces. `MATNR` for the base table, `T1_MATNR` for a
+joined one.
+
+A label the join has no field for answers 400. `BUILD_WHERE` drops such a label without a word,
+which would return rows filtered by less than the caller asked for and look like a complete
+answer.
 
 ## Verifying the registration without guessing at screens
 

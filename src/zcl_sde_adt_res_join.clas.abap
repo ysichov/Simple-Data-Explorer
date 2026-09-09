@@ -11,6 +11,12 @@ CLASS zcl_sde_adt_res_join DEFINITION
     " A join of more tables than this is not a join anybody is reading.
     CONSTANTS c_max_tables TYPE i VALUE 10.
 
+    " As many selection lines as the table resource reads, for the same reason:
+    " a limit that is never met in practice still has to exist.
+    CONSTANTS c_max_filters TYPE i VALUE 20.
+
+    CONSTANTS c_options TYPE string VALUE `EQ NE GT GE LT LE CP NP BT NB`.
+
     " A table the dictionary offers around the ones already in the join.
     TYPES: BEGIN OF ty_candidate,
              tabname   TYPE string,
@@ -41,6 +47,16 @@ CLASS zcl_sde_adt_res_join DEFINITION
              datatype  TYPE string,
            END OF ty_field,
            tt_field TYPE STANDARD TABLE OF ty_field WITH EMPTY KEY.
+
+    "! Reads the indexed selection parameters f1/s1/o1/l1/h1, f2/... - the same
+    "! contract the table resource uses - and checks every label against the
+    "! fields the join actually has. BUILD_WHERE drops a label it does not know
+    "! without a word, which would answer with a filter nobody applied.
+    METHODS read_filters
+      IMPORTING io_request       TYPE REF TO if_adt_rest_request
+                it_field         TYPE zcl_sde_tools=>tt_jfld
+      RETURNING VALUE(rt_filter) TYPE zcl_sde_tools=>tt_filter
+      RAISING   cx_adt_rest.
 
     METHODS not_found
       IMPORTING i_type TYPE string
@@ -130,6 +146,11 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
     ENDLOOP.
 
     DATA(lt_jfld) = lo_tools->join_fields( ).
+
+    " Before the statement is generated: the WHERE is part of it.
+    lo_tools->set_filters( read_filters( io_request = request
+                                         it_field   = lt_jfld ) ).
+
     LOOP AT lt_jfld INTO DATA(ls_fld).
       APPEND VALUE #( sel       = ls_fld-sel
                       pos       = ls_fld-pos
@@ -176,6 +197,77 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
     response->set_body_data(
       content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
       data            = lv_body ).
+  ENDMETHOD.
+
+
+  METHOD read_filters.
+    DATA: lv_label  TYPE lvc_fname,
+          lv_sign   TYPE ddsign,
+          lv_option TYPE ddoption,
+          lv_low    TYPE string,
+          lv_high   TYPE string,
+          lv_alias  TYPE char5,
+          lv_field  TYPE fieldname.
+
+    DO c_max_filters TIMES.
+      DATA(lv_i) = |{ sy-index }|.
+      CLEAR: lv_label, lv_sign, lv_option, lv_low, lv_high.
+
+      io_request->get_uri_query_parameter( EXPORTING name  = |f{ lv_i }|
+                                           IMPORTING value = lv_label ).
+      IF lv_label IS INITIAL.
+        EXIT.
+      ENDIF.
+      TRANSLATE lv_label TO UPPER CASE.
+
+      io_request->get_uri_query_parameter( EXPORTING name    = |s{ lv_i }|
+                                                     default = 'I'
+                                           IMPORTING value   = lv_sign ).
+      io_request->get_uri_query_parameter( EXPORTING name    = |o{ lv_i }|
+                                                     default = 'EQ'
+                                           IMPORTING value   = lv_option ).
+      io_request->get_uri_query_parameter( EXPORTING name  = |l{ lv_i }|
+                                           IMPORTING value = lv_low ).
+      io_request->get_uri_query_parameter( EXPORTING name  = |h{ lv_i }|
+                                           IMPORTING value = lv_high ).
+
+      " A label is the panel's: the plain field name for the base table,
+      " T1_FIELD for a joined one.
+      DATA(lv_text) = condense( CONV string( lv_label ) ).
+      lv_alias = 'T0'.
+      lv_field = lv_text.
+      FIND REGEX '^T\d+_' IN lv_text MATCH LENGTH DATA(lv_len).
+      IF sy-subrc = 0.
+        lv_alias = substring( val = lv_text len = lv_len - 1 ). "without the '_'
+        lv_field = substring( val = lv_text off = lv_len ).
+      ENDIF.
+
+      IF NOT line_exists( it_field[ alias = lv_alias fieldname = lv_field ] ).
+        bad_request( |{ lv_label } is not a field of this join. Filter on the| &&
+                     | names the statement gives its columns - MATNR for the| &&
+                     | base table, T1_MATNR for a joined one.| ).
+      ENDIF.
+      IF lv_sign <> 'I' AND lv_sign <> 'E'.
+        bad_request( |Sign { lv_sign } for { lv_label } must be I or E.| ).
+      ENDIF.
+      IF NOT contains( val = c_options sub = CONV string( lv_option ) ).
+        bad_request( |Option { lv_option } for { lv_label } is not one of { c_options }.| ).
+      ENDIF.
+      IF ( lv_option = 'BT' OR lv_option = 'NB' ) AND lv_high IS INITIAL.
+        bad_request( |Option { lv_option } for { lv_label } needs an upper bound in h{ lv_i }.| ).
+      ENDIF.
+
+      " Lines for one field belong to one panel row, which is what makes them
+      " a select-option rather than a chain of conditions.
+      READ TABLE rt_filter ASSIGNING FIELD-SYMBOL(<filter>) WITH KEY label = lv_label.
+      IF sy-subrc <> 0.
+        APPEND VALUE #( label = lv_label ) TO rt_filter ASSIGNING <filter>.
+      ENDIF.
+      APPEND VALUE #( sign   = lv_sign
+                      option = lv_option
+                      low    = lv_low
+                      high   = lv_high ) TO <filter>-range.
+    ENDDO.
   ENDMETHOD.
 
 

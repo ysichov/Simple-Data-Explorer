@@ -28,7 +28,17 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
            END OF t_jtab,
            tt_jtab TYPE STANDARD TABLE OF t_jtab WITH DEFAULT KEY,
 
-           tt_jfld TYPE zif_sde_pivot_types=>tt_jfld. "shared with zcl_sde_pivot, see zif_sde_pivot_types
+           tt_jfld TYPE zif_sde_pivot_types=>tt_jfld, "shared with zcl_sde_pivot, see zif_sde_pivot_types
+
+           " One line of the selection panel, for a caller that has no panel.
+           " The label is the one the panel uses: the plain field name for the
+           " base table, T1_FIELD for a joined one - which is also the name the
+           " generated statement gives that column.
+           BEGIN OF t_filter,
+             label TYPE lvc_fname,
+             range TYPE aqadh_t_ranges,
+           END OF t_filter,
+           tt_filter TYPE STANDARD TABLE OF t_filter WITH DEFAULT KEY.
 
     METHODS: constructor IMPORTING io_viewer TYPE REF TO zcl_sde_table_viewer OPTIONAL
                                    io_parent TYPE REF TO cl_gui_container OPTIONAL  "docked mode: build inside this container
@@ -44,6 +54,7 @@ CLASS zcl_sde_tools DEFINITION PUBLIC INHERITING FROM zcl_sde_popup CREATE PUBLI
       " them through these. Rendering is not skipped by them but by itself:
       " every render method already checks that its control exists.
       candidates   RETURNING VALUE(rt_cand) TYPE tt_cand,
+      set_filters  IMPORTING it_filter TYPE tt_filter,
       run          IMPORTING i_rows    TYPE i DEFAULT 100
                    EXPORTING er_result TYPE REF TO data
                              ev_error  TYPE string,
@@ -1351,6 +1362,19 @@ CLASS ZCL_SDE_TOOLS IMPLEMENTATION.
 
   METHOD candidates.
     rt_cand = mt_cand.
+  ENDMETHOD.
+
+
+  METHOD set_filters.
+    " BUILD_WHERE reads this cache first and only falls back to the selection
+    " panel when it is empty - which is how filters restored from a layout file
+    " survive a panel that has not been built yet. A caller without a panel
+    " fills it the same way.
+    CLEAR mt_where_sel.
+    LOOP AT it_filter INTO DATA(ls_filter).
+      APPEND VALUE #( field_label = ls_filter-label
+                      range       = ls_filter-range ) TO mt_where_sel.
+    ENDLOOP.
   ENDMETHOD.
 
 
