@@ -131,7 +131,7 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
           LOOP AT lt_parts INTO DATA(ls_part).
             APPEND VALUE #( class     = ls_part-class
                             unit      = ls_part-unit
-                            name      = condense( CONV string( ls_part-object_name ) )
+                            name      = CONV string( ls_part-object_name )
                             part_type = ls_part-type ) TO lt_part.
           ENDLOOP.
         CATCH zcx_ave INTO DATA(lx_parts).
@@ -148,6 +148,21 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
         bad_request( |Reading the versions of part { lv_part } needs its type in ptype.| ).
       ENDIF.
 
+      " A key that is not one of this object's parts reads as an object with no
+      " history, which is indistinguishable from a part nobody ever changed.
+      " The parts list is cheap by construction, so it is worth asking.
+      TRY.
+          DATA(lt_known) = lo_object->get_parts( ).
+        CATCH zcx_ave INTO DATA(lx_known).
+          bad_request( |AVE cannot list the parts of { lv_name }: { reason( lx_known ) }| ).
+      ENDTRY.
+      IF NOT line_exists( lt_known[ object_name = to_upper( lv_part )
+                                    type        = to_upper( lv_ptype ) ] ).
+        bad_request( |{ lv_part } of type { lv_ptype } is not a part of { lv_name }.| &&
+                     | Ask for the parts list first; a method key carries the class name| &&
+                     | padded to thirty characters and every blank of it matters.| ).
+      ENDIF.
+
       TRY.
           DATA(lo_vrsd) = NEW zcl_ave_vrsd( type = CONV #( to_upper( lv_ptype ) )
                                             name = CONV #( to_upper( lv_part ) ) ).
@@ -156,10 +171,10 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
             APPEND VALUE #( version     = |{ lo_version->version_number }|
                             date        = |{ lo_version->date }|
                             time        = |{ lo_version->time }|
-                            author      = condense( CONV string( lo_version->author ) )
-                            author_name = condense( CONV string( lo_version->author_name ) )
-                            request     = condense( CONV string( lo_version->request ) )
-                            task        = condense( CONV string( lo_version->task ) )
+                            author      = CONV string( lo_version->author )
+                            author_name = CONV string( lo_version->author_name )
+                            request     = CONV string( lo_version->request )
+                            task        = CONV string( lo_version->task )
                           ) TO lt_ver.
           ENDLOOP.
         CATCH zcx_ave INTO DATA(lx_ver).
