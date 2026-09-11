@@ -48,6 +48,13 @@ CLASS zcl_sde_adt_res_join DEFINITION
              key       TYPE abap_bool,
              ddtext    TYPE string,
              datatype  TYPE string,
+             " What the pivot will let this field be aggregated under, and what
+             " it picks when nothing is said. ZCL_SDE_PIVOT decides both, from
+             " the internal type the page never sees, so it says rather than
+             " the page guessing and offering a SUM the pivot turns into a
+             " COUNT behind its back.
+             aggs      TYPE zcl_sde_pivot=>tt_keys,
+             agg       TYPE string,
            END OF ty_field,
            tt_field TYPE STANDARD TABLE OF ty_field WITH EMPTY KEY.
 
@@ -190,6 +197,7 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
     " list is not the absence of one, hence the flag.
     DATA lv_pick TYPE abap_bool.
     DATA lv_field TYPE string.
+    DATA lv_taken TYPE i.
     request->get_uri_query_parameter( EXPORTING name      = 'pick'
                                                 mandatory = abap_false
                                       IMPORTING value     = lv_pick ).
@@ -203,8 +211,15 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
           EXIT.
         ENDIF.
         lo_tools->select_fields( |tg_{ to_upper( lv_field ) }| ).
+        lv_taken = lv_taken + 1.
       ENDDO.
     ENDIF.
+
+    " Nothing chosen is not everything chosen. The builder writes a star when
+    " its list is empty, and a star means "all the fields" - which is the one
+    " thing a caller who cleared the list did not ask for. A statement starts
+    " at one field; until then there is none, and none is what comes back.
+    DATA(lv_empty) = xsdbool( lv_pick = abap_true AND lv_taken = 0 ).
 
     DATA(lt_jfld) = lo_tools->join_fields( ).
 
@@ -213,6 +228,7 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
                                          it_field   = lt_jfld ) ).
 
     LOOP AT lt_jfld INTO DATA(ls_fld).
+      DATA(lv_fkey) = |{ condense( CONV string( ls_fld-alias ) ) }~{ ls_fld-fieldname }|.
       APPEND VALUE #( sel       = ls_fld-sel
                       pos       = ls_fld-pos
                       alias     = ls_fld-alias
@@ -220,7 +236,12 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
                       fieldname = ls_fld-fieldname
                       key       = ls_fld-keyflag
                       ddtext    = ls_fld-ddtext
-                      datatype  = ls_fld-datatype ) TO lt_fld.
+                      datatype  = ls_fld-datatype
+                      aggs      = zcl_sde_pivot=>allowed_aggs( i_key     = lv_fkey
+                                                               it_fields = lt_jfld )
+                      agg       = zcl_sde_pivot=>default_agg( i_key     = lv_fkey
+                                                              it_fields = lt_jfld )
+                    ) TO lt_fld.
     ENDLOOP.
 
     DATA(lt_prows) = VALUE zcl_sde_pivot=>tt_keys( ).
@@ -238,7 +259,7 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
     ENDIF.
 
     DATA(lv_rows_json) = `null`.
-    IF lv_rows > 0.
+    IF lv_rows > 0 AND lv_empty = abap_false.
       IF lv_pivot = abap_true.
         " The matrix is spread in ABAP: a dynamically specified SELECT list
         " cannot carry the CASE expressions a SQL-side one would need.
@@ -265,7 +286,9 @@ CLASS zcl_sde_adt_res_join IMPLEMENTATION.
 
     DATA(lv_body) =
       |\{"table":"{ to_lower( lv_name ) }",| &&
-      |"sql":{ /ui2/cl_json=>serialize( data = lo_tools->sql( lv_rows ) ) },| &&
+      |"sql":{ /ui2/cl_json=>serialize(
+                 data = COND string( WHEN lv_empty = abap_true
+                                     THEN `` ELSE lo_tools->sql( lv_rows ) ) ) },| &&
       |"pivot":{ COND string( WHEN lv_pivot = abap_true THEN `true` ELSE `false` ) },| &&
       |"rows":{ lv_rows_json },| &&
       |"candidates":{ /ui2/cl_json=>serialize(

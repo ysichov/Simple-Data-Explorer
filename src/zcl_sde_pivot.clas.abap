@@ -17,6 +17,22 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
            END OF t_sqlcol,
            tt_sqlcols TYPE STANDARD TABLE OF t_sqlcol WITH DEFAULT KEY.
 
+    "! Which aggregates a field can be taken under, and which one it gets when
+    "! nothing is said. They depend on the field and on nothing else, so they
+    "! are class methods - and public, because a second front end has to offer
+    "! the same list. A page that offered SUM on a CHAR field would be offering
+    "! something the pivot then silently settles into COUNT.
+    CLASS-METHODS:
+      is_numeric_field IMPORTING i_key        TYPE string
+                                 it_fields    TYPE zif_sde_pivot_types=>tt_jfld
+                       RETURNING VALUE(rv_ok) TYPE abap_bool,
+      allowed_aggs IMPORTING i_key          TYPE string
+                             it_fields      TYPE zif_sde_pivot_types=>tt_jfld
+                   RETURNING VALUE(rt_aggs) TYPE tt_keys,
+      default_agg IMPORTING i_key         TYPE string
+                            it_fields     TYPE zif_sde_pivot_types=>tt_jfld
+                  RETURNING VALUE(rv_agg) TYPE string.
+
     METHODS:
       has_layout RETURNING VALUE(rv_has) TYPE abap_bool,
       has_columns RETURNING VALUE(rv_has) TYPE abap_bool,
@@ -122,16 +138,7 @@ CLASS zcl_sde_pivot DEFINITION PUBLIC CREATE PUBLIC.
               RETURNING VALUE(rv_sql) TYPE string,
       comp_name IMPORTING i_key          TYPE string
                           i_prefix       TYPE string OPTIONAL
-                RETURNING VALUE(rv_name) TYPE string,
-      is_numeric_field IMPORTING i_key        TYPE string
-                                 it_fields    TYPE zif_sde_pivot_types=>tt_jfld
-                       RETURNING VALUE(rv_ok) TYPE abap_bool,
-      allowed_aggs IMPORTING i_key         TYPE string
-                              it_fields    TYPE zif_sde_pivot_types=>tt_jfld
-                    RETURNING VALUE(rt_aggs) TYPE tt_keys,
-      default_agg IMPORTING i_key         TYPE string
-                              it_fields    TYPE zif_sde_pivot_types=>tt_jfld
-                    RETURNING VALUE(rv_agg) TYPE string.
+                RETURNING VALUE(rv_name) TYPE string.
 ENDCLASS.
 
 
