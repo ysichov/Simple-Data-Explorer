@@ -6,8 +6,16 @@ CLASS zcl_sde_adt_res_review DEFINITION
 
   PUBLIC SECTION.
     METHODS get REDEFINITION.
+    METHODS post REDEFINITION.
 
   PRIVATE SECTION.
+    " TEMPORARY, FOR TESTING ONLY - REMOVE.
+    " AVE refuses to let a developer approve or decline their own block, and so
+    " should this. It is off while the write path is being tried out on a
+    " request whose every block belongs to the person testing it, because with
+    " the rule on there would be nothing to press.
+    CONSTANTS c_allow_self_review TYPE abap_bool VALUE abap_true.
+
     " One object of the request, with what the review has made of it. The counts
     " are of blocks, not lines: a reviewer approves a block.
     TYPES: BEGIN OF ty_object,
@@ -89,6 +97,17 @@ CLASS zcl_sde_adt_res_review DEFINITION
     METHODS locate_blocks
       IMPORTING it_diff  TYPE zif_ave_popup_types=>ty_t_diff
       CHANGING  ct_block TYPE tt_block.
+
+    " What the page asks for: one reviewer action on one block.
+    " SAVED_AT is the stamp the page last read. A review is written by several
+    " people at once, and a save writes the whole payload, so a write built on
+    " a state that has since moved would take somebody's approvals with it.
+    TYPES: BEGIN OF ty_command,
+             hunk_key TYPE string,
+             action   TYPE string,
+             note     TYPE string,
+             saved_at TYPE string,
+           END OF ty_command.
 
     METHODS bad_request
       IMPORTING i_text TYPE string
@@ -252,6 +271,176 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
   ENDMETHOD.
 
 
+  METHOD post.
+    " The first thing in VERTEX that changes state on the server. It changes it
+    " the way AVE changes it: load the payload, hand it to AVE's own state, let
+    " AVE apply the action and build the next payload, save. Nothing here knows
+    " what approving means.
+    DATA lv_trkorr TYPE trkorr.
+    DATA lv_remote TYPE verssysnam.
+    DATA lv_part   TYPE versobjnam.
+    DATA lv_ptype  TYPE versobjtyp.
+
+    request->get_uri_attribute( EXPORTING name      = 'name'
+                                          mandatory = abap_true
+                                IMPORTING value     = lv_trkorr ).
+    TRANSLATE lv_trkorr TO UPPER CASE.
+    request->get_uri_query_parameter( EXPORTING name      = 'remote'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_remote ).
+    " The part is not needed to write - the block key names it - but the answer
+    " is that part as it now stands, so that the page renders one shape whether
+    " it asked or wrote.
+    request->get_uri_query_parameter( EXPORTING name      = 'part'
+                                                mandatory = abap_true
+                                      IMPORTING value     = lv_part ).
+    request->get_uri_query_parameter( EXPORTING name      = 'ptype'
+                                                mandatory = abap_true
+                                      IMPORTING value     = lv_ptype ).
+    TRANSLATE lv_remote TO UPPER CASE.
+    TRANSLATE lv_part TO UPPER CASE.
+    TRANSLATE lv_ptype TO UPPER CASE.
+
+    DATA lv_body TYPE string.
+    request->get_body_data(
+      EXPORTING content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
+      IMPORTING data            = lv_body ).
+
+    DATA ls_cmd TYPE ty_command.
+    /ui2/cl_json=>deserialize( EXPORTING json        = lv_body
+                                         pretty_name = /ui2/cl_json=>pretty_mode-low_case
+                               CHANGING  data        = ls_cmd ).
+
+    IF ls_cmd-hunk_key IS INITIAL.
+      bad_request( |A reviewer action has to name the block it is about.| ).
+    ENDIF.
+    TRANSLATE ls_cmd-action TO UPPER CASE.
+    IF ls_cmd-action <> `A` AND ls_cmd-action <> `D`
+       AND ls_cmd-action <> `C` AND ls_cmd-action <> `U`.
+      bad_request( |"{ ls_cmd-action }" is not a reviewer action. A approves,|
+                && | D declines, C comments, U takes a verdict back.| ).
+    ENDIF.
+    IF ( ls_cmd-action = `D` OR ls_cmd-action = `C` ) AND ls_cmd-note IS INITIAL.
+      bad_request( |A decline and a comment are the words that go with them.| ).
+    ENDIF.
+
+    IF zcl_ave_acr_repository=>has_review_table( ) = abap_false.
+      bad_request( |This system has no ZAVE_REVIEW table, so a review has|
+                && | nowhere to be written. AVE's documentation says how to create it.| ).
+    ENDIF.
+
+    DATA ls_payload TYPE zif_ave_acr_types=>ty_saved_payload.
+    IF zcl_ave_acr_repository=>load_review_payload(
+         EXPORTING iv_trkorr  = lv_trkorr
+                   iv_remote  = lv_remote
+         CHANGING  cs_payload = ls_payload ) = abap_false.
+      bad_request( |No review is saved for { lv_trkorr }. AVE prepares one;|
+                && | this writes into it.| ).
+    ENDIF.
+
+    " A review is written by more than one person, and a save writes the whole
+    " payload. Writing onto a state that moved since the page read it would
+    " carry the other person's approvals away, so the page sends back the stamp
+    " it read and a changed one is refused. Loudly: there is no merge here, and
+    " pretending there is would be how a review quietly loses work.
+    IF ls_cmd-saved_at IS NOT INITIAL
+       AND ls_cmd-saved_at <> |{ ls_payload-last_saved_at }|.
+      bad_request( |{ ls_payload-last_saved_by } saved this review while the page|
+                && | was open. Read it again, then write.| ).
+    ENDIF.
+
+    DATA lt_obj_stats  TYPE zif_ave_acr_types=>ty_t_obj_stats.
+    DATA lt_hunk_info  TYPE zif_ave_acr_types=>ty_t_hunk_info.
+    DATA lt_diff_cache TYPE zif_ave_acr_types=>ty_t_diff_cache.
+    DATA lt_diff_data  TYPE zif_ave_acr_types=>ty_t_diff_data.
+    DATA lt_approved   TYPE zif_ave_acr_types=>ty_approved.
+    DATA lt_declined   TYPE zif_ave_acr_types=>ty_approved.
+    DATA lt_notes      TYPE zif_ave_acr_types=>ty_t_decline_notes.
+    DATA lt_threads    TYPE zif_ave_acr_types=>ty_t_hunk_threads.
+    DATA lt_actions    TYPE zif_ave_acr_types=>ty_t_hunk_actions.
+    DATA lt_timings    TYPE zif_ave_acr_types=>ty_t_part_timings.
+
+    zcl_ave_acr_state=>apply_saved_payload(
+      EXPORTING
+        is_payload          = ls_payload
+        " AVE drops generated Gateway classes here when its own setting says to.
+        " That setting is AVE's, and this is not the place to act on it: a write
+        " from VERTEX must add one verdict and take nothing away.
+        iv_ignore_generated = abap_false
+      CHANGING
+        ct_obj_stats        = lt_obj_stats
+        ct_hunk_info        = lt_hunk_info
+        ct_diff_cache       = lt_diff_cache
+        ct_diff_data        = lt_diff_data
+        ct_approved         = lt_approved
+        ct_declined         = lt_declined
+        ct_decline_notes    = lt_notes
+        ct_hunk_threads     = lt_threads
+        ct_hunk_actions     = lt_actions
+        ct_timings          = lt_timings ).
+
+    READ TABLE lt_hunk_info INTO DATA(ls_hunk)
+      WITH TABLE KEY hunk_key = ls_cmd-hunk_key.
+    IF sy-subrc <> 0.
+      bad_request( |{ ls_cmd-hunk_key } is not a block of this review.| ).
+    ENDIF.
+
+    IF c_allow_self_review = abap_false
+       AND zcl_ave_acr_state=>is_own_hunk( iv_hunk_key  = ls_cmd-hunk_key
+                                           it_hunk_info = lt_hunk_info ) = abap_true.
+      bad_request( |A block is reviewed by somebody other than whoever wrote it.| ).
+    ENDIF.
+
+    zcl_ave_acr_state=>apply_reviewer_action(
+      EXPORTING
+        iv_hunk_key      = ls_cmd-hunk_key
+        iv_action        = CONV #( ls_cmd-action )
+        is_hunk          = ls_hunk
+        iv_note          = ls_cmd-note
+      CHANGING
+        ct_approved      = lt_approved
+        ct_declined      = lt_declined
+        ct_decline_notes = lt_notes
+        ct_hunk_actions  = lt_actions
+        ct_hunk_threads  = lt_threads ).
+
+    DATA(ls_next) = zcl_ave_acr_state=>build_save_payload(
+      is_existing_payload = ls_payload
+      iv_trkorr           = lv_trkorr
+      it_obj_stats        = lt_obj_stats
+      it_hunk_info        = lt_hunk_info
+      it_diff_cache       = lt_diff_cache
+      it_diff_data        = lt_diff_data
+      it_hunk_actions     = lt_actions
+      it_approved         = lt_approved
+      it_declined         = lt_declined
+      it_decline_notes    = lt_notes
+      it_hunk_threads     = lt_threads
+      it_timings          = lt_timings ).
+
+    IF zcl_ave_acr_repository=>save_review_payload(
+         iv_trkorr  = lv_trkorr
+         iv_remote  = lv_remote
+         is_payload = ls_next ) = abap_false.
+      " The one reason AVE knows of is a ZAVE_REVIEW without the REMOTE key
+      " field, which only a review compared against another system runs into.
+      bad_request( |ZAVE_REVIEW would not take the write|
+                && COND string( WHEN lv_remote IS NOT INITIAL
+                                THEN | (REMOTE key field missing?)| ELSE `` )
+                && |. Nothing was changed.| ).
+    ENDIF.
+
+    response->set_body_data(
+      content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
+      data            = part_body( is_payload = ls_next
+                                   i_trkorr   = lv_trkorr
+                                   i_part     = lv_part
+                                   i_ptype    = lv_ptype
+                                   i_table    = abap_true
+                                   i_saved    = abap_true ) ).
+  ENDMETHOD.
+
+
   METHOD part_body.
     DATA lt_block TYPE tt_block.
     DATA lt_op    TYPE tt_op.
@@ -354,6 +543,9 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
       |"table":{ COND string( WHEN i_table = abap_true THEN `true` ELSE `false` ) },| &&
       |"saved":{ COND string( WHEN i_saved = abap_true THEN `true` ELSE `false` ) },| &&
       |"ddic":{ COND string( WHEN lv_ddic = abap_true THEN `true` ELSE `false` ) },| &&
+      " The stamp the page writes back with, so a write onto a review that has
+      " moved underneath it is refused instead of overwriting the move.
+      |"saved_at":"{ is_payload-last_saved_at }",| &&
       |"versno_old":"{ COND string( WHEN lv_old IS INITIAL OR lv_old = '00000'
                                    THEN `` ELSE |{ lv_old }| ) }",| &&
       |"versno_new":"{ COND string( WHEN lv_new IS INITIAL THEN `` ELSE |{ lv_new }| ) }",| &&

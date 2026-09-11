@@ -532,6 +532,38 @@ The version pair travels in `ty_diff_data_key`, so it is the stored diff that sa
 versions its operations came from. That closes the hazard in the hunk key, which carries the object
 and the block number but no pair at all.
 
+### Writing a verdict
+
+```
+POST /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
+
+{ "hunk_key": "METH~ZCL_A…GET~1", "action": "A", "note": "",
+  "saved_at": "20260911123045.1234567" }
+```
+
+`action` is `A` approve, `D` decline, `C` comment, `U` take a verdict back. A decline and a comment
+are the words that go with them, so both need a `note`. The answer is the same shape the per-part
+`GET` returns, so the page renders one thing whether it asked or wrote.
+
+**Nothing here knows what approving means.** The resource loads the payload, hands it to
+`ZCL_AVE_ACR_STATE=>APPLY_SAVED_PAYLOAD`, calls `APPLY_REVIEWER_ACTION` for the one block, and gives
+the result back to `BUILD_SAVE_PAYLOAD` and `SAVE_REVIEW_PAYLOAD`. Every rule about what a verdict
+does to the review — the per-reviewer state, the comment threads, the save history — stays in AVE,
+where the SAP GUI front end reads it from the same code.
+
+`iv_ignore_generated` is passed as false. AVE drops generated Gateway classes from a payload when
+its own setting says to, and that setting is AVE's: a write from VERTEX adds one verdict and takes
+nothing away.
+
+`saved_at` is the stamp the page last read, and a changed one is **refused**. A review is written by
+several people and a save writes the whole payload, so a write built on a state that has moved would
+carry somebody else's approvals off with it. There is no merge, and pretending there is would be how
+a review quietly loses work.
+
+**`C_ALLOW_SELF_REVIEW` is temporary.** AVE refuses to let a developer approve or decline their own
+block, and so should this. It is on while the write path is being tried out on a request whose every
+block belongs to the person testing it.
+
 ## Verifying the registration without guessing at screens
 
 ```sql
