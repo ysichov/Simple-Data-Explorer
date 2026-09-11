@@ -60,6 +60,17 @@ CLASS zcl_sde_adt_res_review DEFINITION
            END OF ty_save,
            tt_save TYPE STANDARD TABLE OF ty_save WITH EMPTY KEY.
 
+    " One thing somebody said about a block. A decline and a comment are both
+    " messages; which one it was is what colours it.
+    TYPES: BEGIN OF ty_message,
+             author      TYPE string,
+             author_name TYPE string,
+             created_at  TYPE string,
+             is_decline  TYPE abap_bool,
+             text        TYPE string,
+           END OF ty_message,
+           tt_message TYPE STANDARD TABLE OF ty_message WITH EMPTY KEY.
+
     " One changed block of one part, with whatever verdict it already carries,
     " and where it sits in the operations of the stored diff.
     TYPES: BEGIN OF ty_block,
@@ -75,7 +86,9 @@ CLASS zcl_sde_adt_res_review DEFINITION
              action        TYPE string,
              reviewer      TYPE string,
              reviewer_name TYPE string,
+             changed_at    TYPE string,
              note          TYPE string,
+             messages      TYPE tt_message,
            END OF ty_block,
            tt_block TYPE STANDARD TABLE OF ty_block WITH EMPTY KEY.
 
@@ -472,18 +485,31 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
 
       " A verdict belongs to a block and to whoever gave it. The note that
       " explains a decline is filed under that same person, so the two are read
-      " together.
+      " together. The thread is what was actually said, in order and with who
+      " said it - which is what AVE shows under the block, and the note is only
+      " its last line.
       LOOP AT lt_block ASSIGNING FIELD-SYMBOL(<block>).
         LOOP AT is_payload-hunk_actions INTO DATA(ls_action)
           WHERE hunk_key = <block>-hunk_key.
           <block>-action        = ls_action-action.
           <block>-reviewer      = ls_action-reviewer.
           <block>-reviewer_name = ls_action-reviewer_name.
+          <block>-changed_at    = |{ ls_action-changed_at }|.
         ENDLOOP.
         LOOP AT is_payload-user_states INTO DATA(ls_user).
           LOOP AT ls_user-notes INTO DATA(ls_note)
             WHERE hunk_key = <block>-hunk_key.
             <block>-note = ls_note-note.
+          ENDLOOP.
+        ENDLOOP.
+        LOOP AT is_payload-threads INTO DATA(ls_thread)
+          WHERE hunk_key = <block>-hunk_key.
+          LOOP AT ls_thread-messages INTO DATA(ls_msg).
+            APPEND VALUE #( author      = ls_msg-author
+                            author_name = ls_msg-author_name
+                            created_at  = |{ ls_msg-created_at }|
+                            is_decline  = ls_msg-is_decline
+                            text        = ls_msg-text ) TO <block>-messages.
           ENDLOOP.
         ENDLOOP.
       ENDLOOP.

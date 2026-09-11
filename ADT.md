@@ -501,7 +501,11 @@ GET /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
                 "change_count": 2, "change_kind": "changed",
                 "author": "YSYCHOV", "author_name": "Yurii Sychov",
                 "op_from": 3, "op_to": 4,
-                "action": "A", "reviewer": "ANNA", "note": "" } ],
+                "action": "D", "reviewer": "ANNA",
+                "changed_at": "20260911155120.0", "note": "…",
+                "messages": [ { "author": "ANNA", "author_name": "Anna R",
+                                "created_at": "20260911155120.0",
+                                "is_decline": true, "text": "…" } ] } ],
   "ops": [ { "op": "=", "text": "  METHOD get." }, { "op": "-", "text": "…" } ]
 }
 ```
@@ -523,6 +527,11 @@ line of the new version.
 A block the operations cannot be placed against comes back with `op_from` zero rather than dropped,
 and the page shows it above the diff. That is a payload whose blocks and diff disagree, and it has
 to be visible.
+
+`messages` is the comment thread of the block, in order, each naming who wrote it and when, and
+saying whether it came with a decline. `note` is the last of them and is not drawn twice: it is the
+reviewer's standing note, which is what the summary counts. A block reads the same way it does in
+AVE, because what a reviewer needs is the conversation, not its last line.
 
 `ddic` is true for a dictionary object: `TABD`, `DOMD` and `DTED` have no line diff to slice — their
 review page is a table of fields, kept as ready-made html because nothing is left to rebuild it
