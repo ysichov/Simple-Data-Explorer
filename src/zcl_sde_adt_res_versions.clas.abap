@@ -131,16 +131,10 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
       WHEN 'TABL' THEN 'TABD'
       WHEN 'DOMA' THEN 'DOMD'
       WHEN 'DTEL' THEN 'DTED'
+      WHEN 'TR'   THEN 'TR'
+      WHEN 'DEVC' THEN 'DEVC'
       ELSE '' ).
 
-    IF lv_type = 'TR' OR lv_type = 'DEVC'.
-      " AVE reads these, and reading them is the point of AVE - but a request
-      " or a package is dozens of objects, and AVE shows a progress bar with an
-      " estimate while it works. One blocking HTTP call has nowhere to put that,
-      " so it is refused rather than left to time out.
-      bad_request( |A { lv_type } is read object by object and needs a progress| &&
-                   | channel this resource does not have yet. Ask for one object.| ).
-    ENDIF.
     IF lv_ave IS INITIAL.
       bad_request( |Type { lv_type } is not supported here.| &&
                    | Versions are read for CLAS, INTF, PROG, INCL, FUGR, FUNC,| &&
@@ -170,8 +164,16 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
           bad_request( |AVE cannot list the parts of { lv_name }: { reason( lx_parts ) }| ).
       ENDTRY.
 
+      " A transport request and a package are scopes, not objects: what comes
+      " back is the objects in them, and an object is drilled into rather than
+      " asked for the versions of a part it does not have. The client is told
+      " which of the two it is holding.
+      DATA(lv_scope) = COND string( WHEN lv_type = 'TR' OR lv_type = 'DEVC'
+                                    THEN `true` ELSE `false` ).
+
       lv_body = |\{"object":"{ to_lower( lv_name ) }",| &&
                 |"type":"{ to_lower( lv_type ) }",| &&
+                |"scope":{ lv_scope },| &&
                 |"parts":{ /ui2/cl_json=>serialize(
                              data        = lt_part
                              pretty_name = /ui2/cl_json=>pretty_mode-low_case ) }\}|.
