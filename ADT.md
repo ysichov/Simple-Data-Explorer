@@ -481,6 +481,50 @@ setup page of its own.
 The counts are of blocks, because a block is what a reviewer acts on. An action names a block, so
 the blocks of an object are what tie the two together.
 
+### One object of it
+
+```
+GET /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
+
+{
+  "request": "e19k906998", "part": "zcl_a ... get", "part_type": "meth",
+  "table": true, "saved": true, "ddic": false,
+  "versno_old": "00003", "versno_new": "99998", "added": 3, "deleted": 1,
+  "blocks": [ { "hunk_key": "METH~ZCL_A…GET~1", "hunk_no": 1, "start_line": 3,
+                "change_count": 2, "change_kind": "changed",
+                "author": "YSYCHOV", "author_name": "Yurii Sychov",
+                "op_from": 3, "op_to": 4,
+                "action": "A", "reviewer": "ANNA", "note": "" } ],
+  "ops": [ { "op": "=", "text": "  METHOD get." }, { "op": "-", "text": "…" } ]
+}
+```
+
+**Nothing is computed.** A prepared review already holds the diff, and what it stores is the
+operations rather than the rendering — the payload clears every hunk's html on save. So the answer
+is a read of `ZAVE_REVIEW` and no more, which is the whole reason review is a card next to Versions
+rather than a second diff engine.
+
+`OP_FROM` and `OP_TO` say where a block sits in `ops`, counting from one. They are the one thing the
+page cannot work out for itself. AVE cuts its blocks while it walks the diff, and the rule is not
+visible in the result: a block swallows the context inside an unfinished statement, keeps a blank
+line when more changes follow, and is dropped altogether when its rendering shows no colour. What
+survives the save is `START_LINE`, the line of the new version a block opens on, and `CHANGE_COUNT`,
+the number of changed operations in it. Replaying AVE's own line counter over the stored operations
+places each block exactly, so the page slices the operations AVE cut instead of guessing at the rule
+and drifting from it.
+
+A block the operations cannot be placed against comes back with `op_from` zero rather than dropped,
+and the page shows it above the diff. That is a payload whose blocks and diff disagree, and it has
+to be visible.
+
+`ddic` is true for a dictionary object: `TABD`, `DOMD` and `DTED` have no line diff to slice — their
+review page is a table of fields, kept as ready-made html because nothing is left to rebuild it
+from. VERTEX does not render that html, and says so rather than showing an empty diff.
+
+The version pair travels in `ty_diff_data_key`, so it is the stored diff that says which two
+versions its operations came from. That closes the hazard in the hunk key, which carries the object
+and the block number but no pair at all.
+
 ## Verifying the registration without guessing at screens
 
 ```sql

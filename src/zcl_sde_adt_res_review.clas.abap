@@ -48,6 +48,44 @@ CLASS zcl_sde_adt_res_review DEFINITION
            END OF ty_save,
            tt_save TYPE STANDARD TABLE OF ty_save WITH EMPTY KEY.
 
+    " One changed block of one part, with whatever verdict it already carries,
+    " and where it sits in the operations of the stored diff.
+    TYPES: BEGIN OF ty_block,
+             hunk_key      TYPE string,
+             hunk_no       TYPE i,
+             start_line    TYPE i,
+             change_count  TYPE i,
+             change_kind   TYPE string,
+             author        TYPE string,
+             author_name   TYPE string,
+             op_from       TYPE i,
+             op_to         TYPE i,
+             action        TYPE string,
+             reviewer      TYPE string,
+             reviewer_name TYPE string,
+             note          TYPE string,
+           END OF ty_block,
+           tt_block TYPE STANDARD TABLE OF ty_block WITH EMPTY KEY.
+
+    TYPES: BEGIN OF ty_op,
+             op   TYPE string,
+             text TYPE string,
+           END OF ty_op,
+           tt_op TYPE STANDARD TABLE OF ty_op WITH EMPTY KEY.
+
+    METHODS part_body
+      IMPORTING is_payload     TYPE zif_ave_acr_types=>ty_saved_payload
+                i_trkorr       TYPE trkorr
+                i_part         TYPE versobjnam
+                i_ptype        TYPE versobjtyp
+                i_table        TYPE abap_bool
+                i_saved        TYPE abap_bool
+      RETURNING VALUE(rv_json) TYPE string.
+
+    METHODS locate_blocks
+      IMPORTING it_op    TYPE tt_op
+      CHANGING  ct_block TYPE tt_block.
+
     METHODS bad_request
       IMPORTING i_text TYPE string
       RAISING   cx_adt_res_bad_request.
@@ -77,6 +115,25 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
                                       IMPORTING value     = lv_remote ).
     TRANSLATE lv_remote TO UPPER CASE.
 
+    " Name a part and the answer is that part instead of the summary: its
+    " blocks and the lines behind them. Both are read out of the saved payload,
+    " never computed - a prepared review already holds the diff, and what it
+    " stores is the operations rather than the rendering.
+    DATA lv_part  TYPE versobjnam.
+    DATA lv_ptype TYPE versobjtyp.
+
+    request->get_uri_query_parameter( EXPORTING name      = 'part'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_part ).
+    request->get_uri_query_parameter( EXPORTING name      = 'ptype'
+                                                mandatory = abap_false
+                                      IMPORTING value     = lv_ptype ).
+    TRANSLATE lv_part TO UPPER CASE.
+    TRANSLATE lv_ptype TO UPPER CASE.
+    IF lv_part IS NOT INITIAL AND lv_ptype IS INITIAL.
+      bad_request( |Reading the blocks of { lv_part } needs its type in ptype.| ).
+    ENDIF.
+
     " Not having the table is a state AVE handles with a setup page rather than
     " an error, and so does this: nothing is broken, there is simply nowhere for
     " a review to have been saved.
@@ -89,6 +146,18 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
                    EXPORTING iv_trkorr  = lv_trkorr
                              iv_remote  = lv_remote
                    CHANGING  cs_payload = ls_payload ).
+    ENDIF.
+
+    IF lv_part IS NOT INITIAL.
+      response->set_body_data(
+        content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
+        data            = part_body( is_payload = ls_payload
+                                     i_trkorr   = lv_trkorr
+                                     i_part     = lv_part
+                                     i_ptype    = lv_ptype
+                                     i_table    = lv_table
+                                     i_saved    = lv_saved ) ).
+      RETURN.
     ENDIF.
 
     IF lv_saved = abap_true.
@@ -166,6 +235,173 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
     response->set_body_data(
       content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
       data            = lv_body ).
+  ENDMETHOD.
+
+
+  METHOD part_body.
+    DATA lt_block TYPE tt_block.
+    DATA lt_op    TYPE tt_op.
+    DATA lv_old   TYPE versno.
+    DATA lv_new   TYPE versno.
+    DATA lv_added TYPE i.
+    DATA lv_dele  TYPE i.
+    DATA lv_ddic  TYPE abap_bool.
+
+    IF i_saved = abap_true.
+      LOOP AT is_payload-hunks INTO DATA(ls_hunk).
+        IF ls_hunk-objtype <> i_ptype OR ls_hunk-obj_name <> i_part.
+          CONTINUE.
+        ENDIF.
+        " Every block of a part was cut from the same comparison, so the pair
+        " belongs to the part and not to the block.
+        lv_old = ls_hunk-versno_old.
+        lv_new = ls_hunk-versno_new.
+        APPEND VALUE #( hunk_key     = ls_hunk-hunk_key
+                        hunk_no      = ls_hunk-hunk_no
+                        start_line   = ls_hunk-start_line
+                        change_count = ls_hunk-change_count
+                        change_kind  = ls_hunk-change_kind
+                        author       = ls_hunk-author
+                        author_name  = ls_hunk-author_name ) TO lt_block.
+      ENDLOOP.
+      " HUNKS is hashed, and the numbering is what orders the blocks.
+      SORT lt_block BY hunk_no.
+
+      " A verdict belongs to a block and to whoever gave it. The note that
+      " explains a decline is filed under that same person, so the two are read
+      " together.
+      LOOP AT lt_block ASSIGNING FIELD-SYMBOL(<block>).
+        LOOP AT is_payload-hunk_actions INTO DATA(ls_action)
+          WHERE hunk_key = <block>-hunk_key.
+          <block>-action        = ls_action-action.
+          <block>-reviewer      = ls_action-reviewer.
+          <block>-reviewer_name = ls_action-reviewer_name.
+        ENDLOOP.
+        LOOP AT is_payload-user_states INTO DATA(ls_user).
+          LOOP AT ls_user-notes INTO DATA(ls_note)
+            WHERE hunk_key = <block>-hunk_key.
+            <block>-note = ls_note-note.
+          ENDLOOP.
+        ENDLOOP.
+      ENDLOOP.
+
+      " The stored diff carries the pair it was taken from, so the one these
+      " blocks were cut from is the one taken from the same pair. A part can
+      " have more than one row: the comparison against the remote system is
+      " another, and it is not this diff.
+      DATA ls_pick  TYPE zif_ave_acr_types=>ty_diff_data.
+      DATA lv_found TYPE abap_bool.
+      LOOP AT is_payload-diff_data INTO DATA(ls_diff).
+        IF ls_diff-key-objtype <> i_ptype OR ls_diff-key-objname <> i_part
+           OR ls_diff-retrofit = abap_true.
+          CONTINUE.
+        ENDIF.
+        IF lv_found = abap_false.
+          ls_pick  = ls_diff.
+          lv_found = abap_true.
+        ENDIF.
+        IF ls_diff-key-versno_o = lv_old AND ls_diff-key-versno_n = lv_new.
+          ls_pick = ls_diff.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+
+      IF lv_found = abap_true.
+        " A part with no block left after the rendering filter still has a
+        " diff, and the pair it names is the only one there is.
+        IF lt_block IS INITIAL.
+          lv_old = ls_pick-key-versno_o.
+          lv_new = ls_pick-key-versno_n.
+        ENDIF.
+        LOOP AT ls_pick-diff INTO DATA(ls_line).
+          APPEND VALUE #( op = ls_line-op text = ls_line-text ) TO lt_op.
+          CASE ls_line-op.
+            WHEN '+'. lv_added = lv_added + 1.
+            WHEN '-'. lv_dele  = lv_dele + 1.
+          ENDCASE.
+        ENDLOOP.
+        " A DDIC object has no line diff to slice. Its review page is a table
+        " of fields, kept as ready-made html because there is nothing left to
+        " rebuild it from, and VERTEX does not render that html. Said here so
+        " the page can say it rather than show an empty diff.
+        lv_ddic = boolc( lt_op IS INITIAL AND ls_pick-html IS NOT INITIAL ).
+      ENDIF.
+
+      locate_blocks( EXPORTING it_op    = lt_op
+                     CHANGING  ct_block = lt_block ).
+    ENDIF.
+
+    rv_json =
+      |\{"request":"{ to_lower( i_trkorr ) }",| &&
+      |"part":"{ to_lower( i_part ) }",| &&
+      |"part_type":"{ to_lower( i_ptype ) }",| &&
+      |"table":{ COND string( WHEN i_table = abap_true THEN `true` ELSE `false` ) },| &&
+      |"saved":{ COND string( WHEN i_saved = abap_true THEN `true` ELSE `false` ) },| &&
+      |"ddic":{ COND string( WHEN lv_ddic = abap_true THEN `true` ELSE `false` ) },| &&
+      |"versno_old":"{ COND string( WHEN lv_old IS INITIAL OR lv_old = '00000'
+                                   THEN `` ELSE |{ lv_old }| ) }",| &&
+      |"versno_new":"{ COND string( WHEN lv_new IS INITIAL THEN `` ELSE |{ lv_new }| ) }",| &&
+      |"added":{ lv_added },"deleted":{ lv_dele },| &&
+      |"blocks":{ /ui2/cl_json=>serialize(
+                    data        = lt_block
+                    pretty_name = /ui2/cl_json=>pretty_mode-low_case ) },| &&
+      |"ops":{ /ui2/cl_json=>serialize(
+                 data        = lt_op
+                 pretty_name = /ui2/cl_json=>pretty_mode-low_case ) }\}|.
+  ENDMETHOD.
+
+
+  METHOD locate_blocks.
+    " Where each block sits in the operations. AVE cuts its blocks while it
+    " walks the diff, and the rule is not one a reader of the result can
+    " reproduce: a block swallows the context inside an unfinished statement,
+    " keeps a blank line when more changes follow, and is dropped altogether
+    " when its rendering shows no colour. What survives the save is START_LINE,
+    " the line of the new version the block opens on, and CHANGE_COUNT, the
+    " number of changed operations in it. Those two locate it exactly, so the
+    " page slices the operations AVE cut instead of guessing at the rule.
+    DATA lv_index TYPE i VALUE 1.
+    DATA lv_line  TYPE i VALUE 0.
+    DATA lv_left  TYPE i.
+    DATA lv_count TYPE i.
+
+    lv_count = lines( it_op ).
+
+    LOOP AT ct_block ASSIGNING FIELD-SYMBOL(<block>).
+      " Sorted by number, which is the order they were cut in: block N+1 begins
+      " where block N ended, so one walk serves them all.
+      lv_left = <block>-change_count.
+
+      WHILE lv_index <= lv_count.
+        READ TABLE it_op INTO DATA(ls_op) INDEX lv_index.
+
+        IF <block>-op_from IS INITIAL.
+          " A deleted line is not in the new version and does not advance its
+          " line count - which is why a block can open on the same line the one
+          " before it opened on.
+          IF ls_op-op = `=` OR lv_line + 1 < <block>-start_line.
+            IF ls_op-op <> `-`.
+              lv_line = lv_line + 1.
+            ENDIF.
+            lv_index = lv_index + 1.
+            CONTINUE.
+          ENDIF.
+          <block>-op_from = lv_index.
+        ENDIF.
+
+        IF ls_op-op <> `=`.
+          lv_left       = lv_left - 1.
+          <block>-op_to = lv_index.
+        ENDIF.
+        IF ls_op-op <> `-`.
+          lv_line = lv_line + 1.
+        ENDIF.
+        lv_index = lv_index + 1.
+        IF lv_left <= 0.
+          EXIT.
+        ENDIF.
+      ENDWHILE.
+    ENDLOOP.
   ENDMETHOD.
 
 
