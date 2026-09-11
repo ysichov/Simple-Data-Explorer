@@ -481,6 +481,13 @@ setup page of its own.
 The counts are of blocks, because a block is what a reviewer acts on. An action names a block, so
 the blocks of an object are what tie the two together.
 
+`objects` arrives in AVE's own order and grouping, from `ZCL_AVE_ACR_REPORT=>REPORT_OBJECTS`: the
+parts of a class under their class, everything else in sections by kind, and an object with no
+changed line left out. It has to be AVE's, because the report is what a reviewer compares this
+against — and because the names only mean something inside a group. A method is called `GET` in
+three classes, and every class has a `Public section`. `class_name` and `group` carry the heading;
+a new one starts wherever they change.
+
 ### One object of it
 
 ```
@@ -504,14 +511,14 @@ operations rather than the rendering — the payload clears every hunk's html on
 is a read of `ZAVE_REVIEW` and no more, which is the whole reason review is a card next to Versions
 rather than a second diff engine.
 
-`OP_FROM` and `OP_TO` say where a block sits in `ops`, counting from one. They are the one thing the
-page cannot work out for itself. AVE cuts its blocks while it walks the diff, and the rule is not
-visible in the result: a block swallows the context inside an unfinished statement, keeps a blank
-line when more changes follow, and is dropped altogether when its rendering shows no colour. What
-survives the save is `START_LINE`, the line of the new version a block opens on, and `CHANGE_COUNT`,
-the number of changed operations in it. Replaying AVE's own line counter over the stored operations
-places each block exactly, so the page slices the operations AVE cut instead of guessing at the rule
-and drifting from it.
+`OP_FROM` and `OP_TO` say where a block sits in `ops`, counting from one. They come from AVE:
+`ZCL_AVE_ACR_HUNK_HTML=>HUNK_RANGES` is the walk that decides where a block begins and ends, and the
+html of a block is rendered from what it returns — so these are the very operations the saved review
+was cut from. The rule is not one that could be restated here anyway: a block swallows the context
+inside an unfinished statement, so that a call and its parameters are approved together, and it
+keeps a blank line when more changes follow. A saved block is matched to its range by `START_LINE`,
+the line of the new version it opens on, which is unique because whatever ends one block is itself a
+line of the new version.
 
 A block the operations cannot be placed against comes back with `op_from` zero rather than dropped,
 and the page shows it above the diff. That is a payload whose blocks and diff disagree, and it has

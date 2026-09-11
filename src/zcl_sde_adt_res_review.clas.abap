@@ -14,6 +14,10 @@ CLASS zcl_sde_adt_res_review DEFINITION
              objtype      TYPE string,
              obj_name     TYPE string,
              class_name   TYPE string,
+             " The section a part that belongs to no class falls into. AVE's
+             " own label, because the report and this table have to break their
+             " groups in the same places.
+             group        TYPE string,
              display_name TYPE string,
              author       TYPE string,
              author_name  TYPE string,
@@ -83,7 +87,7 @@ CLASS zcl_sde_adt_res_review DEFINITION
       RETURNING VALUE(rv_json) TYPE string.
 
     METHODS locate_blocks
-      IMPORTING it_op    TYPE tt_op
+      IMPORTING it_diff  TYPE zif_ave_popup_types=>ty_t_diff
       CHANGING  ct_block TYPE tt_block.
 
     METHODS bad_request
@@ -161,7 +165,14 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
     ENDIF.
 
     IF lv_saved = abap_true.
-      LOOP AT ls_payload-obj_stats INTO DATA(ls_stat).
+      " AVE's own order and AVE's own grouping, read from AVE rather than
+      " restated here: the parts of a class under their class, everything else
+      " in a section by kind, and an object with no changed line left out. A
+      " second opinion about where a method belongs would be a bug on sight,
+      " because the report is what a reviewer compares this against.
+      DATA(lt_stat) = zcl_ave_acr_report=>report_objects( ls_payload-obj_stats ).
+
+      LOOP AT lt_stat INTO DATA(ls_stat).
         DATA(lv_approved) = 0.
         DATA(lv_declined) = 0.
 
@@ -181,6 +192,9 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
         APPEND VALUE #( objtype      = ls_stat-objtype
                         obj_name     = ls_stat-obj_name
                         class_name   = ls_stat-class_name
+                        group        = COND string(
+                          WHEN ls_stat-class_name IS INITIAL
+                          THEN zcl_ave_acr_report=>cat_label( ls_stat-objtype ) )
                         display_name = ls_stat-display_name
                         author       = ls_stat-author
                         author_name  = ls_stat-author_name
@@ -325,10 +339,12 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
         " rebuild it from, and VERTEX does not render that html. Said here so
         " the page can say it rather than show an empty diff.
         lv_ddic = boolc( lt_op IS INITIAL AND ls_pick-html IS NOT INITIAL ).
-      ENDIF.
 
-      locate_blocks( EXPORTING it_op    = lt_op
-                     CHANGING  ct_block = lt_block ).
+        " The operations travel out in the order they are stored, so an index
+        " into the stored diff is an index into OPS.
+        locate_blocks( EXPORTING it_diff  = ls_pick-diff
+                       CHANGING  ct_block = lt_block ).
+      ENDIF.
     ENDIF.
 
     rv_json =
@@ -352,55 +368,29 @@ CLASS zcl_sde_adt_res_review IMPLEMENTATION.
 
 
   METHOD locate_blocks.
-    " Where each block sits in the operations. AVE cuts its blocks while it
-    " walks the diff, and the rule is not one a reader of the result can
-    " reproduce: a block swallows the context inside an unfinished statement,
-    " keeps a blank line when more changes follow, and is dropped altogether
-    " when its rendering shows no colour. What survives the save is START_LINE,
-    " the line of the new version the block opens on, and CHANGE_COUNT, the
-    " number of changed operations in it. Those two locate it exactly, so the
-    " page slices the operations AVE cut instead of guessing at the rule.
-    DATA lv_index TYPE i VALUE 1.
-    DATA lv_line  TYPE i VALUE 0.
-    DATA lv_left  TYPE i.
-    DATA lv_count TYPE i.
-
-    lv_count = lines( it_op ).
+    " Where each block sits in the operations - asked of AVE, not worked out
+    " here. AVE cuts its blocks while it walks the diff, and the rule is not one
+    " a reader of the result can reproduce: a block swallows the context inside
+    " an unfinished statement, and keeps a blank line when more changes follow.
+    " ZCL_AVE_ACR_HUNK_HTML=>HUNK_RANGES is that walk, and the html of a block
+    " is rendered from what it returns - so these are the very operations the
+    " saved review was cut from.
+    "
+    " A block is recognised by the line it opens on. Blocks open on strictly
+    " increasing lines, because whatever ends one block is a line of the new
+    " version, and START_LINE is what the payload keeps.
+    DATA(lt_range) = zcl_ave_acr_hunk_html=>hunk_ranges( it_diff ).
 
     LOOP AT ct_block ASSIGNING FIELD-SYMBOL(<block>).
-      " Sorted by number, which is the order they were cut in: block N+1 begins
-      " where block N ended, so one walk serves them all.
-      lv_left = <block>-change_count.
-
-      WHILE lv_index <= lv_count.
-        READ TABLE it_op INTO DATA(ls_op) INDEX lv_index.
-
-        IF <block>-op_from IS INITIAL.
-          " A deleted line is not in the new version and does not advance its
-          " line count - which is why a block can open on the same line the one
-          " before it opened on.
-          IF ls_op-op = `=` OR lv_line + 1 < <block>-start_line.
-            IF ls_op-op <> `-`.
-              lv_line = lv_line + 1.
-            ENDIF.
-            lv_index = lv_index + 1.
-            CONTINUE.
-          ENDIF.
-          <block>-op_from = lv_index.
-        ENDIF.
-
-        IF ls_op-op <> `=`.
-          lv_left       = lv_left - 1.
-          <block>-op_to = lv_index.
-        ENDIF.
-        IF ls_op-op <> `-`.
-          lv_line = lv_line + 1.
-        ENDIF.
-        lv_index = lv_index + 1.
-        IF lv_left <= 0.
-          EXIT.
-        ENDIF.
-      ENDWHILE.
+      READ TABLE lt_range INTO DATA(ls_range)
+        WITH KEY start_line = <block>-start_line.
+      IF sy-subrc <> 0.
+        " The saved blocks and the saved diff disagree. Left at zero, which the
+        " page shows rather than hides.
+        CONTINUE.
+      ENDIF.
+      <block>-op_from = ls_range-op_from.
+      <block>-op_to   = ls_range-op_to.
     ENDLOOP.
   ENDMETHOD.
 
