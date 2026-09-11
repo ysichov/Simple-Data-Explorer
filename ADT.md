@@ -1,8 +1,9 @@
 # SDE as an ADT REST resource
 
 Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
-serves four resources as JSON: table rows with their field catalogue, the code metrics of an
-object, its version history, and the join builder.
+serves five resources as JSON: table rows with their field catalogue, the code metrics of an
+object, its version history, the join builder, and the code review saved for a transport
+request.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -46,6 +47,7 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 | `ZCL_SDE_ADT_RES_METRICS` | CLAS | Resource. Code metrics of an object, computed by ACE. |
 | `ZCL_SDE_ADT_RES_VERSIONS` | CLAS | Resource. Versionable parts of an object and their versions, read by AVE. |
 | `ZCL_SDE_ADT_RES_JOIN` | CLAS | Resource. The join builder of SDE without its window. |
+| `ZCL_SDE_ADT_RES_REVIEW` | CLAS | Resource. The code review AVE saved for a transport request. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
@@ -63,6 +65,8 @@ router->attach( iv_template      = '/zsde/versions/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
 router->attach( iv_template      = '/zsde/join/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
+router->attach( iv_template      = '/zsde/review/{name}'
+                iv_handler_class = 'ZCL_SDE_ADT_RES_REVIEW' ).
 ```
 
 Every service of the VERTEX front end registers here rather than under a prefix of its own. A
@@ -443,6 +447,39 @@ joined one.
 A label the join has no field for answers 400. `BUILD_WHERE` drops such a label without a word,
 which would return rows filtered by less than the caller asked for and look like a complete
 answer.
+
+## The saved code review
+
+```
+GET /sap/bc/adt/zsde/review/E19K906998
+
+{
+  "request": "e19k906998", "remote": "", "table": true, "saved": true,
+  "saved_at": "20260911123045.1234567", "saved_by": "YSYCHOV",
+  "objects":   [ { "display_name": "ZCL_A=>GET", "objtype": "METH", "hunks": 5,
+                   "inserted": 12, "deleted": 3, "modified": 2,
+                   "approved": 3, "declined": 1, "open": 1 } ],
+  "reviewers": [ { "reviewer": "YSYCHOV", "approved": 5, "declined": 1, "notes": 1 } ],
+  "history":   [ { "saved_at": "...", "saved_by": "YSYCHOV", "approved": 5 } ]
+}
+```
+
+**It reads. It does not write.** Approving, declining and commenting are AVE's, and a review is
+prepared there; this resource shows what was saved. Writing is a separate decision — it is the
+first thing in VERTEX that would change state on the server — and until it is made, a page that
+showed an approve button would be lying about what pressing it does.
+
+`remote` names the other development system a review was run against, and belongs in the request
+because a review compared with one is a different review: its baseline is the state that system
+already has, so its blocks and its approvals are not the ones of the plain review. That is why
+`REMOTE` is part of the table's key.
+
+A system with no `ZAVE_REVIEW` table answers `"table": false` rather than an error. Nothing is
+broken there; a review has simply never had anywhere to be saved, which is what AVE says with a
+setup page of its own.
+
+The counts are of blocks, because a block is what a reviewer acts on. An action names a block, so
+the blocks of an object are what tie the two together.
 
 ## Verifying the registration without guessing at screens
 
