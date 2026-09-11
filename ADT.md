@@ -286,9 +286,9 @@ DATA(lo_vrsd)   = NEW zcl_ave_vrsd( type = ls_part-type name = ls_part-object_na
 DATA(lo_ver)    = NEW zcl_ave_version( ls_vrsd ).
 ```
 
-`type` accepts `CLAS`, `INTF`, `PROG`, `INCL`, `FUGR`, `FUNC`, `DDLS`, `TABL`, `DOMA` and `DTEL`,
-with or without the ADT subtype. The DDIC three are mapped to the VRSD part types AVE expects
-(`TABD`, `DOMD`, `DTED`).
+`type` accepts `TR`, `DEVC`, `CLAS`, `INTF`, `PROG`, `INCL`, `FUGR`, `FUNC`, `DDLS`, `TABL`,
+`DOMA` and `DTEL`, with or without the ADT subtype. The DDIC three are mapped to the VRSD part
+types AVE expects (`TABD`, `DOMD`, `DTED`).
 
 ### The difference between two versions
 
@@ -323,12 +323,19 @@ Despite the class name there is no popup in it: the progress indicator lives in 
 and the `i_title` and `i_confirm_key` parameters of `compute_diff` are never read. It is safe in an
 HTTP request.
 
-### A transport and a package are refused
+### A transport and a package are scopes, not objects
 
-Both answer 400 naming the reason. AVE reads them, and reading them is what AVE is for — but a
-request is dozens of objects, and AVE reports progress with an estimate and asks whether to
-continue when it grows. One blocking HTTP call has nowhere to put that, so it is refused rather
-than left to time out.
+`type=TR` and `type=DEVC` answer with the objects in them, and the payload carries
+`"scope": true` so a client knows what it is holding: in a scope a row is an object to open, not a
+part to ask the versions of.
+
+They were refused at first, on the grounds that reading a request is dozens of objects and AVE
+shows a progress bar with an estimate while it does it. That is true of AVE's *review
+preparation*, which reads every version of every part. Listing a transport is not that:
+`ZIF_AVE_OBJECT~GET_PARTS` reads the object keys of the request and stops, and the expensive
+`GET_PARTS_EXPANDED` beside it is never called here. The parts-then-versions split is itself the
+progress channel the refusal said was missing — nothing here is ever long, because nothing reads
+more than one part.
 
 ### ZCX_AVE carries no message
 
