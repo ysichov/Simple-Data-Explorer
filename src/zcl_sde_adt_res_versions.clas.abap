@@ -39,6 +39,17 @@ CLASS zcl_sde_adt_res_versions DEFINITION
            END OF ty_op,
            tt_op TYPE STANDARD TABLE OF ty_op WITH EMPTY KEY.
 
+    "! A part worth offering. A class is generated with all three section
+    "! includes and several local ones whether anything was put in them or not,
+    "! and a part that holds nothing answers "no versions recorded" after a
+    "! click that was never worth making. What is skipped: an include that does
+    "! not exist, one with no lines, and a section carrying nothing but its own
+    "! header. An include that exists and has content is kept whatever its
+    "! history says - the history is the next question, not this one.
+    METHODS worth_showing
+      IMPORTING is_part       TYPE zif_ave_object=>ty_part
+      RETURNING VALUE(rv_yes) TYPE abap_bool.
+
     METHODS not_found
       IMPORTING i_type TYPE string
                 i_id   TYPE string
@@ -155,6 +166,11 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
       TRY.
           DATA(lt_parts) = lo_object->get_parts( ).
           LOOP AT lt_parts INTO DATA(ls_part).
+            " A scope lists objects, and an object is never empty in this sense.
+            IF lv_type <> 'TR' AND lv_type <> 'DEVC'
+               AND worth_showing( ls_part ) = abap_false.
+              CONTINUE.
+            ENDIF.
             APPEND VALUE #( class     = ls_part-class
                             unit      = ls_part-unit
                             name      = CONV string( ls_part-object_name )
@@ -276,6 +292,47 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
     response->set_body_data(
       content_handler = NEW cl_adt_rest_plain_text_handler( content_type = if_rest_media_type=>gc_appl_json )
       data            = lv_body ).
+  ENDMETHOD.
+
+
+  METHOD worth_showing.
+    DATA lt_source TYPE abaptxt255_tab.
+    DATA lv_include TYPE program.
+
+    rv_yes = abap_true.
+
+    CASE is_part-type.
+      WHEN 'CPUB' OR 'CPRO' OR 'CPRI'.
+        " A section's part name is the class; its text lives in a generated
+        " include of its own.
+        DATA(lv_class) = CONV seoclsname( is_part-class ).
+        lv_include = SWITCH program( is_part-type
+          WHEN 'CPUB' THEN cl_oo_classname_service=>get_pubsec_name( lv_class )
+          WHEN 'CPRO' THEN cl_oo_classname_service=>get_prosec_name( lv_class )
+          ELSE cl_oo_classname_service=>get_prisec_name( lv_class ) ).
+
+      WHEN 'CINC' OR 'CDEF' OR 'REPS'.
+        " The local includes carry their own program name as the part name.
+        lv_include = is_part-object_name.
+
+      WHEN OTHERS.
+        " A method, a program, a DDIC object: not something that gets generated
+        " empty alongside something else.
+        RETURN.
+    ENDCASE.
+
+    READ REPORT lv_include INTO lt_source.
+    IF sy-subrc <> 0 OR lt_source IS INITIAL.
+      rv_yes = abap_false.
+      RETURN.
+    ENDIF.
+
+    " AVE's own rule, and its own predicate: a newly generated class carries
+    " 'protected section.' and nothing else, which is not a part to review.
+    IF ( is_part-type = 'CPUB' OR is_part-type = 'CPRO' OR is_part-type = 'CPRI' )
+       AND zcl_ave_acr_prepare=>is_empty_section( lt_source ) = abap_true.
+      rv_yes = abap_false.
+    ENDIF.
   ENDMETHOD.
 
 
