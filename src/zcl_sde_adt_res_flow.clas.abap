@@ -105,7 +105,7 @@ CLASS zcl_sde_adt_res_flow IMPLEMENTATION.
       " ACE keeps the walk on the viewer object, so there has to be one. It is
       " built without its window: every scanner uses it as a place to put the
       " parse, the step table and the depth, and asks it to draw nothing.
-      DATA(lo_ace) = NEW zcl_ace( i_prog     = CONV prog( lv_program )
+      DATA(lo_ace) = NEW zcl_ace( i_prog     = lv_program
                                   i_headless = abap_true ).
 
       IF lv_depth IS NOT INITIAL AND lv_depth CO '0123456789'.
@@ -121,10 +121,10 @@ CLASS zcl_sde_adt_res_flow IMPLEMENTATION.
       DATA lt_node_map TYPE zcl_ace_mermaid=>tt_node_map.
       zcl_ace_mermaid=>build_steps_flow(
         EXPORTING it_steps      = CONV zcl_ace_mermaid=>tt_flow_steps( lo_ace->mt_steps )
-                  is_parse_data = lo_ace->mo_window->ms_sources
                   i_all_methods = CONV boolean( lv_all )
                   i_with_params = CONV boolean( lv_params )
         IMPORTING et_node_map   = lt_node_map
+        CHANGING  cs_parse_data = lo_ace->mo_window->ms_sources
         RECEIVING rv_mm         = lv_mm ).
 
       " How many steps the walk found. A class pool has no entry point of its
