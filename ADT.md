@@ -265,7 +265,7 @@ GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS&part=ZCL_X%20...%20DO_WORK&ptype=M
 {
   "object": "zcl_x", "type": "clas", "part": "...", "part_type": "meth",
   "versions": [
-    { "version": "00003", "date": "20260714", "time": "104512", "author": "SYCHOV",
+    { "version": "00003", "date": "20260714", "time": "104512", "author": "DEVELOPER",
       "author_name": "Yurii Sychov", "request": "ALCK900593", "task": "ALCK900614" }
   ]
 }
@@ -451,16 +451,16 @@ answer.
 ## The saved code review
 
 ```
-GET /sap/bc/adt/zsde/review/E19K906998
+GET /sap/bc/adt/zsde/review/DEVK900123
 
 {
   "request": "e19k906998", "remote": "", "table": true, "saved": true,
-  "saved_at": "20260911123045.1234567", "saved_by": "YSYCHOV",
+  "saved_at": "20260911123045.1234567", "saved_by": "DEVELOPER",
   "objects":   [ { "display_name": "ZCL_A=>GET", "objtype": "METH", "hunks": 5,
                    "inserted": 12, "deleted": 3, "modified": 2,
                    "approved": 3, "declined": 1, "open": 1 } ],
-  "reviewers": [ { "reviewer": "YSYCHOV", "approved": 5, "declined": 1, "notes": 1 } ],
-  "history":   [ { "saved_at": "...", "saved_by": "YSYCHOV", "approved": 5 } ]
+  "reviewers": [ { "reviewer": "REVIEWER", "approved": 5, "declined": 1, "notes": 1 } ],
+  "history":   [ { "saved_at": "...", "saved_by": "DEVELOPER", "approved": 5 } ]
 }
 ```
 
@@ -491,7 +491,7 @@ a new one starts wherever they change.
 ### One object of it
 
 ```
-GET /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
+GET /sap/bc/adt/zsde/review/DEVK900123?part=ZCL_A%20%20...%20%20GET&ptype=METH
 
 {
   "request": "e19k906998", "part": "zcl_a ... get", "part_type": "meth",
@@ -499,7 +499,7 @@ GET /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
   "versno_old": "00003", "versno_new": "99998", "added": 3, "deleted": 1,
   "blocks": [ { "hunk_key": "METH~ZCL_A…GET~1", "hunk_no": 1, "start_line": 3,
                 "change_count": 2, "change_kind": "changed",
-                "author": "YSYCHOV", "author_name": "Yurii Sychov",
+                "author": "DEVELOPER", "author_name": "Developer Name",
                 "op_from": 3, "op_to": 4,
                 "action": "D", "reviewer": "ANNA",
                 "changed_at": "20260911155120.0", "note": "…",
@@ -544,7 +544,7 @@ and the block number but no pair at all.
 ### Writing a verdict
 
 ```
-POST /sap/bc/adt/zsde/review/E19K906998?part=ZCL_A%20%20...%20%20GET&ptype=METH
+POST /sap/bc/adt/zsde/review/DEVK900123?part=ZCL_A%20%20...%20%20GET&ptype=METH
 
 { "hunk_key": "METH~ZCL_A…GET~1", "action": "A", "note": "",
   "saved_at": "20260911123045.1234567" }
@@ -650,7 +650,7 @@ system:
 - **Authorization.** SDE reads arbitrary tables. `BADI_ADT_REST_AUTHORIZATION` in package
   `SADT_REST` is the intended hook; `S_TABU_DIS` / `S_TABU_NAM` checks belong there or in the
   resource itself.
-- ~~**Volume.**~~ Measured on ALC: `TADIR?rows=10000` returns in 2–3 seconds end to end.
+- ~~**Volume.**~~ Measured on the test system: `TADIR?rows=10000` returns in 2–3 seconds end to end.
   Accepted as adequate, so the array-of-objects payload stays and no paging was added. Worth
   keeping in mind that roughly half of that payload is field names repeated on every row; if it
   ever needs to shrink, `rows` can become positional arrays aligned with `fields`.

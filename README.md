@@ -8,6 +8,14 @@ Version 2 (**SelecTor**) lives in [`src/`](src) and is the version documented he
 single-file viewer is still shipped for old releases — see
 [History and older documentation](#history-and-older-documentation).
 
+> **Also outside SAP GUI.** The table grid with its select-options, the join builder and the
+> pivot are available in Eclipse ADT and in VS Code through
+> [VERTEX](https://github.com/ysichov/VERTEX) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=YuriiSychov.vertex-abap).
+> The ADT resources under [`src/`](src) and documented in [ADT.md](ADT.md) exist for it: they
+> serve this tool's data as JSON, and the editor renders it.
+>
+> *In the construction phase.* VERTEX shows a part of what SDE does, not all of it.
+
 <img width="595" alt="SelecTor selection screen" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
 
 ---
