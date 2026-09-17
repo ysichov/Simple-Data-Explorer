@@ -9,14 +9,24 @@ CLASS zcl_sde_adt_res_versions DEFINITION
 
   PRIVATE SECTION.
     " One versionable part of an object: a program is one, a class is its
-    " sections, its local includes and one per method.
+    " sections, its local includes and one per method. SECTION is public,
+    " protected or private for a class's sections and its methods, so a client
+    " can group them the way SE80 does, and empty for everything else.
     TYPES: BEGIN OF ty_part,
              class     TYPE string,
              unit      TYPE string,
              name      TYPE string,
              part_type TYPE string,
+             section   TYPE string,
            END OF ty_part,
            tt_part TYPE STANDARD TABLE OF ty_part WITH EMPTY KEY.
+
+    " Which section a class's methods are declared in, by method name.
+    TYPES: BEGIN OF ty_section,
+             method  TYPE seocpdname,
+             section TYPE string,
+           END OF ty_section,
+           tt_section TYPE SORTED TABLE OF ty_section WITH UNIQUE KEY method.
 
     " Dates and times are passed as the dictionary holds them, YYYYMMDD and
     " HHMMSS. Formatting belongs to the reader, who knows the locale.
@@ -49,6 +59,21 @@ CLASS zcl_sde_adt_res_versions DEFINITION
     METHODS worth_showing
       IMPORTING is_part       TYPE zif_ave_object=>ty_part
       RETURNING VALUE(rv_yes) TYPE abap_bool.
+
+    "! The section each method of a class is declared in, as the class builder
+    "! keeps it and SE80 draws its icons from: SEOCOMPODF for the class's own
+    "! methods, SEOREDEF for the ones it redefines. Read from the tables rather
+    "! than by parsing the class, which would cost a parse per class opened.
+    CLASS-METHODS sections
+      IMPORTING i_class           TYPE seoclsname
+      RETURNING VALUE(rt_section) TYPE tt_section.
+
+    "! The section one part belongs to: a section part is its own, a method is
+    "! looked up, and anything else belongs to none.
+    CLASS-METHODS section_of
+      IMPORTING is_part           TYPE zif_ave_object=>ty_part
+                it_section        TYPE tt_section
+      RETURNING VALUE(rv_section) TYPE string.
 
     METHODS not_found
       IMPORTING i_type TYPE string
@@ -167,6 +192,10 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
     ENDTRY.
 
     IF lv_part IS INITIAL.
+      " Only a class has sections. A scope lists the methods of many classes,
+      " and grouping those is not what a scope is for.
+      DATA(lt_section) = COND tt_section( WHEN lv_type = 'CLAS'
+                                          THEN sections( CONV #( lv_name ) ) ).
       TRY.
           DATA(lt_parts) = lo_object->get_parts( ).
           LOOP AT lt_parts INTO DATA(ls_part).
@@ -178,7 +207,10 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
             APPEND VALUE #( class     = ls_part-class
                             unit      = ls_part-unit
                             name      = CONV string( ls_part-object_name )
-                            part_type = ls_part-type ) TO lt_part.
+                            part_type = ls_part-type
+                            section   = COND string( WHEN lv_type = 'CLAS'
+                                                     THEN section_of( is_part    = ls_part
+                                                                      it_section = lt_section ) ) ) TO lt_part.
           ENDLOOP.
         CATCH zcx_ave INTO DATA(lx_parts).
           bad_request( |AVE cannot list the parts of { lv_name }: { reason( lx_parts ) }| ).
@@ -343,6 +375,59 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
        AND zcl_ave_acr_prepare=>is_empty_section( lt_source ) = abap_true.
       rv_yes = abap_false.
     ENDIF.
+  ENDMETHOD.
+
+
+  METHOD sections.
+    " Where a method has an inactive version as well, the active one decides.
+    SELECT cmpname, exposure, version FROM seocompodf
+      WHERE clsname = @i_class
+      ORDER BY cmpname, version DESCENDING
+      INTO TABLE @DATA(lt_own).
+    LOOP AT lt_own INTO DATA(ls_own).
+      INSERT VALUE #( method  = ls_own-cmpname
+                      section = SWITCH string( ls_own-exposure
+                                  WHEN '2' THEN `public`
+                                  WHEN '1' THEN `protected`
+                                  WHEN '0' THEN `private` ) ) INTO TABLE rt_section.
+    ENDLOOP.
+
+    " A redefinition is not a component of the class that redefines it; its
+    " section is recorded with the redefinition.
+    SELECT mtdname, exposure FROM seoredef
+      WHERE clsname = @i_class
+      INTO TABLE @DATA(lt_redef).
+    LOOP AT lt_redef INTO DATA(ls_redef).
+      INSERT VALUE #( method  = ls_redef-mtdname
+                      section = SWITCH string( ls_redef-exposure
+                                  WHEN '2' THEN `public`
+                                  WHEN '1' THEN `protected`
+                                  WHEN '0' THEN `private` ) ) INTO TABLE rt_section.
+    ENDLOOP.
+  ENDMETHOD.
+
+
+  METHOD section_of.
+    CASE is_part-type.
+      WHEN 'CPUB'.
+        rv_section = `public`.
+      WHEN 'CPRO'.
+        rv_section = `protected`.
+      WHEN 'CPRI'.
+        rv_section = `private`.
+      WHEN 'METH'.
+        DATA(lv_method) = CONV seocpdname( is_part-unit ).
+        IF lv_method CS '~'.
+          " An interface's method is in neither table, and it is public,
+          " because every method of an interface is.
+          rv_section = `public`.
+        ELSE.
+          READ TABLE it_section INTO DATA(ls_section) WITH TABLE KEY method = lv_method.
+          IF sy-subrc = 0.
+            rv_section = ls_section-section.
+          ENDIF.
+        ENDIF.
+    ENDCASE.
   ENDMETHOD.
 
 

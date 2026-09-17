@@ -256,9 +256,10 @@ GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS
   "object": "zcl_x",
   "type": "clas",
   "parts": [
-    { "class": "ZCL_X", "unit": "Public section", "name": "ZCL_X", "part_type": "CPUB" },
+    { "class": "ZCL_X", "unit": "Public section", "name": "ZCL_X", "part_type": "CPUB",
+      "section": "public" },
     { "class": "ZCL_X", "unit": "DO_WORK", "name": "ZCL_X                         DO_WORK",
-      "part_type": "METH" }
+      "part_type": "METH", "section": "private" }
   ]
 }
 ```
@@ -266,6 +267,15 @@ GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS
 Parts not worth a row are left out: an include that does not exist or has no lines, a section
 holding nothing but its own header, and the class pool — generated from the class, so nothing a
 developer wrote is in its versions.
+
+`section` is `public`, `protected` or `private` for a class's section parts and its methods, so a
+client can group a class the way SE80 does; everything else, and every part of a scope, has it
+empty. A method's section comes from the class builder rather than from parsing the class:
+`SEOCOMPODF-EXPOSURE` for the class's own methods, `SEOREDEF-EXPOSURE` for the ones it redefines,
+with the active version deciding where there is an inactive one too. A method implementing an
+interface is in neither table and is public, as every interface method is. It is the same answer
+ACE gives by the include a method is declared in — CU, CO or CI — without a parse per class
+opened, and without the Versions window needing ACE.
 
 With `part` and `ptype`, the versions of that one part:
 
@@ -401,6 +411,7 @@ description then come from `ZCL_AVE_REQUEST=>GET_HEADER`, and the full name from
 GET /sap/bc/adt/zsde/about
 
 {
+  "user": "SYCHOV",
   "services": [
     { "name": "table", "handler": "ZCL_SDE_ADT_RES_TABLE", "backend": "", "active": true },
     { "name": "versions", "handler": "ZCL_SDE_ADT_RES_VERSIONS", "backend": "AVE", "active": true },
@@ -415,6 +426,7 @@ asking, or a resource class that never activated because the tool it reads throu
 installed. Each VERTEX window asks this once, when it opens, and leaves out what the system
 does not have — with a line saying what is missing and why, because a button that silently went
 away explains nothing. A window whose own main service is missing opens on that list instead.
+`user` is whoever is logged on, so the Versions finder starts with its user field filled.
 
 A service a window uses but the answer does not name is one this hub is older than. `active` is
 whether the handler class has an active version, read from `PROGDIR` through
