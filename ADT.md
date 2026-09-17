@@ -1,9 +1,9 @@
 # SDE as an ADT REST resource
 
 Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
-serves six resources as JSON: table rows with their field catalogue, the code metrics of an
+serves seven resources as JSON: table rows with their field catalogue, the code metrics of an
 object, its version history, the join builder, the code review saved for a transport
-request, and the transport requests of a user.
+request, the transport requests of a user, and what the hub itself has on this system.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -49,28 +49,31 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 | `ZCL_SDE_ADT_RES_JOIN` | CLAS | Resource. The join builder of SDE without its window. |
 | `ZCL_SDE_ADT_RES_REVIEW` | CLAS | Resource. The code review AVE saved for a transport request. |
 | `ZCL_SDE_ADT_RES_REQUESTS` | CLAS | Resource. The transport requests of a user, open or released. |
+| `ZCL_SDE_ADT_RES_ABOUT` | CLAS | Resource. Which services the hub has here, and whether each one can answer. Also the list of routes. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
 The classes live in [`src/`](src) and travel through abapGit. The ENHO was created in SAP and
 is picked up by abapGit as well (all three objects are in package `Z_SDE`).
 
-Routing is one line per service:
+Routing is one line per service, in the list `ZCL_SDE_ADT_RES_ABOUT=>SERVICES` returns, and the
+router attaches exactly that list:
 
 ```abap
-router->attach( iv_template      = '/zsde/table/{name}'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_TABLE' ).
-router->attach( iv_template      = '/zsde/metrics/{name}'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
-router->attach( iv_template      = '/zsde/versions/{name}'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
-router->attach( iv_template      = '/zsde/join/{name}'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
-router->attach( iv_template      = '/zsde/review/{name}'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_REVIEW' ).
-router->attach( iv_template      = '/zsde/requests'
-                iv_handler_class = 'ZCL_SDE_ADT_RES_REQUESTS' ).
+( name = `table`    template = `/zsde/table/{name}`    handler = 'ZCL_SDE_ADT_RES_TABLE' )
+( name = `versions` template = `/zsde/versions/{name}` handler = 'ZCL_SDE_ADT_RES_VERSIONS' backend = `AVE` )
+( name = `requests` template = `/zsde/requests`        handler = 'ZCL_SDE_ADT_RES_REQUESTS' backend = `AVE` )
+...
+
+DATA(lt_service) = zcl_sde_adt_res_about=>services( ).
+LOOP AT lt_service INTO DATA(ls_service).
+  router->attach( iv_template      = ls_service-template
+                  iv_handler_class = ls_service-handler ).
+ENDLOOP.
 ```
+
+The list is where a new service is added, and the only place: what `/zsde/about` tells a window
+this system has and what the router serves are the same rows, so the two cannot drift apart.
 
 Every service of the VERTEX front end registers here rather than under a prefix of its own. A
 second prefix means a second BAdI implementation and a second `STATIC_URI_PATH` filter — the
@@ -260,6 +263,10 @@ GET /sap/bc/adt/zsde/versions/ZCL_X?type=CLAS
 }
 ```
 
+Parts not worth a row are left out: an include that does not exist or has no lines, a section
+holding nothing but its own header, and the class pool — generated from the class, so nothing a
+developer wrote is in its versions.
+
 With `part` and `ptype`, the versions of that one part:
 
 ```
@@ -387,6 +394,38 @@ exists for. Two selects on `E070` state the rule outright — the requests owned
 reached through a task — the same table AVE reads for requests and tasks. The header and its
 description then come from `ZCL_AVE_REQUEST=>GET_HEADER`, and the full name from
 `ZCL_AVE_AUTHOR`, so a request reads the same here as everywhere else in the Versions window.
+
+## What the hub has
+
+```
+GET /sap/bc/adt/zsde/about
+
+{
+  "services": [
+    { "name": "table", "handler": "ZCL_SDE_ADT_RES_TABLE", "backend": "", "active": true },
+    { "name": "versions", "handler": "ZCL_SDE_ADT_RES_VERSIONS", "backend": "AVE", "active": true },
+    { "name": "metrics", "handler": "ZCL_SDE_ADT_RES_METRICS", "backend": "ACE", "active": false }
+  ],
+  "backends": [ { "name": "AVE", "installed": true }, { "name": "ACE", "installed": false } ]
+}
+```
+
+A system can have some of the hub and not the rest: a Simple-Data-Explorer older than the window
+asking, or a resource class that never activated because the tool it reads through is not
+installed. Each VERTEX window asks this once, when it opens, and leaves out what the system
+does not have — with a line saying what is missing and why, because a button that silently went
+away explains nothing. A window whose own main service is missing opens on that list instead.
+
+A service a window uses but the answer does not name is one this hub is older than. `active` is
+whether the handler class has an active version, read from `PROGDIR` through
+`CL_OO_CLASSNAME_SERVICE=>GET_CLASSPOOL_NAME` rather than by loading the class: a class whose
+tool has since gone would stop this resource with a syntax error instead of being reported. A
+tool counts as installed when the class its resources start from is active — `ZCL_AVE_OBJECT_FACTORY`
+for AVE, `ZCL_ACE_METRICS` for ACE.
+
+A hub older than this resource answers it with a 404 like any other missing route. A window then
+changes nothing and reports failures as they happen, as it did before; its setup page says that
+a Simple-Data-Explorer this old cannot say what it has.
 
 ## The join builder
 

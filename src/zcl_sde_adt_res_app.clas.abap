@@ -16,25 +16,16 @@ CLASS ZCL_SDE_ADT_RES_APP IMPLEMENTATION.
 
 
   METHOD fill_router.
-    router->attach( iv_template      = '/zsde/table/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_TABLE' ).
     " Every VERTEX service registers here rather than under a prefix of its
     " own: the BAdI filter already claims /sap/bc/adt/zsde/*, and a second
     " prefix would mean a second implementation and a second filter to get
     " wrong.
-    router->attach( iv_template      = '/zsde/metrics/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_METRICS' ).
-    router->attach( iv_template      = '/zsde/flow/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_FLOW' ).
-    router->attach( iv_template      = '/zsde/versions/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_VERSIONS' ).
-    router->attach( iv_template      = '/zsde/join/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
-    router->attach( iv_template      = '/zsde/review/{name}'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_REVIEW' ).
-    " The one route with no name in it: the user is a query parameter, and an
-    " absent one is whoever is logged on.
-    router->attach( iv_template      = '/zsde/requests'
-                    iv_handler_class = 'ZCL_SDE_ADT_RES_REQUESTS' ).
+    " The routes are the list ZCL_SDE_ADT_RES_ABOUT reports, so what a window
+    " is told this system has and what the router serves cannot drift apart.
+    DATA(lt_service) = zcl_sde_adt_res_about=>services( ).
+    LOOP AT lt_service INTO DATA(ls_service).
+      router->attach( iv_template      = ls_service-template
+                      iv_handler_class = ls_service-handler ).
+    ENDLOOP.
   ENDMETHOD.
 ENDCLASS.

@@ -306,6 +306,12 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
     rv_yes = abap_true.
 
     CASE is_part-type.
+      WHEN 'CLSD'.
+        " The class pool is generated from the class and says nothing a
+        " developer wrote, so its versions are not worth a row.
+        rv_yes = abap_false.
+        RETURN.
+
       WHEN 'CPUB' OR 'CPRO' OR 'CPRI'.
         " A section's part name is the class; its text lives in a generated
         " include of its own.
