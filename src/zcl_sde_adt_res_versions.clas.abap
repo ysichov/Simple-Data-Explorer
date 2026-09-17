@@ -157,9 +157,13 @@ CLASS zcl_sde_adt_res_versions IMPLEMENTATION.
                               object_type = lv_ave
                               object_name = CONV #( lv_name ) ).
       CATCH zcx_ave.
-        " The factory raises this for an object it cannot find, which is the
-        " only thing it promises about the exception.
-        not_found( i_type = to_lower( lv_type ) i_id = lv_name ).
+        " The factory raises this for an object it cannot find. Not a 404: the
+        " client reads a 404 as a system without this resource installed, and a
+        " request typed on the wrong system would send the user to install it.
+        bad_request( |{ SWITCH string( lv_type WHEN 'TR'   THEN `Transport request`
+                                               WHEN 'DEVC' THEN `Package`
+                                               ELSE lv_type ) } { lv_name }| &&
+                     | does not exist in system { sy-sysid }, client { sy-mandt }.| ).
     ENDTRY.
 
     IF lv_part IS INITIAL.

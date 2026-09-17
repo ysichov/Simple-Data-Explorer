@@ -1,9 +1,9 @@
 # SDE as an ADT REST resource
 
 Status: **reads real data**. A custom application is registered under `/sap/bc/adt/zsde/` and
-serves five resources as JSON: table rows with their field catalogue, the code metrics of an
-object, its version history, the join builder, and the code review saved for a transport
-request.
+serves six resources as JSON: table rows with their field catalogue, the code metrics of an
+object, its version history, the join builder, the code review saved for a transport
+request, and the transport requests of a user.
 
 ```
 GET /sap/bc/adt/zsde/table/T001?rows=5
@@ -48,6 +48,7 @@ Verified on: S/4HANA 2023, `S4CORE 108`, `SAP_BASIS 758`.
 | `ZCL_SDE_ADT_RES_VERSIONS` | CLAS | Resource. Versionable parts of an object and their versions, read by AVE. |
 | `ZCL_SDE_ADT_RES_JOIN` | CLAS | Resource. The join builder of SDE without its window. |
 | `ZCL_SDE_ADT_RES_REVIEW` | CLAS | Resource. The code review AVE saved for a transport request. |
+| `ZCL_SDE_ADT_RES_REQUESTS` | CLAS | Resource. The transport requests of a user, open or released. |
 | `ZCL_SDE_ADT_RES_APP` | CLAS | Application. Inherits `CL_ADT_RES_APP_BASE`, redefines `fill_router`. |
 | `ZSDE_ADT_RES_APP` | ENHO | BAdI implementation that registers the application. |
 
@@ -67,6 +68,8 @@ router->attach( iv_template      = '/zsde/join/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_JOIN' ).
 router->attach( iv_template      = '/zsde/review/{name}'
                 iv_handler_class = 'ZCL_SDE_ADT_RES_REVIEW' ).
+router->attach( iv_template      = '/zsde/requests'
+                iv_handler_class = 'ZCL_SDE_ADT_RES_REQUESTS' ).
 ```
 
 Every service of the VERTEX front end registers here rather than under a prefix of its own. A
@@ -347,6 +350,43 @@ Its constructor passes only `previous` to the superclass, so `get_text( )` on th
 itself is the generic class text. The resource walks the `previous` chain and joins what it finds,
 because "AVE cannot list the parts of ZCL_X" with no reason after it is a silent failure wearing
 an error message.
+
+## Transport requests of a user
+
+```
+GET /sap/bc/adt/zsde/requests?user=SYCHOV&released=true
+
+{
+  "user": "SYCHOV",
+  "released": true,
+  "requests": [
+    { "request": "ALCK900731", "text": "VERTEX: find transports by user", "owner": "SYCHOV",
+      "owner_name": "Yurii Sychov", "type": "workbench", "status": "modifiable",
+      "date": "20260917", "time": "142210" }
+  ]
+}
+```
+
+The one route with no name in it, because both of its parameters are optional. Without `user` the
+answer is for whoever is logged on: the server knows who that is, and the page asking does not.
+Without `released=true` only open requests come back, modifiable or modifiable and protected;
+`released=true` adds the released ones and those whose release has started. A user name longer
+than twelve characters, or with a blank or a wildcard in it, is refused rather than compared and
+found to match nothing.
+
+**Whose a request is.** A request is the user's when they own it, and also when all they have in
+it is a task under somebody else's request — SE09 lists those as well. The status that decides
+open or released is the request's own, because a task is often released long before its request.
+The kinds listed are the ones a developer creates: workbench, customizing, transport of copies and
+the three relocations. Newest first.
+
+**Why not `TRINT_SELECT_REQUESTS`.** SE09's own selection was the first choice, and it runs without
+a dialog when `iv_via_selscreen` is left empty. What it does with a task inside somebody else's
+request lives in form routines that were not read, and that is exactly the rule this resource
+exists for. Two selects on `E070` state the rule outright — the requests owned, and the requests
+reached through a task — the same table AVE reads for requests and tasks. The header and its
+description then come from `ZCL_AVE_REQUEST=>GET_HEADER`, and the full name from
+`ZCL_AVE_AUTHOR`, so a request reads the same here as everywhere else in the Versions window.
 
 ## The join builder
 
