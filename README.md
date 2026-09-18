@@ -14,7 +14,7 @@ single-file viewer is still shipped for old releases — see
 > The ADT resources under [`src/`](src) and documented in [ADT.md](ADT.md) exist for it: they
 > serve this tool's data as JSON, and the editor renders it.
 >
-> *In the construction phase.* VERTEX shows a part of what SDE does, not all of it.
+
 
 <img width="595" alt="SelecTor selection screen" src="https://github.com/user-attachments/assets/f038ec54-a24e-40e6-8564-e015ef91d2fb" />
 
