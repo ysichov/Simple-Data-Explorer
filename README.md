@@ -1,5 +1,7 @@
 # Simple Data Explorer (SDE)
 
+> **Simple Data Explorer has moved to [VERTEX](https://github.com/ysichov/VERTEX)** — tables, views and CDS with select-options, joins and pivot now live in VERTEX's SelecTor for VS Code and Eclipse ADT. This repository is kept as it is and is no longer developed.
+
 Multi-window explorer for SAP tables, views and CDS views — with per-window select-options that
 re-read the data as you type, drag-and-drop links between windows, foreign-key navigation, a join
 builder, pivot tables and a generated Open SQL statement you can edit and run.
